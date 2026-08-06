@@ -7,7 +7,7 @@ import { serverTRPC } from "@/lib/trpc-server";
 type CreateInput = NonNullable<RouterInputs["memories"]["create"]>;
 type UpdatePatch = RouterInputs["memories"]["update"]["patch"];
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult = { ok: true; warning?: string } | { ok: false; error: string };
 
 function fail(message: string): ActionResult {
   return { ok: false, error: message };
@@ -161,9 +161,10 @@ export async function archiveMemoryAction(id: string): Promise<ActionResult> {
 
 export async function moveMemoryAction(id: string, shelf: string): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.move.mutate({ id, shelf });
+    const moved = await serverTRPC.memories.move.mutate({ id, shelf });
     revalidatePath("/");
-    return { ok: true };
+    const warning = moved.move_warnings?.map((item) => item.message).join(" ");
+    return warning ? { ok: true, warning } : { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }

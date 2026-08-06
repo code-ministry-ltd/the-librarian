@@ -253,6 +253,14 @@ export class MemoryMoveUnsafePathError extends Error {
   }
 }
 
+export interface MemoryMoveWarning {
+  code: "missing-active-projects";
+  project_keys: string[];
+  message: string;
+}
+
+export type MovedMemory = Memory & { move_warnings?: MemoryMoveWarning[] };
+
 export interface LibrarianStore
   extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
@@ -411,7 +419,7 @@ export interface LibrarianStore
    * visibility are confined to the principal's `"recall"` set. The destination id resolves to its
    * unique writable bearer; both shelf indexes are invalidated after the path-scoped rename commit.
    */
-  moveMemoryForPrincipal(principal: Principal, id: string, destinationShelfId: string): Memory;
+  moveMemoryForPrincipal(principal: Principal, id: string, destinationShelfId: string): MovedMemory;
   /**
    * Principal-scoped distinct field values (spec 065 SC 7, T4): the UNION of `distinctValues`
    * over the `"recall"` shelf set, in the store's own ordering (case-insensitive, locale-stable).
@@ -1335,7 +1343,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     principal: Principal,
     id: string,
     destinationShelfId: string,
-  ): Memory => {
+  ): MovedMemory => {
     const shelves = vaultRouter.shelves(principal, "recall");
     validateShelfSet(shelves);
 
@@ -1454,6 +1462,30 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     }
     sourceCore.invalidateIndex();
     destinationCore.invalidateIndex();
+    // Warning lookup is intentionally post-move and fail-soft: the authorised
+    // move has committed, so a malformed destination project document must not
+    // turn success into a false failure. A key we cannot confirm as active is
+    // reported for admin attention; it never blocks or rewrites the memory.
+    const missingActiveProjectKeys = (memory.project_keys ?? []).filter((key) => {
+      try {
+        return destinationCore.rawProjects.getByKey(key)?.status !== "active";
+      } catch {
+        return true;
+      }
+    });
+    if (missingActiveProjectKeys.length > 0) {
+      const destinationName = destinationShelf.label ?? destinationShelf.id;
+      return {
+        ...memory,
+        move_warnings: [
+          {
+            code: "missing-active-projects",
+            project_keys: missingActiveProjectKeys,
+            message: `The move succeeded, but ${destinationName} has no active project for: ${missingActiveProjectKeys.join(", ")}. The associations were preserved.`,
+          },
+        ],
+      };
+    }
     return memory;
   };
 

@@ -1,7 +1,7 @@
 // Slice-scoped memory evidence gathering for the curator (spec §9).
 //
-// Memories are project-less, so grooming runs over a SINGLE common_global
-// slice: every live memory feeds it. The load-bearing guard here is the
+// Project associations are metadata, so grooming still runs over a SINGLE
+// common_global slice and every live memory feeds it. The load-bearing guard is
 // SECURITY guard — redaction-before-return: secret-looking material is scrubbed
 // from evidence BEFORE it can be handed to the prompt builder (§9, §10.4); by
 // output-validation time the value would already have left the building.
@@ -61,7 +61,7 @@ function gather(caps: { maxMemories: number; maxBodyChars?: number }) {
 }
 
 describe("gatherMemoryEvidence — the single global slice", () => {
-  it("the global slice gathers every active memory (memories are project-less)", () => {
+  it("the global slice gathers every active memory regardless of project associations", () => {
     const one = seed({ title: "one" }).memory;
     const two = seed({ title: "two" }).memory;
 
@@ -76,6 +76,12 @@ describe("gatherMemoryEvidence — the single global slice", () => {
     const m = seed({ title: "common-by-agent", agent_id: "agent-z" }).memory;
     const bundle = gather({ maxMemories: 50 });
     expect(bundle.activeMemories.map((x) => x.id)).toContain(m.id);
+  });
+
+  it("carries project associations as evidence without changing the model output contract", () => {
+    const memory = seed({ title: "project fact", project_keys: ["the-librarian"] }).memory;
+    const item = gather({ maxMemories: 50 }).activeMemories.find((row) => row.id === memory.id);
+    expect(item?.projectKeys).toEqual(["the-librarian"]);
   });
 });
 

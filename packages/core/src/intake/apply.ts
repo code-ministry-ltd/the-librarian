@@ -34,6 +34,7 @@ export interface IntakeStoredMemory {
    * idempotent: one open curator flag per target, never a stack (review F3).
    */
   flags?: { agent_id: string }[];
+  project_keys?: string[];
 }
 
 /** The store surface the apply layer needs — all mutation flows through these. */
@@ -130,6 +131,7 @@ export function applyIntakeJudgment(
     // applies_to is a caller-asserted targeting signal the judge can't re-derive
     // from text, so carry it onto the new memory (the judge never sets it).
     if (hints?.appliesTo !== undefined) out.applies_to = hints.appliesTo;
+    if (hints?.projectKeys !== undefined) out.project_keys = hints.projectKeys;
     return out;
   };
   // The model's rationale is untrusted (could carry a hallucinated secret) and is

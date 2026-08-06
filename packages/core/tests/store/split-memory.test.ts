@@ -20,6 +20,7 @@ function fakeStore() {
       calls.push(`archive:${id}:${String(actor)}`);
       return null;
     },
+    getMemory: () => ({ project_keys: ["source-project"] }),
   };
   return { store, calls };
 }
@@ -55,6 +56,7 @@ describe("splitMemory", () => {
         return { memory: { id: "x" } };
       },
       archiveMemory: () => null,
+      getMemory: () => ({ project_keys: ["source-project"] }),
     };
     splitMemory(store, {
       sourceId: "s",
@@ -64,5 +66,28 @@ describe("splitMemory", () => {
       ],
     });
     expect(seen).toEqual([{ requires_approval: true }, undefined]);
+  });
+
+  it("inherits the source project keys without dropping explicit additions", () => {
+    const seen: Record<string, unknown>[] = [];
+    const store: SplitMemoryStore = {
+      createMemory: (input) => {
+        seen.push(input);
+        return { memory: { id: "x" } };
+      },
+      archiveMemory: () => null,
+      getMemory: () => ({ project_keys: ["source-project", "shared"] }),
+    };
+    splitMemory(store, {
+      sourceId: "s",
+      replacements: [
+        { input: { title: "A" } },
+        { input: { title: "B", project_keys: ["shared", "explicit-project"] } },
+      ],
+    });
+    expect(seen.map((input) => input.project_keys)).toEqual([
+      ["source-project", "shared"],
+      ["source-project", "shared", "explicit-project"],
+    ]);
   });
 });

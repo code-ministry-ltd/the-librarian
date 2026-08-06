@@ -47,6 +47,8 @@ export interface InboxSubmissionHints {
    * carried through and applied to a NEW consolidated memory.
    */
   appliesTo?: string[];
+  /** Validated shelf-local project relevance keys from the submission. */
+  projectKeys?: string[];
   /**
    * A routing DIRECTIVE (not a filing hint): when true, the intake must
    * terminate this submission as a PROPOSAL, never an auto-apply — even at high
@@ -101,7 +103,7 @@ function quote(value: string): string {
 /** Serialize an inbox submission to its on-disk markdown (frontmatter + text). */
 export function serializeInboxItem(item: InboxItem): string {
   const lines = [`id: ${quote(item.id)}`, `created: ${quote(item.created)}`];
-  const { agentId, tags, appliesTo, forceProposal } = item.hints;
+  const { agentId, tags, appliesTo, projectKeys, forceProposal } = item.hints;
   // Hints are written only when present, so an inbox item with none stays minimal.
   if (agentId !== undefined) lines.push(`agent_id: ${quote(agentId)}`);
   if (tags !== undefined) {
@@ -114,6 +116,13 @@ export function serializeInboxItem(item: InboxItem): string {
       appliesTo.length
         ? `applies_to:\n${appliesTo.map((a) => `  - ${quote(a)}`).join("\n")}`
         : "applies_to: []",
+    );
+  }
+  if (projectKeys !== undefined) {
+    lines.push(
+      projectKeys.length
+        ? `project_keys:\n${projectKeys.map((key) => `  - ${quote(key)}`).join("\n")}`
+        : "project_keys: []",
     );
   }
   // A directive, not a filing hint: only the `true` case is meaningful, so absent
@@ -135,6 +144,9 @@ export function parseInboxItem(raw: string): InboxItem {
   if (Array.isArray(d.tags)) hints.tags = d.tags.filter((t): t is string => typeof t === "string");
   if (Array.isArray(d.applies_to)) {
     hints.appliesTo = d.applies_to.filter((a): a is string => typeof a === "string");
+  }
+  if (Array.isArray(d.project_keys)) {
+    hints.projectKeys = d.project_keys.filter((key): key is string => typeof key === "string");
   }
   if (d.force_proposal === true) hints.forceProposal = true;
   return { id: String(d.id ?? ""), created, text: content.trim(), hints };

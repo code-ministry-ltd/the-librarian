@@ -133,8 +133,8 @@ describe("applyOperations — auto-apply (confidence at/above the threshold)", (
   // create the merged replacement (superseding the sources, carrying the
   // run_id), then archive every source.
   it("merges: creates the replacement and archives the sources atomically", () => {
-    const a = seed({ title: "A", body: "same" });
-    const b = seed({ title: "B", body: "same" });
+    const a = seed({ title: "A", body: "same", project_keys: ["alpha", "shared"] });
+    const b = seed({ title: "B", body: "same", project_keys: ["shared", "beta"] });
     const summary = applyOperations(
       ops({
         operation: {
@@ -161,6 +161,7 @@ describe("applyOperations — auto-apply (confidence at/above the threshold)", (
     expect(merged.status).toBe("active");
     expect(merged.curator_note?.supersedes).toEqual([a.id, b.id]);
     expect(merged.curator_note?.run_id).toBe(s!.runId); // provenance unchanged by the refactor
+    expect(merged.project_keys).toEqual(["alpha", "shared", "beta"]);
   });
 
   it("applies an at-threshold update in place", () => {
@@ -306,7 +307,11 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
   // status=proposed and the source stays ACTIVE — the admin archives it after
   // accepting (§11.1).
   it("proposes a split's replacements and leaves the source active, even at confidence 1.0", () => {
-    const src = seed({ title: "Mixed", body: "facts about Elaine and Bob" });
+    const src = seed({
+      title: "Mixed",
+      body: "facts about Elaine and Bob",
+      project_keys: ["the-librarian"],
+    });
     const replacement = (title: string, body: string) => ({
       title,
       body,
@@ -328,9 +333,15 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
       deps(),
     );
     expect(summary.proposed).toBe(1);
+    const targets = recorded().find(
+      (operation) => operation.status === "proposed",
+    )!.target_memory_ids;
+    expect(targets.map((id) => s!.store.getMemory(id)?.project_keys)).toEqual([
+      ["the-librarian"],
+      ["the-librarian"],
+    ]);
     expect(summary.applied).toBe(0);
     expect(s!.store.getMemory(src.id)?.status).toBe("active"); // source NOT archived
-    const targets = recorded()[0]!.target_memory_ids;
     expect(targets.length).toBe(2);
     for (const id of targets) {
       const t = s!.store.getMemory(id)!;
@@ -393,7 +404,7 @@ describe("applyOperations — protected update reconstruction (data integrity)",
     // Active requires-approval memory with a body longer than the evidence
     // truncation cap, plus tags — both must survive a title-only patch.
     const fullBody = "X".repeat(5000);
-    const m = seed({ body: fullBody, tags: ["keep"] });
+    const m = seed({ body: fullBody, tags: ["keep"], project_keys: ["the-librarian"] });
 
     const summary = applyOperations(
       ops({
@@ -417,6 +428,7 @@ describe("applyOperations — protected update reconstruction (data integrity)",
     expect(proposal.title).toBe("Corrected title");
     expect(proposal.body).toBe(fullBody); // full, untruncated, unredacted
     expect(proposal.tags).toContain("keep"); // preserved, not dropped
+    expect(proposal.project_keys).toEqual(["the-librarian"]);
     expect(proposal.curator_note?.supersedes).toEqual([m.id]);
   });
 });

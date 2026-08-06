@@ -38,6 +38,19 @@ export function memoryInputSchema(): Record<string, unknown> {
         description:
           "Optional scope hints — the projects, paths, or contexts this memory is relevant to.",
       },
+      project_keys: {
+        type: "array",
+        maxItems: 20,
+        uniqueItems: true,
+        items: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        },
+        description:
+          "Optional relevance links to active projects on the destination shelf. These aid retrieval and never grant access.",
+      },
       confidence: {
         type: "string",
         description:
@@ -53,9 +66,8 @@ export function memoryInputSchema(): Record<string, unknown> {
       // `conv_id` was retired with conv_state (rethink T2); `visibility`
       // with the private-namespace split (rethink T3, D8);
       // `category` / `scope` with the storage cutover (rethink T5);
-      // `project_key` once memories went project-less (grooming collapsed to a
-      // single global slice) — the handler still tolerates all of them from
-      // un-updated plugins.
+      // The retired scalar `project_key` remains tolerated as unknown legacy
+      // input, but only plural `project_keys` is advertised and persisted.
     },
   };
 }

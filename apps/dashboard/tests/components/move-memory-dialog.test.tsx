@@ -95,6 +95,24 @@ describe("MoveMemoryDialog", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
+  it("keeps a successful move warning visible without treating it as a failure", async () => {
+    moveMemoryAction.mockResolvedValueOnce({
+      ok: true,
+      warning: "Moved, but source-only has no active project on Team knowledge.",
+    });
+    const onSuccess = vi.fn();
+    render(
+      <MoveMemoryDialog memory={memory()} shelves={shelves} canDirectMove onSuccess={onSuccess} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Move…" }));
+    await userEvent.selectOptions(screen.getByLabelText("Destination shelf"), "team");
+    await userEvent.click(screen.getByRole("button", { name: "Move memory" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("source-only");
+    expect(onSuccess).toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   it("proposes a move with rationale for a member or read-only destination", async () => {
     render(
       <MoveMemoryDialog

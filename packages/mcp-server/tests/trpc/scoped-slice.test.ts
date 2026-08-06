@@ -473,13 +473,27 @@ describe("spec 067 — proposeMove and direct move boundaries", () => {
     const { store } = freshStore(router);
     const adminAlice: Principal = { ...alice, kind: "admin", roles: ["admin"] };
     const caller = createCaller(contextFor(adminAlice, store));
-    const direct = store
-      .forShelf(ALICE_SHELF)
-      .createMemory({ title: "Direct", body: "body", agent_id: "alice" }, {}).memory;
+    const direct = store.forShelf(ALICE_SHELF).createMemory(
+      {
+        title: "Direct",
+        body: "body",
+        agent_id: "alice",
+        project_keys: ["source-only"],
+      },
+      {},
+    ).memory;
 
     await expect(
       caller.memories.move({ id: direct.id, shelf: writableTeam.id }),
-    ).resolves.toMatchObject({ id: direct.id });
+    ).resolves.toMatchObject({
+      id: direct.id,
+      move_warnings: [
+        expect.objectContaining({
+          code: "missing-active-projects",
+          project_keys: ["source-only"],
+        }),
+      ],
+    });
     expect(store.forShelf(writableTeam).getMemory(direct.id)?.id).toBe(direct.id);
     await expect(
       caller.memories.move({ id: direct.id, shelf: writableTeam.id }),

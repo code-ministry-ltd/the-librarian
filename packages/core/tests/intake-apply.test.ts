@@ -11,6 +11,7 @@ interface SeedDoc {
   body: string;
   requires_approval?: boolean;
   flags?: { agent_id: string }[];
+  project_keys?: string[];
 }
 
 function fakeStore(seed: Record<string, SeedDoc> = {}) {
@@ -26,7 +27,13 @@ function fakeStore(seed: Record<string, SeedDoc> = {}) {
     createMemory: (input, options) => {
       const id = `mem_new_${n++}`;
       calls.create.push({ input, ...(options ? { options } : {}) });
-      docs.set(id, { title: String(input.title ?? ""), body: String(input.body ?? "") });
+      docs.set(id, {
+        title: String(input.title ?? ""),
+        body: String(input.body ?? ""),
+        ...(Array.isArray(input.project_keys)
+          ? { project_keys: input.project_keys as string[] }
+          : {}),
+      });
       return { memory: { id } };
     },
     updateMemory: (id, patch) => {
@@ -165,11 +172,16 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
       store,
       submissionText: "x",
       actorId: "system-consolidator",
-      submissionHints: { agentId: "agent-a", tags: ["ignored"] },
+      submissionHints: {
+        agentId: "agent-a",
+        tags: ["ignored"],
+        projectKeys: ["the-librarian"],
+      },
     });
     expect(calls.create[0]?.input).toMatchObject({
       agent_id: "agent-a",
       tags: ["judged"], // the judge curated these; the submission's tags don't override
+      project_keys: ["the-librarian"],
     });
   });
 
@@ -183,10 +195,32 @@ describe("applyIntakeJudgment — apply lane (confidence at/above the threshold)
         store,
         submissionText: "x",
         actorId: "system-consolidator",
-        submissionHints: { agentId: "agent-a" },
+        submissionHints: { agentId: "agent-a", projectKeys: ["other-project"] },
       },
     );
     expect(Object.keys(calls.update[0]?.patch ?? {})).toEqual(["body"]); // no agent_id
+  });
+
+  it("a proposed split inherits the source project keys", () => {
+    const { store, calls } = fakeStore({
+      mem_mixed: { title: "Mixed", body: "Two facts", project_keys: ["the-librarian"] },
+    });
+    const out = applyIntakeJudgment(
+      judgment({
+        action: "split",
+        target_id: "mem_mixed",
+        replacements: [
+          { title: "A", body: "A fact", tags: [] },
+          { title: "B", body: "B fact", tags: [] },
+        ],
+      }),
+      deps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.create.map((call) => call.input.project_keys)).toEqual([
+      ["the-librarian"],
+      ["the-librarian"],
+    ]);
   });
 
   it("a store rejection (e.g. protected target) becomes a rejected outcome, not a throw", () => {

@@ -29,6 +29,8 @@ export interface SplitMemoryStore {
     options?: Record<string, unknown>,
   ) => { memory: { id: string } };
   archiveMemory: (id: string, agent_id?: string) => unknown;
+  /** Optional read seam used to preserve project associations on replacements. */
+  getMemory?: (id: string) => { project_keys?: string[] } | null;
 }
 
 /** One replacement to spin out of the source — a ready-to-write createMemory call. */
@@ -58,9 +60,24 @@ export interface SplitMemoryRequest {
  * what they file, identical in how they file it).
  */
 export function splitMemory(store: SplitMemoryStore, request: SplitMemoryRequest): string[] {
-  const targets = request.replacements.map((r) => store.createMemory(r.input, r.options).memory.id);
+  const sourceKeys = store.getMemory?.(request.sourceId)?.project_keys ?? [];
+  const targets = request.replacements.map((replacement) => {
+    const explicit = Array.isArray(replacement.input.project_keys)
+      ? (replacement.input.project_keys as string[])
+      : [];
+    const projectKeys = stableUnion(sourceKeys, explicit);
+    const input =
+      projectKeys.length > 0
+        ? { ...replacement.input, project_keys: projectKeys }
+        : replacement.input;
+    return store.createMemory(input, replacement.options).memory.id;
+  });
   if (request.archiveActorId !== undefined) {
     store.archiveMemory(request.sourceId, request.archiveActorId);
   }
   return targets;
+}
+
+function stableUnion(...groups: string[][]): string[] {
+  return [...new Set(groups.flat())];
 }

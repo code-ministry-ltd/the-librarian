@@ -1,9 +1,9 @@
 // Markdown-vault-backed GroomingMemorySource (plan 036 Phase 4).
 //
 // Reads memory docs from the git vault (via the markdown memory store's
-// `listAll`). Memories no longer carry a project_key, so grooming operates over
-// a SINGLE `common_global` slice (the per-project `common_project` slice was
-// retired with the memory project_key field).
+// `listAll`). Optional plural project associations are evidence metadata only:
+// grooming still operates over a SINGLE `common_global` slice (the retired
+// `common_project` slice is not revived).
 // Active/proposed feed slice enumeration + evidence; archived feed tombstones.
 //
 // The event ledger is retired on markdown, so a tombstone's `archiveReason` is
@@ -46,6 +46,7 @@ function toRecord(memory: Memory): GroomingMemoryRecord {
     agentId: memory.agent_id ?? null,
     requiresApproval: memory.requires_approval === true,
     isGlobal: memory.is_global === true,
+    ...(memory.project_keys !== undefined ? { projectKeys: memory.project_keys } : {}),
     createdAt: String(memory.created_at ?? memory.updated_at),
     updatedAt: String(memory.updated_at),
     // An OPEN flag from the canonical curator actor means an archive proposal
@@ -72,8 +73,8 @@ export function createVaultGroomingMemorySource(
   reader: GroomingVaultMemoryReader,
 ): GroomingMemorySource {
   function listSlices(): EvidenceSlice[] {
-    // Memories are project-less: a single global slice exists iff any live
-    // (active|proposed) memory exists. Nothing live → no slice to groom.
+    // Project associations do not partition grooming: a single global slice
+    // exists iff any live (active|proposed) memory exists.
     const hasLive = reader.listAll({}).some((m) => m.status !== MemoryStatus.Archived);
     return hasLive ? [{ kind: "common_global" }] : [];
   }

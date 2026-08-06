@@ -1,4 +1,5 @@
-import { type InboxSubmissionHints, isIntakeEnabled } from "@librarian/core";
+import { type InboxSubmissionHints, type ShelfScopedStore, isIntakeEnabled } from "@librarian/core";
+import { ProjectKeysSchema } from "@librarian/core/schemas";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
@@ -14,7 +15,22 @@ function submissionHints(scoped: Record<string, unknown>): InboxSubmissionHints 
   if (Array.isArray(scoped.applies_to)) {
     hints.appliesTo = scoped.applies_to.filter((a): a is string => typeof a === "string");
   }
+  if (Array.isArray(scoped.project_keys)) {
+    hints.projectKeys = scoped.project_keys.filter((key): key is string => typeof key === "string");
+  }
   return hints;
+}
+
+function validateProjectKeys(scoped: Record<string, unknown>, shelf: ShelfScopedStore): void {
+  if (scoped.project_keys === undefined) return;
+  const keys = ProjectKeysSchema.parse(scoped.project_keys);
+  const inactive = keys.filter((key) => shelf.projects.getByKey(key)?.status !== "active");
+  if (inactive.length > 0) {
+    throw new Error(
+      `project_keys must name active projects on the destination shelf: ${inactive.join(", ")}`,
+    );
+  }
+  scoped.project_keys = keys;
 }
 
 const remember: ToolDefinition = {
@@ -39,6 +55,7 @@ const remember: ToolDefinition = {
     // write to that shelf's scoped handle. With the default router this is the main shelf — the
     // handle IS the top-level store's own path, so this is byte-identical.
     const shelf = store.forShelf(store.resolveWriteTarget(context.principal), context.principal);
+    validateProjectKeys(scoped, shelf);
 
     // Inbox cutover: when intake is enabled (the dashboard setting
     // `curator.intake.enabled`, spec 043 D-E), `remember` is a fire-and-forget

@@ -1,7 +1,6 @@
-// Vault-backed GroomingMemorySource (plan 036 Phase 4). Memories are
-// project-less, so grooming runs over a SINGLE common_global slice: every live
-// memory feeds it. Active/proposed feed slices + evidence, archived feed
-// tombstones (no body, archiveReason null).
+// Vault-backed GroomingMemorySource (plan 036 Phase 4). Optional project
+// associations do not restore project slices: grooming runs over one
+// common_global slice and every live memory feeds it.
 
 import { type Memory, createVaultGroomingMemorySource } from "@librarian/core";
 import { describe, expect, it } from "vitest";
@@ -89,10 +88,18 @@ describe("createVaultGroomingMemorySource — selectMemories (global slice)", ()
   });
 
   it("maps the verdict booleans onto the record", () => {
-    const source = sourceOf([mem({ id: "p", requires_approval: true, is_global: true })]);
+    const source = sourceOf([
+      mem({
+        id: "p",
+        requires_approval: true,
+        is_global: true,
+        project_keys: ["the-librarian"],
+      }),
+    ]);
     const [rec] = source.selectMemories(GLOBAL, "active", 50);
     expect(rec?.requiresApproval).toBe(true);
     expect(rec?.isGlobal).toBe(true);
+    expect(rec?.projectKeys).toEqual(["the-librarian"]);
   });
 
   it("marks hasOpenCuratorFlag only for an open flag from the curator actor (review F2)", () => {

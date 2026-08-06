@@ -20,6 +20,8 @@ function fakeStore() {
       calls.push(`archive:${id}:${String(actor)}`);
       return null;
     },
+    getMemory: (id) =>
+      id === "mem_a" ? { project_keys: ["alpha", "shared"] } : { project_keys: ["shared", "beta"] },
   };
   return { store, calls };
 }
@@ -59,11 +61,44 @@ describe("mergeMemory", () => {
         return { memory: { id: "x" } };
       },
       archiveMemory: () => null,
+      getMemory: () => null,
     };
     mergeMemory(store, {
       replacement: { input: { title: "M" }, options: { requires_approval: true } },
       sourceIds: ["s1", "s2"],
     });
     expect(seen).toEqual({ requires_approval: true });
+  });
+
+  it("uses a stable union of source project keys when the replacement omits them", () => {
+    const seen: Record<string, unknown>[] = [];
+    const store: MergeMemoryStore = {
+      createMemory: (input) => {
+        seen.push(input);
+        return { memory: { id: "merged" } };
+      },
+      archiveMemory: () => null,
+      getMemory: (id) =>
+        id === "a" ? { project_keys: ["alpha", "shared"] } : { project_keys: ["shared", "beta"] },
+    };
+    mergeMemory(store, { replacement: { input: { title: "M" } }, sourceIds: ["a", "b"] });
+    expect(seen[0]?.project_keys).toEqual(["alpha", "shared", "beta"]);
+  });
+
+  it("honours an explicit replacement project_keys value, including an empty list", () => {
+    const seen: unknown[] = [];
+    const store: MergeMemoryStore = {
+      createMemory: (input) => {
+        seen.push(input.project_keys);
+        return { memory: { id: "merged" } };
+      },
+      archiveMemory: () => null,
+      getMemory: () => ({ project_keys: ["source-project"] }),
+    };
+    mergeMemory(store, {
+      replacement: { input: { title: "M", project_keys: [] } },
+      sourceIds: ["a", "b"],
+    });
+    expect(seen).toEqual([[]]);
   });
 });

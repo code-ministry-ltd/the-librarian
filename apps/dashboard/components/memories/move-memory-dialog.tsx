@@ -29,6 +29,7 @@ export function MoveMemoryDialog({ memory, shelves, canDirectMove, onSuccess }: 
   const [shelfId, setShelfId] = useState("");
   const [rationale, setRationale] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const destinations = useMemo(
@@ -49,6 +50,7 @@ export function MoveMemoryDialog({ memory, shelves, canDirectMove, onSuccess }: 
       setShelfId("");
       setRationale("");
       setError(null);
+      setWarning(null);
     }
   };
 
@@ -58,12 +60,18 @@ export function MoveMemoryDialog({ memory, shelves, canDirectMove, onSuccess }: 
       return;
     }
     setError(null);
+    setWarning(null);
     startTransition(async () => {
       const result = direct
         ? await moveMemoryAction(memory.id, selected.id)
         : await proposeMoveAction(memory.id, selected.id, rationale);
       if (!result.ok) {
         setError(result.error);
+        return;
+      }
+      if (result.warning) {
+        setWarning(result.warning);
+        onSuccess();
         return;
       }
       changeOpen(false);
@@ -80,8 +88,9 @@ export function MoveMemoryDialog({ memory, shelves, canDirectMove, onSuccess }: 
         <DialogHeader>
           <DialogTitle>{direct ? "Move memory" : "Propose a shelf move"}</DialogTitle>
           <DialogDescription>
-            Choose where “{memory.title || memory.id}” belongs. A proposal leaves the memory active
-            until an admin applies it.
+            {warning
+              ? `“${memory.title || memory.id}” was moved successfully.`
+              : `Choose where “${memory.title || memory.id}” belongs. A proposal leaves the memory active until an admin applies it.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -94,6 +103,7 @@ export function MoveMemoryDialog({ memory, shelves, canDirectMove, onSuccess }: 
               onChange={(event) => {
                 setShelfId(event.target.value);
                 setError(null);
+                setWarning(null);
               }}
             >
               <option value="">Choose a shelf…</option>
@@ -132,19 +142,37 @@ export function MoveMemoryDialog({ memory, shelves, canDirectMove, onSuccess }: 
           </p>
         ) : null}
 
+        {warning ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="border border-ink-accent/40 bg-ink-accent/[0.06] p-3 text-sm text-foreground"
+          >
+            {warning}
+          </p>
+        ) : null}
+
         <DialogFooter>
-          <Button variant="ghost" onClick={() => changeOpen(false)} disabled={pending}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={submit} disabled={pending || !selected}>
-            {pending
-              ? direct
-                ? "Moving…"
-                : "Proposing…"
-              : direct
-                ? "Move memory"
-                : "Propose move"}
-          </Button>
+          {warning ? (
+            <Button variant="primary" onClick={() => changeOpen(false)}>
+              Close
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => changeOpen(false)} disabled={pending}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={submit} disabled={pending || !selected}>
+                {pending
+                  ? direct
+                    ? "Moving…"
+                    : "Proposing…"
+                  : direct
+                    ? "Move memory"
+                    : "Propose move"}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

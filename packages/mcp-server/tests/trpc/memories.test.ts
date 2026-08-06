@@ -92,6 +92,7 @@ interface MemoryRow {
   title: string;
   body: string;
   status: string;
+  project_keys?: string[];
 }
 
 interface ListMemoriesResult {
@@ -148,6 +149,7 @@ function seedMemory(
     body: string;
     agent_id: string;
     requires_approval: boolean;
+    project_keys: string[];
   }> = {},
 ): MemoryRow {
   const store = createLibrarianStore({ dataDir });
@@ -159,6 +161,7 @@ function seedMemory(
         agent_id: overrides.agent_id || "bede",
         title: overrides.title || "Seeded memory",
         body: overrides.body || "Body text",
+        ...(overrides.project_keys !== undefined ? { project_keys: overrides.project_keys } : {}),
       },
       opts,
     );
@@ -236,6 +239,24 @@ describe("tRPC memories surface", () => {
         status: "active",
       });
       expect(data.total).toBe(2);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.list returns and exactly filters plural project associations", async () => {
+    const dataDir = makeTempDir();
+    seedMemory(dataDir, { title: "Exact", project_keys: ["lib"] });
+    seedMemory(dataDir, { title: "Longer", project_keys: ["the-lib"] });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const data = await trpcGet<ListMemoriesResult>(server, "memories.list", {
+        project_keys: ["lib"],
+      });
+      expect(data.memories).toEqual([
+        expect.objectContaining({ title: "Exact", project_keys: ["lib"] }),
+      ]);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

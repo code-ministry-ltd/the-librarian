@@ -38,7 +38,12 @@ import {
   splitMemory,
   unifiedMemoryDiff,
 } from "@librarian/core";
-import { MemoryInputSchema, MemoryPatchSchema, MemoryStatusSchema } from "@librarian/core/schemas";
+import {
+  MemoryInputSchema,
+  MemoryPatchSchema,
+  MemoryStatusSchema,
+  ProjectKeysSchema,
+} from "@librarian/core/schemas";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { resolveActorDisplays } from "./actor-displays.js";
@@ -57,6 +62,7 @@ export interface MemoryShape {
   status: string;
   tags: string[];
   applies_to: string[];
+  project_keys?: string[];
   supersedes: string[];
   conflicts_with: string[];
   // Open agent flags routing this memory to review (spec 047 / ADR 0006).
@@ -72,6 +78,11 @@ export interface MemoryShape {
   requires_approval: boolean;
   shelfId?: string;
   shelfLabel?: string;
+  move_warnings?: {
+    code: "missing-active-projects";
+    project_keys: string[];
+    message: string;
+  }[];
   [key: string]: unknown;
 }
 
@@ -88,6 +99,7 @@ const SortOrderSchema = z.enum(["asc", "desc"]);
 const ListMemoriesInputSchema = z.object({
   status: MemoryStatusSchema.optional(),
   agent_id: z.string().optional(),
+  project_keys: ProjectKeysSchema.optional(),
   shelf: z.string().min(1).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
@@ -920,8 +932,13 @@ export const memoriesRouter = router({
         });
       }
 
+      let moved: MemoryShape;
       try {
-        ctx.store.moveMemoryForPrincipal(ctx.principal, targetId as string, plannedShelf as string);
+        moved = ctx.store.moveMemoryForPrincipal(
+          ctx.principal,
+          targetId as string,
+          plannedShelf as string,
+        ) as unknown as MemoryShape;
       } catch (error) {
         if (
           error instanceof MemoryNotFoundForPrincipalError ||
@@ -943,10 +960,7 @@ export const memoriesRouter = router({
         "Proposal not found",
       );
       return {
-        target: ctx.store.getMemoryForPrincipal(
-          ctx.principal,
-          targetId as string,
-        ) as unknown as MemoryShape,
+        target: moved,
         proposal: resolved as unknown as MemoryShape,
       };
     }

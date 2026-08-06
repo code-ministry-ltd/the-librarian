@@ -20,6 +20,7 @@ import {
 } from "@librarian/core";
 import { CuratorNoteSchema } from "@librarian/core/schemas";
 import { afterEach, describe, expect, it } from "vitest";
+import { projectRecord } from "../fixtures/project-records.js";
 
 const SOURCE: Shelf = { id: "personal", prefix: "members/alice/", writable: true };
 const DESTINATION: Shelf = { id: "team", prefix: "team/", writable: true, label: "Team" };
@@ -108,6 +109,53 @@ describe("moveMemoryForPrincipal", () => {
     expect(fs.readFileSync(afterPath)).toEqual(before);
     expect(moved).toEqual(memory);
     expect(store.forShelf(DESTINATION).getMemory(memory.id)?.id).toBe(memory.id);
+  });
+
+  it("preserves project keys and returns a non-blocking warning for missing active destination projects", () => {
+    const { store, vaultDir } = freshStore();
+    store
+      .systemProjectStoresForShelf(DESTINATION)
+      .projects.create(projectRecord({ id: "prj_shared", key: "shared-project" }));
+    const { memory } = store.forShelf(SOURCE).createMemory(
+      {
+        title: "Project evidence",
+        body: "keep these bytes",
+        agent_id: PRINCIPAL.actorId,
+        project_keys: ["shared-project", "source-only"],
+      },
+      {},
+    );
+    const before = fs.readFileSync(memoryPath(vaultDir, SOURCE, memory.id));
+
+    const moved = store.moveMemoryForPrincipal(PRINCIPAL, memory.id, DESTINATION.id);
+
+    expect(fs.readFileSync(memoryPath(vaultDir, DESTINATION, memory.id))).toEqual(before);
+    expect(moved.project_keys).toEqual(["shared-project", "source-only"]);
+    expect(moved.move_warnings).toEqual([
+      expect.objectContaining({
+        code: "missing-active-projects",
+        project_keys: ["source-only"],
+        message: expect.stringMatching(/associations were preserved/i),
+      }),
+    ]);
+  });
+
+  it("returns the original memory shape when every destination project is active", () => {
+    const { store } = freshStore();
+    store
+      .systemProjectStoresForShelf(DESTINATION)
+      .projects.create(projectRecord({ id: "prj_shared", key: "shared-project" }));
+    const { memory } = store.forShelf(SOURCE).createMemory(
+      {
+        title: "Project evidence",
+        body: "body",
+        agent_id: PRINCIPAL.actorId,
+        project_keys: ["shared-project"],
+      },
+      {},
+    );
+
+    expect(store.moveMemoryForPrincipal(PRINCIPAL, memory.id, DESTINATION.id)).toEqual(memory);
   });
 
   it("invalidates both shelves' corpus indexes", async () => {

@@ -21,9 +21,8 @@
 import { curationContentFingerprint, curationNormalizedTitle } from "./grooming-fingerprint.js";
 import { redactSecrets } from "./grooming-redaction.js";
 
-// Memories no longer carry a project_key, so grooming collapses to a single
-// global slice (the per-project `common_project` variant was retired with the
-// memory project_key field). The discriminant is kept for run/hash provenance.
+// Optional plural project associations do not partition grooming: the curator
+// retains one global slice. The discriminant remains for run/hash provenance.
 export type SliceKind = "common_global";
 
 export interface EvidenceSlice {
@@ -42,6 +41,7 @@ export interface GroomingMemoryRecord {
   agentId: string | null;
   requiresApproval: boolean;
   isGlobal: boolean;
+  projectKeys?: string[];
   createdAt: string;
   updatedAt: string;
   /**
@@ -70,8 +70,8 @@ export interface GroomingTombstoneRecord {
 /**
  * The memory reads the curator's evidence gathering needs, abstracted over the
  * storage backend (plan 036 Phase 4). Implementations return records
- * newest-first (by `updatedAt`) and already capped at `limit`. Since memories
- * are project-less, there is a single global slice and no slice filtering.
+ * newest-first (by `updatedAt`) and already capped at `limit`. Project keys are
+ * evidence metadata, so there is a single global slice and no slice filtering.
  */
 export interface GroomingMemorySource {
   /** Slices with curatable (active|proposed) content; the scheduler due-gates them. */
@@ -106,6 +106,7 @@ export interface MemoryEvidenceItem {
   // a protected memory; legacy category strings are gone.
   requiresApproval: boolean;
   isGlobal: boolean;
+  projectKeys?: string[];
   // Present (and true) ONLY when a curator archive proposal is already open on
   // this memory (review F2) — the prompt tells the model to noop instead of
   // re-proposing. Omitted when false, to keep the evidence JSON lean.
@@ -200,6 +201,7 @@ function toItem(
     updatedAt: rec.updatedAt,
     requiresApproval: rec.requiresApproval,
     isGlobal: rec.isGlobal,
+    ...(rec.projectKeys !== undefined ? { projectKeys: rec.projectKeys } : {}),
     ...(rec.hasOpenCuratorFlag === true ? { has_open_curator_flag: true as const } : {}),
   };
 }

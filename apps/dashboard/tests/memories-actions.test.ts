@@ -88,6 +88,22 @@ describe("memories actions", () => {
     expect(revalidateMock).toHaveBeenCalledWith("/");
   });
 
+  it("moveMemoryAction returns the server's non-blocking project warning", async () => {
+    moveMock.mockResolvedValueOnce({
+      move_warnings: [
+        {
+          code: "missing-active-projects",
+          project_keys: ["source-only"],
+          message: "The move succeeded; associations were preserved.",
+        },
+      ],
+    });
+    await expect(actions.moveMemoryAction("mem_1", "team")).resolves.toEqual({
+      ok: true,
+      warning: "The move succeeded; associations were preserved.",
+    });
+  });
+
   it("proposeMoveAction queues the optional rationale and refreshes proposals", async () => {
     proposeMoveMock.mockResolvedValueOnce({});
     await expect(

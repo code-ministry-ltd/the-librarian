@@ -52,10 +52,24 @@ export interface MergeMemoryRequest {
  * identical in how they file it).
  */
 export function mergeMemory(store: MergeMemoryStore, request: MergeMemoryRequest): string {
-  const target = store.createMemory(request.replacement.input, request.replacement.options).memory
-    .id;
+  const hasExplicitKeys = Object.prototype.hasOwnProperty.call(
+    request.replacement.input,
+    "project_keys",
+  );
+  const sourceKeys = hasExplicitKeys
+    ? undefined
+    : stableUnion(...request.sourceIds.map((id) => store.getMemory?.(id)?.project_keys ?? []));
+  const input =
+    sourceKeys && sourceKeys.length > 0
+      ? { ...request.replacement.input, project_keys: sourceKeys }
+      : request.replacement.input;
+  const target = store.createMemory(input, request.replacement.options).memory.id;
   if (request.archiveActorId !== undefined) {
     for (const id of request.sourceIds) store.archiveMemory(id, request.archiveActorId);
   }
   return target;
+}
+
+function stableUnion(...groups: string[][]): string[] {
+  return [...new Set(groups.flat())];
 }

@@ -9,9 +9,8 @@
 //     stay authoritative).
 //   - `curator_note` provenance is set only via createMemory's trusted `options`
 //     channel, never via patch (which can't carry it anyway).
-//   - Ownership: every write is owned by the curator actor (slices are
-//     project-key-only post-D8). The agent_id is passed explicitly, never taken
-//     from the model.
+//   - Ownership: every write is owned by the curator actor. The agent_id is
+//     passed explicitly, never taken from the model.
 //   - Auto-applied merges archive their superseded sources in the same
 //     operation. Proposed ops NEVER mutate live sources here — they land as a
 //     new proposal carrying curator_note.supersedes (or, for archive, a flag).
@@ -40,6 +39,7 @@ interface StoredMemory {
   confidence: string;
   tags: string[];
   applies_to: string[];
+  project_keys?: string[];
 }
 
 // The store surface the apply layer needs (all mutation flows through these).
@@ -99,7 +99,7 @@ export function applyOperations(
     store: deps.store,
     runId: deps.runId,
     actorId: deps.actorId,
-    // Slices are project-key-only (rethink D8): the curator actor owns every write.
+    // The curator actor owns every write.
     owner: deps.actorId,
   };
 
@@ -423,6 +423,7 @@ function correctedMemory(
     applies_to: patch.applies_to ?? existing.applies_to,
     confidence: patch.confidence ?? existing.confidence,
     tags: patch.tags ?? existing.tags,
+    ...(existing.project_keys !== undefined ? { project_keys: existing.project_keys } : {}),
   };
 }
 
