@@ -11,6 +11,7 @@ const ALLOWED_PATCH_FIELDS = [
   "body",
   "agent_id",
   "applies_to",
+  "project_keys",
   "status",
   "confidence",
   "supersedes",

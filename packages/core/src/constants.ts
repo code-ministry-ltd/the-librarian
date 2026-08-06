@@ -13,6 +13,7 @@
 // conv_state.)
 
 import { Confidence, MemoryStatus } from "./schemas/common.js";
+import { ProjectKeysSchema } from "./schemas/project.js";
 
 export const DEFAULT_AGENT_ID = "unknown-agent";
 
@@ -49,6 +50,7 @@ export interface NormalizedMemoryInput {
   body: string;
   agent_id: string;
   applies_to: string[];
+  project_keys?: string[];
   confidence: Confidence;
   tags: string[];
   status: MemoryStatus;
@@ -59,11 +61,16 @@ export interface NormalizedMemoryInput {
 }
 
 export function normalizeMemoryInput(input: Record<string, unknown> = {}): NormalizedMemoryInput {
+  const projectKeys =
+    input.project_keys === undefined
+      ? undefined
+      : ProjectKeysSchema.parse(asArray(input.project_keys));
   return {
     title: normalizeString(input.title || input.content || "Untitled memory"),
     body: normalizeString(input.body || input.content || ""),
     agent_id: normalizeString(input.agent_id, DEFAULT_AGENT_ID),
     applies_to: asArray(input.applies_to),
+    ...(projectKeys !== undefined ? { project_keys: projectKeys } : {}),
     confidence: normalizeEnum(input.confidence, Object.values(Confidence), Confidence.Working),
     tags: asArray(input.tags),
     status: normalizeEnum(input.status, Object.values(MemoryStatus), MemoryStatus.Active),

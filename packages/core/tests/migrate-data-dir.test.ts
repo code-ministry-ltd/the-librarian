@@ -37,7 +37,7 @@ id: mem_legacy1
 title: Legacy memory
 agent_id: cli
 status: active
-project_key: null
+project_key: legacy-project
 domain: work
 category: tools
 visibility: common
@@ -115,9 +115,7 @@ curator_note: null
 Already in the current shape.
 `;
 
-// A handoff doc carrying a LIVE `project_key` frontmatter field. The frontmatter
-// sweep is scoped to memories/ only, so handoff project_key must survive — it is
-// retired ONLY on memories, never on handoffs.
+// A handoff doc carrying its native scalar `project_key` frontmatter field.
 const HANDOFF_DOC = `---
 id: handoff_live1
 title: Live handoff
@@ -321,7 +319,6 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
       "last_recalled_at",
       "recall_count",
       "usefulness_score",
-      "project_key",
       "priority",
     ]) {
       expect(swept).not.toContain(`${field}:`);
@@ -332,7 +329,9 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
       id: "mem_legacy1",
       status: "active",
       body: "The user prefers tabs over spaces.",
+      project_keys: ["legacy-project"],
     });
+    expect(matter(swept).data.project_key).toBe("legacy-project");
 
     // The proposal's retired curator_note tags are stripped; the proposal survives.
     const proposal = matter(
@@ -354,7 +353,7 @@ describe("migrateDataDir (rethink T26, spec §10)", () => {
     const handoff = matter(
       fs.readFileSync(path.join(vaultDir(), "handoffs", "live-handoff-live1.md"), "utf8"),
     );
-    // project_key is RETIRED on memories but LIVE on handoffs — it must survive.
+    // The scalar remains live compatibility input for memories and handoffs.
     expect(handoff.data.project_key).toBe("the-librarian");
   });
 

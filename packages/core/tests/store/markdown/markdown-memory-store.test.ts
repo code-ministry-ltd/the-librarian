@@ -64,6 +64,24 @@ describe("markdown MemoryStore — createMemory + getMemory", () => {
     expect(store.getMemory(memory.id)).toEqual(memory);
   });
 
+  it("creates a memory with optional project associations and leaves them absent when omitted", () => {
+    const { store } = makeStore();
+    const associated = store.createMemory({
+      agent_id: "codex",
+      title: "Briefing evidence",
+      body: "The compiler is live.",
+      project_keys: ["the-librarian"],
+    }).memory;
+    const unassociated = store.createMemory({
+      agent_id: "codex",
+      title: "General",
+      body: "Fact",
+    }).memory;
+
+    expect(associated.project_keys).toEqual(["the-librarian"]);
+    expect(unassociated).not.toHaveProperty("project_keys");
+  });
+
   it("getMemory returns null for an unknown id", () => {
     const { store } = makeStore();
     expect(store.getMemory("mem_ghost")).toBeNull();

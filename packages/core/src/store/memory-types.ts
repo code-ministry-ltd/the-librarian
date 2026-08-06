@@ -34,6 +34,8 @@ export interface Memory {
   status: string;
   tags: string[];
   applies_to: string[];
+  /** Shelf-local project relevance metadata; never an authorisation boundary. */
+  project_keys?: string[];
   supersedes: string[];
   conflicts_with: string[];
   // Open agent flags routing this memory to review (spec 047 / ADR 0006).

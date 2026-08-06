@@ -45,6 +45,11 @@ export const ProjectKeySchema = z
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "must be a lower-case slug");
 
+export const ProjectKeysSchema = z
+  .array(ProjectKeySchema)
+  .max(20)
+  .refine((values) => new Set(values).size === values.length, "project keys must be unique");
+
 export const ProjectSourceIdSchema = z
   .string()
   .trim()

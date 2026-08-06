@@ -16,6 +16,7 @@
 import matter from "gray-matter";
 import { z } from "zod";
 import { IsoTimestampSchema } from "../../schemas/common.js";
+import { ProjectKeysSchema } from "../../schemas/project.js";
 import type { Memory } from "../memory-store.js";
 
 const MemoryFrontmatterSchema = z.object({
@@ -26,6 +27,7 @@ const MemoryFrontmatterSchema = z.object({
   confidence: z.string(),
   tags: z.array(z.string()),
   applies_to: z.array(z.string()),
+  project_keys: ProjectKeysSchema.optional(),
   supersedes: z.array(z.string()),
   conflicts_with: z.array(z.string()),
   // Open agent flags routing the memory to review (spec 047 / ADR 0006).
@@ -62,6 +64,7 @@ export function serializeMemoryDocument(memory: Memory): string {
     confidence: memory.confidence,
     tags: memory.tags ?? [],
     applies_to: memory.applies_to ?? [],
+    ...(memory.project_keys !== undefined ? { project_keys: memory.project_keys } : {}),
     supersedes: memory.supersedes ?? [],
     conflicts_with: memory.conflicts_with ?? [],
     flags: memory.flags ?? [],
@@ -81,7 +84,8 @@ export function serializeMemoryDocument(memory: Memory): string {
 /** Parse a markdown document back into a `Memory`; teaching error on a bad shape. */
 export function parseMemoryDocument(raw: string): Memory {
   const { data, content } = matter(raw);
-  const result = MemoryFrontmatterSchema.safeParse(coerceDates(data));
+  const compatible = coerceLegacyProjectKey(coerceDates(data));
+  const result = MemoryFrontmatterSchema.safeParse(compatible);
   if (!result.success) {
     const detail = result.error.issues
       .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
@@ -90,12 +94,18 @@ export function parseMemoryDocument(raw: string): Memory {
   }
   // `updated_by` is optional: under exactOptionalPropertyTypes it must be OMITTED when
   // absent, never set to `undefined` (which zod's `.optional()` yields for a missing key).
-  const { updated_by, ...rest } = result.data;
+  const { updated_by, project_keys, ...rest } = result.data;
   return {
     ...rest,
     body: content.trim(),
     ...(updated_by !== undefined ? { updated_by } : {}),
+    ...(project_keys !== undefined ? { project_keys } : {}),
   };
+}
+
+function coerceLegacyProjectKey(data: Record<string, unknown>): Record<string, unknown> {
+  if (data.project_keys !== undefined || typeof data.project_key !== "string") return data;
+  return { ...data, project_keys: [data.project_key] };
 }
 
 function coerceDates(data: Record<string, unknown>): Record<string, unknown> {

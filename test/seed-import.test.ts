@@ -72,9 +72,16 @@ describe("seed lib — pure helpers", () => {
       title: "Elaine",
       tags: ["identity"],
       applies_to: ["Guybrush"],
+      project_keys: ["proj-x"],
     });
-    // project_key was retired on memories — the seed helper no longer carries it.
+    // Scalar compatibility input is normalised; callers never write it back.
     expect(withFm).not.toHaveProperty("project_key");
+    const plural = lib.rememberArgsFromMarkdown(
+      "plural.md",
+      "---\nproject_keys: [proj-x, proj-y]\nproject_key: ignored\n---\n# Plural\nbody",
+      "agent-a",
+    );
+    expect(plural.project_keys).toEqual(["proj-x", "proj-y"]);
     const noFm = lib.rememberArgsFromMarkdown("b.md", "# Plain\ntext", "agent-a");
     expect(noFm).toEqual({ agent_id: "agent-a", title: "Plain", body: "# Plain\ntext" });
 
@@ -91,6 +98,23 @@ describe("seed lib — pure helpers", () => {
     expect(
       lib.rememberArgsFromExtractRecord({ title: "T", body: "B", tags: ["x"] }, "fallback"),
     ).toEqual({ agent_id: "fallback", title: "T", body: "B", tags: ["x"] });
+    expect(
+      lib.rememberArgsFromExtractRecord(
+        { title: "T", body: "B", project_key: "legacy-project" },
+        "fallback",
+      ),
+    ).toMatchObject({ project_keys: ["legacy-project"] });
+    expect(
+      lib.rememberArgsFromExtractRecord(
+        {
+          title: "T",
+          body: "B",
+          project_key: "ignored",
+          project_keys: ["current-project"],
+        },
+        "fallback",
+      ),
+    ).toMatchObject({ project_keys: ["current-project"] });
   });
 
   it("preflightLlm resolves when the LLM answers, and rethrows when it errors", async () => {

@@ -39,6 +39,7 @@ function setup() {
       confidence: over.confidence ?? "working",
       tags: over.tags ?? [],
       applies_to: over.applies_to ?? [],
+      ...(over.project_keys !== undefined ? { project_keys: over.project_keys } : {}),
       supersedes: [],
       conflicts_with: [],
       status: over.status ?? "active",
@@ -111,6 +112,24 @@ describe("markdown MemoryStore — listMemories", () => {
     expect(store.listMemories({ requires_approval: true }).memories.map((m) => m.id)).toEqual([
       "c",
     ]);
+  });
+
+  it("filters project_keys by exact membership, with any requested key matching", () => {
+    const { store, seed } = setup();
+    seed({ id: "exact", project_keys: ["lib"] });
+    seed({ id: "longer", project_keys: ["the-lib"] });
+    seed({ id: "other", project_keys: ["website"] });
+    seed({ id: "absent" });
+
+    expect(store.listMemories({ project_keys: ["lib"] }).memories.map((m) => m.id)).toEqual([
+      "exact",
+    ]);
+    expect(
+      store
+        .listMemories({ project_keys: ["lib", "website"] })
+        .memories.map((m) => m.id)
+        .sort(),
+    ).toEqual(["exact", "other"]);
   });
 
   it("filters by created_at from/to (to is end-of-day inclusive)", () => {

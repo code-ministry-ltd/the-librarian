@@ -148,6 +148,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       confidence: normalized.confidence,
       tags: normalized.tags,
       applies_to: normalized.applies_to,
+      ...(normalized.project_keys !== undefined ? { project_keys: normalized.project_keys } : {}),
       supersedes: [],
       conflicts_with: [],
       flags: [],
@@ -447,6 +448,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     let out = readAllMemories();
     if (filters.status) out = out.filter((m) => m.status === filters.status);
     if (filters.agent_id) out = out.filter((m) => m.agent_id === filters.agent_id);
+    if (Array.isArray(filters.project_keys) && filters.project_keys.length > 0) {
+      const wanted = filters.project_keys as string[];
+      out = out.filter((m) => wanted.some((key) => m.project_keys?.includes(key)));
+    }
     return out.sort((a, b) => cmpStr(b.updated_at, a.updated_at));
   }
 
@@ -472,6 +477,10 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     if (Array.isArray(filters.tags) && filters.tags.length > 0) {
       const wanted = filters.tags as string[];
       out = out.filter((m) => wanted.some((tag) => m.tags.includes(tag)));
+    }
+    if (Array.isArray(filters.project_keys) && filters.project_keys.length > 0) {
+      const wanted = filters.project_keys as string[];
+      out = out.filter((m) => wanted.some((key) => m.project_keys?.includes(key)));
     }
     if (filters.from) out = out.filter((m) => String(m.created_at) >= String(filters.from));
     if (filters.to) {

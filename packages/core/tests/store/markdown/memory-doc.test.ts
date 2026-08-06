@@ -62,17 +62,47 @@ describe("memory <-> document mapping", () => {
     expect(p.curator_note).toEqual({ source: "curator", run_id: "run_1", confidence: 0.9 });
   });
 
-  it("drops a legacy project_key / recall_count / usefulness_score / priority on read", () => {
-    // These fields were retired (memories went project-less; recall counters
-    // are gone; the priority field was removed). A pre-cutover doc still on
-    // disk carries them; the parser must strip them so the round-trip shape
-    // stays canonical.
+  it("round-trips plural project_keys and writes them in deterministic frontmatter order", () => {
+    const associated: Memory = { ...memory, project_keys: ["the-librarian", "website"] };
+    const raw = serializeMemoryDocument(associated);
+    expect(raw).toContain(
+      "applies_to:\n  - the-librarian\nproject_keys:\n  - the-librarian\n  - website\n",
+    );
+    expect(parseMemoryDocument(raw)).toEqual(associated);
+    expect(serializeMemoryDocument(parseMemoryDocument(raw))).toBe(raw);
+  });
+
+  it("keeps an absent project_keys field byte-compatible", () => {
+    const raw = serializeMemoryDocument(memory);
+    expect(raw).not.toMatch(/^project_keys:/m);
+    expect(serializeMemoryDocument(parseMemoryDocument(raw))).toBe(raw);
+    expect(parseMemoryDocument(raw)).not.toHaveProperty("project_keys");
+  });
+
+  it("normalises a legacy scalar project_key on read and writes only the plural form", () => {
+    const legacy = serializeMemoryDocument(memory).replace(
+      /^title:/m,
+      "project_key: legacy-proj\ntitle:",
+    );
+    const parsed = parseMemoryDocument(legacy);
+    expect(parsed.project_keys).toEqual(["legacy-proj"]);
+    const rewritten = serializeMemoryDocument(parsed);
+    expect(rewritten).toMatch(/^project_keys:\n {2}- legacy-proj$/m);
+    expect(rewritten).not.toMatch(/^project_key:/m);
+  });
+
+  it("prefers plural project_keys when a legacy scalar is also present", () => {
+    const plural = serializeMemoryDocument({ ...memory, project_keys: ["current-project"] });
+    const mixed = plural.replace(/^title:/m, "project_key: legacy-project\ntitle:");
+    expect(parseMemoryDocument(mixed).project_keys).toEqual(["current-project"]);
+  });
+
+  it("drops retired recall_count / usefulness_score / priority fields on read", () => {
     const raw = serializeMemoryDocument(memory).replace(
       /^title:/m,
-      "project_key: legacy-proj\nrecall_count: 7\nusefulness_score: 4\npriority: high\ntitle:",
+      "recall_count: 7\nusefulness_score: 4\npriority: high\ntitle:",
     );
     const p = parseMemoryDocument(raw) as Record<string, unknown>;
-    expect(p.project_key).toBeUndefined();
     expect(p.recall_count).toBeUndefined();
     expect(p.usefulness_score).toBeUndefined();
     expect(p.priority).toBeUndefined();

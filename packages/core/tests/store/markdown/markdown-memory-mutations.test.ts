@@ -40,6 +40,7 @@ function setup() {
       confidence: "working",
       tags: over.tags ?? [],
       applies_to: [],
+      ...(over.project_keys !== undefined ? { project_keys: over.project_keys } : {}),
       supersedes: [],
       conflicts_with: [],
       status: over.status ?? "active",
@@ -63,6 +64,14 @@ describe("markdown MemoryStore — updateMemory", () => {
     expect(updated!.title).toBe("new");
     expect(updated!.body).toBe("new body");
     expect(updated!.updated_at).toBe(NOW);
+  });
+
+  it("preserves project_keys when omitted and clears them only for an explicit empty array", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", project_keys: ["the-librarian"] });
+
+    expect(store.updateMemory("m", { body: "new" })?.project_keys).toEqual(["the-librarian"]);
+    expect(store.updateMemory("m", { project_keys: [] })?.project_keys).toEqual([]);
   });
 
   it("throws for an unknown id", () => {

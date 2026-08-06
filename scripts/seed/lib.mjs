@@ -115,7 +115,8 @@ export function rememberArgsFromMarkdown(relPath, raw, agentId) {
   if (Array.isArray(data.applies_to)) {
     args.applies_to = data.applies_to.filter((a) => typeof a === "string");
   }
-  // `project_key` was retired on memories (they're project-less now) — drop it.
+  const projectKeys = importedProjectKeys(data);
+  if (projectKeys !== undefined) args.project_keys = projectKeys;
   return args;
 }
 
@@ -129,8 +130,19 @@ export function rememberArgsFromExtractRecord(rec, fallbackAgentId) {
   if (Array.isArray(rec.tags)) args.tags = rec.tags.filter((t) => typeof t === "string");
   if (Array.isArray(rec.applies_to))
     args.applies_to = rec.applies_to.filter((a) => typeof a === "string");
-  // `project_key` was retired on memories (they're project-less now) — drop it.
+  const projectKeys = importedProjectKeys(rec);
+  if (projectKeys !== undefined) args.project_keys = projectKeys;
   return args;
+}
+
+function importedProjectKeys(input) {
+  if (Array.isArray(input.project_keys)) {
+    return input.project_keys.filter((key) => typeof key === "string");
+  }
+  if (typeof input.project_key === "string" && input.project_key.length > 0) {
+    return [input.project_key];
+  }
+  return undefined;
 }
 
 /** Read exported `extract/*.json` records from a directory. */

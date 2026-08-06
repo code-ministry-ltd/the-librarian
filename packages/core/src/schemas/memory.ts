@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { ConfidenceSchema, IdSchema, IsoTimestampSchema, MemoryStatusSchema } from "./common.js";
+import { ProjectKeysSchema } from "./project.js";
 
 // Curator provenance attached to a memory (memory-curator spec §8). All fields
 // optional so partial provenance (e.g. just run/operation ids on an auto-applied
@@ -66,6 +67,9 @@ export const MemorySchema = z.object({
   confidence: ConfidenceSchema,
   tags: z.array(z.string()),
   applies_to: z.array(z.string()),
+  // Shelf-local relevance metadata only. Shelf policy remains the sole
+  // authorisation boundary.
+  project_keys: ProjectKeysSchema.optional(),
   supersedes: z.array(z.string()),
   conflicts_with: z.array(z.string()),
   created_at: IsoTimestampSchema,
@@ -99,6 +103,7 @@ export const MemoryInputSchema = z.object({
   body: z.string().optional(),
   content: z.string().optional(),
   applies_to: z.array(z.string()).optional(),
+  project_keys: ProjectKeysSchema.optional(),
   confidence: ConfidenceSchema.optional(),
   tags: z.array(z.string()).optional(),
   status: MemoryStatusSchema.optional(),
