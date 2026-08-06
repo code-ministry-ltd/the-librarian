@@ -497,12 +497,24 @@ export {
 export {
   type MarkdownHandoffStoreDeps,
   type MarkdownMemoryStoreDeps,
+  type MarkdownProjectStoreDeps,
+  type MarkdownProjectSuggestionStoreDeps,
+  type MarkdownProjectUpdateStoreDeps,
   createMarkdownHandoffStore,
   createMarkdownMemoryStore,
+  createMarkdownProjectStore,
+  createMarkdownProjectSuggestionStore,
+  createMarkdownProjectUpdateStore,
   parseHandoffDocument,
   parseMemoryDocument,
+  parseProjectDocument,
+  parseProjectSuggestionDocument,
+  parseProjectUpdateDocument,
   serializeHandoffDocument,
   serializeMemoryDocument,
+  serializeProjectDocument,
+  serializeProjectSuggestionDocument,
+  serializeProjectUpdateDocument,
 } from "./store/markdown/index.js";
 export {
   type JsonIntakeStoreDeps,
@@ -832,6 +844,9 @@ export {
 export * from "./schemas/project.js";
 export * from "./schemas/project-update.js";
 export * from "./schemas/project-suggestion.js";
+export * from "./store/project-store.js";
+export * from "./store/project-update-store.js";
+export * from "./store/project-suggestion-store.js";
 export {
   type ClaimedBy,
   type HandoffDetail,

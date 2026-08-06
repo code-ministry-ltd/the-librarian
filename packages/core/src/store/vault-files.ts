@@ -33,9 +33,21 @@ import { renameWikilinkTarget } from "./corpus/wikilink.js";
 import type { FileCommit, GitHistory } from "./git/git-history.js";
 import { parseHandoffDocument } from "./markdown/handoff-doc.js";
 import { parseMemoryDocument, serializeMemoryDocument } from "./markdown/memory-doc.js";
+import { parseProjectDocument } from "./markdown/project-doc.js";
+import { parseProjectSuggestionDocument } from "./markdown/project-suggestion-doc.js";
+import { parseProjectUpdateDocument } from "./markdown/project-update-doc.js";
 
 /** What a vault path IS, deciding which validation rules a write must pass. */
-export type VaultFileKind = "memory" | "handoff" | "reference" | "primer" | "curator" | "other";
+export type VaultFileKind =
+  | "memory"
+  | "handoff"
+  | "project"
+  | "project-update"
+  | "project-suggestion"
+  | "reference"
+  | "primer"
+  | "curator"
+  | "other";
 
 export interface VaultTreeNode {
   /** Basename (e.g. "primer.md", "memories"). */
@@ -197,9 +209,17 @@ const HIDDEN_TOP_LEVEL = new Set([".git", ".index", "inbox"]);
 // (spec 062, `validateShelfSet`) reject a shelf prefix whose first segment shadows a
 // canonical name, reusing the SAME source-of-truth list instead of duplicating it.
 export const CANONICAL_TOP_LEVEL = new Map(
-  [...HIDDEN_TOP_LEVEL, ".curator", "memories", "handoffs", "references", PRIMER_PATH].map(
-    (name) => [name.toLowerCase(), name] as const,
-  ),
+  [
+    ...HIDDEN_TOP_LEVEL,
+    ".curator",
+    "memories",
+    "handoffs",
+    "projects",
+    "project-updates",
+    "project-suggestions",
+    "references",
+    PRIMER_PATH,
+  ].map((name) => [name.toLowerCase(), name] as const),
 );
 
 /** Is this tree entry part of the visible explorer surface? */
@@ -303,6 +323,9 @@ export function vaultFileKind(relPath: string, prefix: string = ""): VaultFileKi
   if (relative.startsWith(".curator/")) return "curator";
   if (relative.startsWith("memories/")) return "memory";
   if (relative.startsWith("handoffs/")) return "handoff";
+  if (relative.startsWith("projects/")) return "project";
+  if (relative.startsWith("project-updates/")) return "project-update";
+  if (relative.startsWith("project-suggestions/")) return "project-suggestion";
   if (relative.startsWith("references/")) return "reference";
   return "other";
 }
@@ -318,6 +341,21 @@ function missingHandoffHeadings(body: string): string[] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function projectDocumentPathError(
+  relPath: string,
+  prefix: string,
+  directory: string,
+  id: string,
+): string | null {
+  const relative = prefix === "" ? relPath : relPath.slice(prefix.length);
+  const expected = `${directory}/${id}.md`;
+  if (relative === expected) return null;
+  if (relative.split("/").length !== 2) {
+    return `project documents must live directly under ${directory}/`;
+  }
+  return `project document filename must match immutable id '${id}' (expected '${expected}')`;
 }
 
 /**
@@ -364,6 +402,38 @@ export function validateVaultFile(relPath: string, raw: string, prefix: string =
         errors.push(`document body is missing the required heading '## ${heading}'`);
       }
       return errors;
+    }
+    case "project": {
+      try {
+        const project = parseProjectDocument(raw);
+        const pathError = projectDocumentPathError(relPath, prefix, "projects", project.id);
+        return pathError === null ? [] : [pathError];
+      } catch (error) {
+        return [errorMessage(error)];
+      }
+    }
+    case "project-update": {
+      try {
+        const update = parseProjectUpdateDocument(raw);
+        const pathError = projectDocumentPathError(relPath, prefix, "project-updates", update.id);
+        return pathError === null ? [] : [pathError];
+      } catch (error) {
+        return [errorMessage(error)];
+      }
+    }
+    case "project-suggestion": {
+      try {
+        const suggestion = parseProjectSuggestionDocument(raw);
+        const pathError = projectDocumentPathError(
+          relPath,
+          prefix,
+          "project-suggestions",
+          suggestion.id,
+        );
+        return pathError === null ? [] : [pathError];
+      } catch (error) {
+        return [errorMessage(error)];
+      }
     }
     case "primer":
     case "curator": {

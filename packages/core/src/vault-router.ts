@@ -147,8 +147,8 @@ export const defaultVaultRouter: VaultRouter = {
  * (a non-NFC prefix is REFUSED, never silently rewritten — this validator returns void, so
  * rewriting would desync the prefix the router declared from the one the store uses), and a first
  * segment that does not shadow a canonical top-level name (the real {@link CANONICAL_TOP_LEVEL}
- * list: `memories/`, `handoffs/`, `references/`, `.curator/`, `inbox/`, `primer.md`, `.index`,
- * `.git`). The EMPTY prefix is the vault root and is exempt from the syntax rules.
+ * list, including memories, handoffs, projects, project evidence, references and vault
+ * plumbing). The EMPTY prefix is the vault root and is exempt from the syntax rules.
  *
  * Cross-set rules: prefixes are DISJOINT — no duplicates and no nesting (`team/` vs `team/sub/`,
  * and the empty root prefix nests every other) — and the ids of WRITABLE shelves are unique (so
@@ -224,8 +224,7 @@ function validateShelf(shelf: Shelf): void {
     const canonical = CANONICAL_TOP_LEVEL.get(first.toLowerCase()) ?? first;
     throw new Error(
       `${where}: prefix's first segment "${first}" shadows the canonical top-level name ` +
-        `"${canonical}" (memories/, handoffs/, references/, .curator/, inbox/, primer.md, ` +
-        `.index, .git are reserved)`,
+        `"${canonical}" (canonical document directories and vault plumbing are reserved)`,
     );
   }
 }

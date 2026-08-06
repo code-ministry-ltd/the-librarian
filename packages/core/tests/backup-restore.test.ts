@@ -8,9 +8,11 @@ import {
   RESTORE_FAILED_MARKER,
   RESTORE_MARKER,
   applyPendingRestore,
+  serializeProjectDocument,
   stageRestore,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { projectRecord } from "./fixtures/project-records.js";
 
 let dataDir: string;
 
@@ -141,6 +143,45 @@ describe("applyPendingRestore", () => {
     );
     writeMarker();
     expect(applyPendingRestore(dataDir).applied).toBe(true);
+  });
+
+  it("accepts a shelf carrying only a valid project record", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) => {
+      const projects = path.join(d, "members", "x", "projects");
+      fs.mkdirSync(projects, { recursive: true });
+      fs.writeFileSync(
+        path.join(projects, "prj_123.md"),
+        serializeProjectDocument(projectRecord()),
+      );
+    });
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+  });
+
+  it("accepts a root vault carrying only a valid project record", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) => {
+      const projects = path.join(d, "projects");
+      fs.mkdirSync(projects, { recursive: true });
+      fs.writeFileSync(
+        path.join(projects, "prj_123.md"),
+        serializeProjectDocument(projectRecord()),
+      );
+    });
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(true);
+  });
+
+  it("does not accept a foreign nested projects directory without a valid project record", () => {
+    makeVault(path.join(dataDir, "vault"), "live\n");
+    makeRepoDir(path.join(dataDir, ".restore-staging"), (d) => {
+      const projects = path.join(d, "src", "projects");
+      fs.mkdirSync(projects, { recursive: true });
+      fs.writeFileSync(path.join(projects, "README.md"), "ordinary source projects\n");
+    });
+    writeMarker();
+    expect(applyPendingRestore(dataDir).applied).toBe(false);
   });
 
   it("accepts a real shelf tree — the canonical cluster beneath a 2-segment prefix (members/x/)", () => {

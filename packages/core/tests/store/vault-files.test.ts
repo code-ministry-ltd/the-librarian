@@ -18,9 +18,17 @@ import {
   VaultWriteConflictError,
   createVault,
   createVaultFileStore,
+  serializeProjectDocument,
+  serializeProjectSuggestionDocument,
+  serializeProjectUpdateDocument,
   validateVaultFile,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  projectRecord,
+  projectSuggestionRecord,
+  projectUpdateRecord,
+} from "../fixtures/project-records.js";
 
 let dataDir: string;
 let vault: Vault;
@@ -95,6 +103,10 @@ const VALID_HANDOFF = [
   "",
 ].join("\n");
 
+const VALID_PROJECT = serializeProjectDocument(projectRecord());
+const VALID_PROJECT_UPDATE = serializeProjectUpdateDocument(projectUpdateRecord());
+const VALID_PROJECT_SUGGESTION = serializeProjectSuggestionDocument(projectSuggestionRecord());
+
 describe("vault file tree (T18)", () => {
   it("lists the vault recursively — dirs first, with name/path/type/mtime", () => {
     vault.writeText("primer.md", "Primer text.\n");
@@ -115,6 +127,21 @@ describe("vault file tree (T18)", () => {
     expect(file?.name).toBe("elaine-1.md");
     expect(file?.type).toBe("file");
     expect(file?.mtime).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("shows the three canonical project document directories", () => {
+    vault.writeText("projects/prj_123.md", VALID_PROJECT);
+    vault.writeText("project-updates/pru_123.md", VALID_PROJECT_UPDATE);
+    vault.writeText("project-suggestions/prs_123.md", VALID_PROJECT_SUGGESTION);
+
+    expect(store.tree().map((node) => node.path)).toEqual([
+      "project-suggestions",
+      "project-updates",
+      "projects",
+    ]);
+    expect(store.readFile("projects/prj_123.md").kind).toBe("project");
+    expect(store.readFile("project-updates/pru_123.md").kind).toBe("project-update");
+    expect(store.readFile("project-suggestions/prs_123.md").kind).toBe("project-suggestion");
   });
 
   it("excludes vault plumbing: .git, the inbox queue, .index, and stray dotfiles", () => {
@@ -171,6 +198,9 @@ describe("path discipline (T18.3)", () => {
     // skipping its rules (hidden surface, per-kind validation, byte caps).
     "Inbox/raw-item.md",
     "Memories/elaine.md",
+    "Projects/prj_123.md",
+    "Project-Updates/pru_123.md",
+    "Project-Suggestions/prs_123.md",
     "PRIMER.MD",
     "",
   ])("rejects '%s' without touching disk", (badPath) => {
@@ -217,6 +247,24 @@ describe("per-kind validation (T19.1)", () => {
     const missing = VALID_HANDOFF.replace("## Open questions", "## Closing thoughts");
     const errors = validateVaultFile("handoffs/ho_123.md", missing);
     expect(errors).toEqual([expect.stringContaining("'## Open questions'")]);
+  });
+
+  it("project records, updates and suggestions must satisfy their strict codecs", () => {
+    expect(validateVaultFile("projects/prj_123.md", VALID_PROJECT)).toEqual([]);
+    expect(validateVaultFile("project-updates/pru_123.md", VALID_PROJECT_UPDATE)).toEqual([]);
+    expect(validateVaultFile("project-suggestions/prs_123.md", VALID_PROJECT_SUGGESTION)).toEqual(
+      [],
+    );
+
+    expect(validateVaultFile("projects/prj_123.md", "broken")[0]).toMatch(/project/i);
+    expect(validateVaultFile("project-updates/pru_123.md", "broken")[0]).toMatch(/project update/i);
+    expect(validateVaultFile("project-suggestions/prs_123.md", "broken")[0]).toMatch(
+      /project suggestion/i,
+    );
+    expect(validateVaultFile("projects/wrong.md", VALID_PROJECT)[0]).toMatch(/filename.*id/i);
+    expect(validateVaultFile("projects/nested/prj_123.md", VALID_PROJECT)[0]).toMatch(
+      /directly under projects/i,
+    );
   });
 
   it("primer.md and .curator addendums are capped at 2 KB", () => {

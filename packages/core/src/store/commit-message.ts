@@ -68,6 +68,13 @@ export const commitSubject = {
   handoffClaim: (id: string): string => `handoff: claim ${oneLine(id)}`,
   handoffPurge: (id: string): string => `handoff: purge ${oneLine(id)}`,
 
+  // ── project briefings (project Markdown stores) ──────────────────────────────
+  projectCreate: (id: string): string => `project: create ${oneLine(id)}`,
+  projectUpdate: (id: string): string => `project: update ${oneLine(id)}`,
+  projectUpdateAppend: (id: string): string => `project-update: append ${oneLine(id)}`,
+  projectSuggestionCreate: (id: string): string => `project-suggestion: create ${oneLine(id)}`,
+  projectSuggestionUpdate: (id: string): string => `project-suggestion: update ${oneLine(id)}`,
+
   // ── inbox (librarian-store.ts) ───────────────────────────────────────────────
   inboxSubmit: (id: string): string => `inbox: submit ${oneLine(id)}`,
   inboxConsolidateSweep: (): string => "inbox: consolidate sweep",

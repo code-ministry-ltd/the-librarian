@@ -15,6 +15,7 @@ import path from "node:path";
 import { resolveVaultPath } from "../store/corpus/index.js";
 import { cloneVaultBackup } from "../store/git/index.js";
 import type { LibrarianStore } from "../store/librarian-store.js";
+import { parseProjectDocument } from "../store/markdown/project-doc.js";
 import { MAX_SHELF_PREFIX_SEGMENTS, isLegalShelfSegment } from "../vault-router.js";
 import { resolveBackupRemote } from "./config.js";
 
@@ -74,17 +75,17 @@ function restorePaths(dataDir: string): RestorePaths {
 // repo with ONE canonical-named dir up to two levels deep, so a foreign repo that merely contained a
 // nested `references/` folder passed):
 //
-//   ROOT (OSS single-shelf): a canonical entry (`memories`/`inbox`/`references`/`handoffs`) directly
-//     at the vault root. This restores the PRE-062 semantics EXACTLY — `existsSync` (file OR dir), any
-//     one of the four — so the default-path behaviour is unchanged (062 had silently flipped it to
-//     `isDir`; a degenerate root FILE named `memories` is accepted as pre-062).
+//   ROOT (OSS single-shelf): one legacy canonical entry
+//     (`memories`/`inbox`/`references`/`handoffs`) directly at the vault root, preserving the
+//     PRE-062 `existsSync` semantics exactly; or a `projects/` directory containing at least one
+//     valid, filename-matched Project document.
 //
 //   NESTED (Teams shelf-prefixed, spec 062 / ADR 0011 Decision 5): the canonical CLUSTER beneath a
 //     shelf prefix of up to MAX_SHELF_PREFIX_SEGMENTS segments (`team/`, `members/x/`). A "cluster"
-//     is a `memories/` dir (the primary Librarian dir — a minimally-used shelf has ONLY this, so its
-//     presence beneath a legal prefix is signal enough), OR at least TWO of the four canonical DIRS,
-//     OR one canonical dir plus a `.curator/` or `primer.md` sibling — enough co-located Librarian
-//     structure that a foreign repo (e.g. a `src/references/` folder) won't trip it. Every
+//     is a `memories/` dir, a valid `projects/<id>.md`, at least TWO recognised data dirs, or one
+//     recognised data dir plus a `.curator/` or `primer.md` sibling — enough co-located Librarian
+//     structure that a foreign repo (e.g. a `src/references/` or `src/projects/` folder) won't trip
+//     it. Every
 //     intermediate prefix segment must be shelf-legal (reusing {@link isLegalShelfSegment}, so the
 //     scan matches the router's prefix rules), and the descent is bounded to the SAME depth the
 //     validator caps prefixes at — so a backed-up shelf tree is always restorable, by construction.
@@ -98,7 +99,8 @@ function restorePaths(dataDir: string): RestorePaths {
 // This is a "does this look like a vault AT ALL?" guard, not a full structural validation, so it
 // short-circuits on the first hit and never walks the whole tree. `.git` is never a shelf prefix, so
 // it is skipped on descent.
-const VAULT_DIRS = ["memories", "inbox", "references", "handoffs"];
+const LEGACY_VAULT_DIRS = ["memories", "inbox", "references", "handoffs"];
+const PROJECT_AUXILIARY_DIRS = ["project-updates", "project-suggestions"];
 
 function isDir(p: string): boolean {
   try {
@@ -108,13 +110,36 @@ function isDir(p: string): boolean {
   }
 }
 
-// A shelf-prefix directory carries the canonical CLUSTER: a `memories/` dir (the primary Librarian
-// dir — sufficient on its own), OR ≥2 of the four canonical dirs, OR 1 canonical dir plus a
-// `.curator/` or `primer.md` sibling. (Dirs only — a shelf prefix's canonical entries are
-// directories; the file-named degenerate case is a root-only, pre-062 concession.)
+function hasValidProjectDocument(dir: string): boolean {
+  const projectsDir = path.join(dir, "projects");
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  return entries.some((entry) => {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) return false;
+    try {
+      const project = parseProjectDocument(
+        fs.readFileSync(path.join(projectsDir, entry.name), "utf8"),
+      );
+      return entry.name === `${project.id}.md`;
+    } catch {
+      return false;
+    }
+  });
+}
+
+// A shelf-prefix directory carries the canonical CLUSTER: a `memories/` dir, a valid Project
+// document, ≥2 recognised data dirs, or one recognised data dir plus a `.curator/` or `primer.md`
+// sibling. The file-named degenerate case remains a root-only, pre-062 concession.
 function hasCanonicalCluster(dir: string): boolean {
   if (isDir(path.join(dir, "memories"))) return true;
-  const canonical = VAULT_DIRS.filter((name) => isDir(path.join(dir, name))).length;
+  if (hasValidProjectDocument(dir)) return true;
+  const canonical = [...LEGACY_VAULT_DIRS, ...PROJECT_AUXILIARY_DIRS].filter((name) =>
+    isDir(path.join(dir, name)),
+  ).length;
   if (canonical >= 2) return true;
   return (
     canonical >= 1 &&
@@ -145,7 +170,8 @@ function hasNestedShelfCluster(baseDir: string, depthFromRoot: number): boolean 
 function isLibrarianVault(dir: string): boolean {
   if (!fs.existsSync(path.join(dir, ".git"))) return false;
   // Root arm: PRE-062 semantics exactly — existsSync (file OR dir), any of the four.
-  if (VAULT_DIRS.some((name) => fs.existsSync(path.join(dir, name)))) return true;
+  if (LEGACY_VAULT_DIRS.some((name) => fs.existsSync(path.join(dir, name)))) return true;
+  if (hasValidProjectDocument(dir)) return true;
   // Nested arm: a shelf-prefixed layout — the canonical cluster beneath a legal shelf prefix.
   return hasNestedShelfCluster(dir, 0);
 }
@@ -174,7 +200,7 @@ export function stageRestore(store: LibrarianStore): StageRestoreResult {
     fs.rmSync(stagedVault, { recursive: true, force: true });
     throw new Error(
       "restore: the cloned repo does not look like a Librarian vault " +
-        "(no memories/inbox/references/handoffs) — check the configured backup repo",
+        "(no memories/inbox/references/handoffs/projects) — check the configured backup repo",
     );
   }
 

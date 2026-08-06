@@ -4,5 +4,8 @@ export * from "./intake-store.js";
 export * from "./split-memory.js";
 export * from "./settings-store.js";
 export * from "./handoff-store.js";
+export * from "./project-store.js";
+export * from "./project-update-store.js";
+export * from "./project-suggestion-store.js";
 export * from "./vault-files.js";
 export * from "./sidecar/refusal-log.js";

@@ -111,6 +111,15 @@ describe("validateShelfSet — per-shelf prefix violations throw naming the shel
     );
   });
 
+  it.each(["projects/", "project-updates/", "project-suggestions/"])(
+    "rejects a project document directory as a shelf prefix (%s)",
+    (prefix) => {
+      expect(() => validateShelfSet([shelf("x", prefix)])).toThrow(
+        /shadows the canonical top-level name/,
+      );
+    },
+  );
+
   it("rejects a hidden canonical name too (.git/)", () => {
     expect(() => validateShelfSet([shelf("x", ".git/")])).toThrow(
       /shadows the canonical top-level name "\.git"/,

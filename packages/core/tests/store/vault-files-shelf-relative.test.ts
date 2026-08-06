@@ -33,6 +33,9 @@ describe("assertVaultFilePath — shelf-relative visibility (spec 062 SC 2)", ()
   const cases: { rel: string; accepts: boolean }[] = [
     { rel: "memories/note.md", accepts: true }, // canonical layout beneath the prefix
     { rel: "handoffs/h.md", accepts: true },
+    { rel: "projects/prj_1.md", accepts: true },
+    { rel: "project-updates/pru_1.md", accepts: true },
+    { rel: "project-suggestions/prs_1.md", accepts: true },
     { rel: "references/web/r.md", accepts: true },
     { rel: ".curator/intake-addendum.md", accepts: true }, // the dot-dir exception, shelf-relative
     { rel: "inbox/item.md", accepts: false }, // inbox hidden at shelf depth 0
@@ -78,6 +81,9 @@ describe("assertVaultFilePath — empty prefix is byte-for-byte today's behaviou
     { rel: "primer.md", expected: "primer.md" },
     { rel: "memories/a.md", expected: "memories/a.md" },
     { rel: "handoffs/h.md", expected: "handoffs/h.md" },
+    { rel: "projects/prj_1.md", expected: "projects/prj_1.md" },
+    { rel: "project-updates/pru_1.md", expected: "project-updates/pru_1.md" },
+    { rel: "project-suggestions/prs_1.md", expected: "project-suggestions/prs_1.md" },
     { rel: "references/web/r.md", expected: "references/web/r.md" },
     { rel: ".curator/grooming-addendum.md", expected: ".curator/grooming-addendum.md" },
     { rel: "inbox/i.md", expected: "refused" }, // depth-0 inbox hidden
@@ -103,6 +109,11 @@ describe("vaultFileKind — shelf-relative classification (spec 062 SC 2)", () =
   it("classifies the per-shelf kinds beneath the prefix", () => {
     expect(vaultFileKind("members/x/memories/a.md", PREFIX)).toBe("memory");
     expect(vaultFileKind("members/x/handoffs/h.md", PREFIX)).toBe("handoff");
+    expect(vaultFileKind("members/x/projects/prj_1.md", PREFIX)).toBe("project");
+    expect(vaultFileKind("members/x/project-updates/pru_1.md", PREFIX)).toBe("project-update");
+    expect(vaultFileKind("members/x/project-suggestions/prs_1.md", PREFIX)).toBe(
+      "project-suggestion",
+    );
     expect(vaultFileKind("members/x/references/web/r.md", PREFIX)).toBe("reference");
     expect(vaultFileKind("members/x/.curator/a.md", PREFIX)).toBe("curator");
     expect(vaultFileKind("members/x/notes/free.md", PREFIX)).toBe("other");
@@ -123,6 +134,9 @@ describe("vaultFileKind — shelf-relative classification (spec 062 SC 2)", () =
       "primer.md",
       "memories/a.md",
       "handoffs/h.md",
+      "projects/prj_1.md",
+      "project-updates/pru_1.md",
+      "project-suggestions/prs_1.md",
       "references/r.md",
       ".curator/a.md",
       "random.md",
@@ -132,6 +146,9 @@ describe("vaultFileKind — shelf-relative classification (spec 062 SC 2)", () =
     }
     expect(vaultFileKind("memories/a.md")).toBe("memory");
     expect(vaultFileKind("handoffs/h.md")).toBe("handoff");
+    expect(vaultFileKind("projects/prj_1.md")).toBe("project");
+    expect(vaultFileKind("project-updates/pru_1.md")).toBe("project-update");
+    expect(vaultFileKind("project-suggestions/prs_1.md")).toBe("project-suggestion");
     expect(vaultFileKind("references/r.md")).toBe("reference");
     expect(vaultFileKind(".curator/a.md")).toBe("curator");
     expect(vaultFileKind("primer.md")).toBe("primer");
