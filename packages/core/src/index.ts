@@ -583,6 +583,7 @@ export {
   type IntakeInboxOptions,
   type LibrarianStore,
   type LibrarianStoreOptions,
+  type ProjectSystemStores,
   type RollbackAddendumResult,
   type ShelfScopedStore,
   type VaultActivityEntry,

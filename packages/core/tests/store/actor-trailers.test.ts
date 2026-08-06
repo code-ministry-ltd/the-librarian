@@ -12,6 +12,11 @@ import os from "node:os";
 import path from "node:path";
 import { type LibrarianStore, type LlmClient, createLibrarianStore } from "@librarian/core";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  projectRecord,
+  projectSuggestionRecord,
+  projectUpdateRecord,
+} from "../fixtures/project-records.js";
 
 const dataDirs: string[] = [];
 afterEach(() => {
@@ -185,6 +190,37 @@ describe("actor trailers on every verb (spec 064 T4 / SC 4)", () => {
     expect(trailer(vaultRoot)).toBe("");
     expect(updatedByOf(vaultRoot, rel)).toBe("bob");
 
+    store.close();
+  });
+
+  it("project, update and suggestion mutations trailer their acting principals", () => {
+    const { store, vaultRoot } = freshStore();
+    const project = store.projects.create(projectRecord(), "admin-alice");
+    expect(subject(vaultRoot)).toBe("project: create prj_123");
+    expect(trailer(vaultRoot)).toBe("admin-alice");
+
+    store.projects.update({ ...project, updated_at: "2026-08-06T13:00:00.000Z" }, "curator-bob");
+    expect(subject(vaultRoot)).toBe("project: update prj_123");
+    expect(trailer(vaultRoot)).toBe("curator-bob");
+
+    store.projectUpdates.append(projectUpdateRecord(), "curator-carol");
+    expect(subject(vaultRoot)).toBe("project-update: append pru_123");
+    expect(trailer(vaultRoot)).toBe("curator-carol");
+
+    const suggestion = store.projectSuggestions.create(projectSuggestionRecord(), "curator-dave");
+    expect(subject(vaultRoot)).toBe("project-suggestion: create prs_123");
+    expect(trailer(vaultRoot)).toBe("curator-dave");
+
+    store.projectSuggestions.update(
+      {
+        ...suggestion,
+        status: "rejected",
+        resolved_at: "2026-08-06T13:00:00.000Z",
+      },
+      "admin-eve",
+    );
+    expect(subject(vaultRoot)).toBe("project-suggestion: update prs_123");
+    expect(trailer(vaultRoot)).toBe("admin-eve");
     store.close();
   });
 });

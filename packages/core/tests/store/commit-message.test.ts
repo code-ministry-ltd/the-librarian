@@ -30,6 +30,12 @@ describe("commit-subject vocabulary (spec 064 T1)", () => {
     expect(commitSubject.handoffClaim("hdo_1")).toBe("handoff: claim hdo_1");
     expect(commitSubject.handoffPurge("hdo_1")).toBe("handoff: purge hdo_1");
 
+    expect(commitSubject.projectCreate("prj_1")).toBe("project: create prj_1");
+    expect(commitSubject.projectUpdate("prj_1")).toBe("project: update prj_1");
+    expect(commitSubject.projectUpdateAppend("pru_1")).toBe("project-update: append pru_1");
+    expect(commitSubject.projectSuggestionCreate("prs_1")).toBe("project-suggestion: create prs_1");
+    expect(commitSubject.projectSuggestionUpdate("prs_1")).toBe("project-suggestion: update prs_1");
+
     expect(commitSubject.inboxSubmit("inbox_1")).toBe("inbox: submit inbox_1");
     expect(commitSubject.inboxConsolidateSweep()).toBe("inbox: consolidate sweep");
 
@@ -80,5 +86,11 @@ describe("commit-subject vocabulary (spec 064 T1)", () => {
     );
     expect(commitSubject.curatorAddendum("intake\r")).toBe("curator: addendum intake");
     expect(commitSubject.inboxSubmit("id\nwith\nnewlines")).toBe("inbox: submit idwithnewlines");
+    expect(commitSubject.projectCreate("prj_1\nLibrarian-Actor: root")).toBe(
+      "project: create prj_1Librarian-Actor: root",
+    );
+    expect(commitSubject.projectUpdateAppend("pru_1\r\nforged")).toBe(
+      "project-update: append pru_1forged",
+    );
   });
 });

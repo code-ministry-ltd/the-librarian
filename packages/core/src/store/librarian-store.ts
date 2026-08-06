@@ -64,9 +64,15 @@ import type { IntakeStore } from "./intake-store.js";
 import {
   createMarkdownHandoffStore,
   createMarkdownMemoryStore,
+  createMarkdownProjectStore,
+  createMarkdownProjectSuggestionStore,
+  createMarkdownProjectUpdateStore,
   parseMemoryDocument,
 } from "./markdown/index.js";
 import type { Memory, MemoryStore } from "./memory-store.js";
+import type { ProjectStore } from "./project-store.js";
+import type { ProjectSuggestionStore } from "./project-suggestion-store.js";
+import type { ProjectUpdateStore } from "./project-update-store.js";
 import type { SettingsStore } from "./settings-store.js";
 import {
   type ReadRefusalsOptions,
@@ -183,6 +189,12 @@ export interface ShelfScopedStore extends MemoryStore {
   readonly shelf: Shelf;
   /** Handoff read/write confined to `<prefix>handoffs/`. */
   handoffs: HandoffStore;
+  /** Project identity/lifecycle records confined to `<prefix>projects/`. */
+  projects: ProjectStore;
+  /** Append-only project evidence confined to `<prefix>project-updates/`. */
+  projectUpdates: ProjectUpdateStore;
+  /** Pinned-section suggestions confined to `<prefix>project-suggestions/`. */
+  projectSuggestions: ProjectSuggestionStore;
   /** Vault-file read/write confined to the shelf (path discipline + kinds are shelf-relative). */
   vaultFiles: VaultFileStore;
   /** Index-backed recall over THIS shelf's memories only (merged multi-shelf recall is T5). */
@@ -193,6 +205,14 @@ export interface ShelfScopedStore extends MemoryStore {
   countReferences(): number;
   /** Submit raw text to THIS shelf's `<prefix>inbox/` (fire-and-forget, committed instantly). */
   submitToInbox(text: string, hints?: InboxSubmissionHints): InboxItemRef;
+}
+
+/** Raw project stores for one explicitly supplied shelf, used only by trusted system pipelines. */
+export interface ProjectSystemStores {
+  readonly shelf: Shelf;
+  projects: ProjectStore;
+  projectUpdates: ProjectUpdateStore;
+  projectSuggestions: ProjectSuggestionStore;
 }
 
 /** A scoped move could not see the target memory or named destination shelf. */
@@ -236,6 +256,12 @@ export class MemoryMoveUnsafePathError extends Error {
 export interface LibrarianStore
   extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
+  /** Default-shelf project identity/lifecycle records. */
+  projects: ProjectStore;
+  /** Default-shelf append-only project evidence. */
+  projectUpdates: ProjectUpdateStore;
+  /** Default-shelf pinned-section suggestions. */
+  projectSuggestions: ProjectSuggestionStore;
   /**
    * The dashboard's Obsidian-lite vault explorer/editor surface (rethink
    * T18/T19): tree + raw read + backlinks, and validated, compare-and-swap
@@ -412,6 +438,12 @@ export interface LibrarianStore
    * 062 §4). Internal (grooming-tick consumes it); not on the extension entrypoint.
    */
   groomingStoreForShelf(shelf: Shelf): GroomingStore;
+  /**
+   * Trusted system-pipeline project stores confined to exactly `shelf`. Unlike the public
+   * {@link forShelf} handle, this accessor is intentionally not gated by `shelf.writable` because
+   * system curation authority is shelf-scoped rather than principal-attributed.
+   */
+  systemProjectStoresForShelf(shelf: Shelf): ProjectSystemStores;
   /**
    * SYSTEM-PIPELINE inbox submit for `shelf` (spec 062 §4 / review A1 + F) — the inbox analogue of
    * {@link groomingStoreForShelf}'s raw memory surface, and the ONLY seam through which a system
@@ -740,6 +772,12 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     readonly rawMemory: MemoryStore;
     /** The un-gated handoff store. */
     readonly rawHandoffs: HandoffStore;
+    /** The un-gated Project store. */
+    readonly rawProjects: ProjectStore;
+    /** The un-gated append-only ProjectUpdate store. */
+    readonly rawProjectUpdates: ProjectUpdateStore;
+    /** The un-gated ProjectSuggestion store. */
+    readonly rawProjectSuggestions: ProjectSuggestionStore;
     /** The un-gated vault-file store (speaks FULL vault-relative paths to git). */
     readonly rawFiles: VaultFileStore;
     /** The un-gated inbox submitter. */
@@ -816,6 +854,15 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       commit: commitScoped,
       ...deterministicDeps,
     });
+    const rawProjects = createMarkdownProjectStore({ vault: scopedVault, commit: commitScoped });
+    const rawProjectUpdates = createMarkdownProjectUpdateStore({
+      vault: scopedVault,
+      commit: commitScoped,
+    });
+    const rawProjectSuggestions = createMarkdownProjectSuggestionStore({
+      vault: scopedVault,
+      commit: commitScoped,
+    });
     // The vault-file store takes the TRUE vault (full paths to git) + the shelf prefix (T2's
     // shelf-relative path discipline / kinds). Its onWrite invalidates this shelf's index and
     // runs the core's extra side effect (the main core's primer-cache drop).
@@ -866,6 +913,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       scopedVault,
       rawMemory,
       rawHandoffs,
+      rawProjects,
+      rawProjectUpdates,
+      rawProjectSuggestions,
       rawFiles,
       rawSubmitToInbox,
       recall,
@@ -920,6 +970,26 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
           claim: () => refuseWrite(),
           purge: () => refuseWrite(),
         };
+    const projects: ProjectStore = shelf.writable
+      ? core.rawProjects
+      : {
+          ...core.rawProjects,
+          create: () => refuseWrite(),
+          update: () => refuseWrite(),
+        };
+    const projectUpdates: ProjectUpdateStore = shelf.writable
+      ? core.rawProjectUpdates
+      : {
+          ...core.rawProjectUpdates,
+          append: () => refuseWrite(),
+        };
+    const projectSuggestions: ProjectSuggestionStore = shelf.writable
+      ? core.rawProjectSuggestions
+      : {
+          ...core.rawProjectSuggestions,
+          create: () => refuseWrite(),
+          update: () => refuseWrite(),
+        };
     const vaultFiles: VaultFileStore = shelf.writable
       ? core.rawFiles
       : {
@@ -935,6 +1005,9 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       ...memory,
       shelf,
       handoffs,
+      projects,
+      projectUpdates,
+      projectSuggestions,
       vaultFiles,
       recall: core.recall,
       searchReferences: core.searchReferences,
@@ -1472,12 +1545,25 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     hints?: InboxSubmissionHints,
   ): InboxItemRef => coreForShelf(shelf).rawSubmitToInbox(text, hints);
 
+  const systemProjectStoresForShelf = (shelf: Shelf): ProjectSystemStores => {
+    const core = coreForShelf(shelf);
+    return {
+      shelf,
+      projects: core.rawProjects,
+      projectUpdates: core.rawProjectUpdates,
+      projectSuggestions: core.rawProjectSuggestions,
+    };
+  };
+
   return {
     ...mainHandle.memory,
     ...markdownCuration,
     ...markdownIntake,
     ...jsonSettings,
     handoffs: mainHandle.handoffs,
+    projects: mainHandle.projects,
+    projectUpdates: mainHandle.projectUpdates,
+    projectSuggestions: mainHandle.projectSuggestions,
     vaultFiles: mainHandle.vaultFiles,
     vaultRouter,
     forShelf,
@@ -1498,6 +1584,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     distinctValuesForPrincipal,
     countReferencesForPrincipal,
     groomingStoreForShelf,
+    systemProjectStoresForShelf,
     systemSubmitToInbox,
     submitToInbox: mainHandle.submitToInbox,
     recordRefusal: refusalLog.record,
