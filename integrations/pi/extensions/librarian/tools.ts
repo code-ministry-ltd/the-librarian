@@ -81,6 +81,16 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
         title: Type.String(),
         body: Type.String(),
         applies_to: Type.Optional(Type.Array(Type.String())),
+        project_keys: Type.Optional(
+          Type.Array(
+            Type.String({
+              minLength: 1,
+              maxLength: 64,
+              pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            }),
+            { maxItems: 20, uniqueItems: true },
+          ),
+        ),
         confidence: Type.Optional(Type.String()),
         tags: Type.Optional(Type.Array(Type.String())),
       }),
