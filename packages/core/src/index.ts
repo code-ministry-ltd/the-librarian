@@ -829,6 +829,9 @@ export {
   StoreHandoffInputSchema,
   StoreHandoffOutputSchema,
 } from "./schemas/handoff.js";
+export * from "./schemas/project.js";
+export * from "./schemas/project-update.js";
+export * from "./schemas/project-suggestion.js";
 export {
   type ClaimedBy,
   type HandoffDetail,
