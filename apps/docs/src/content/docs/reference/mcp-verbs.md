@@ -32,6 +32,7 @@ Save a durable fact, preference, or decision the moment you learn it — not tra
 | `title` | `string` | required | Short, self-describing headline for the memory — what you'd scan for to find it later. |
 | `body` | `string` | required | The full fact, preference, or decision, written to stand alone — it must make sense with none of the surrounding conversation for context. |
 | `applies_to` | `string[]` | optional | Optional scope hints — the projects, paths, or contexts this memory is relevant to. |
+| `project_keys` | `string[]` | optional | Optional relevance links to active projects on the destination shelf. These aid retrieval and never grant access. |
 | `confidence` | `string` | optional | Optional confidence note (e.g. 'high', 'tentative'), passed to the curator when it files the memory. |
 | `tags` | `string[]` | optional | Tags to file the memory under, so it surfaces in the right context later. |
 
