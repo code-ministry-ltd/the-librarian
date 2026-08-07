@@ -12,7 +12,12 @@
 // See scripts/check-test-count.mjs.
 
 import { describe, expect, it } from "vitest";
-import { collectFailedTests, formatRunFailure } from "../scripts/check-test-count.mjs";
+import {
+  collectFailedTests,
+  countWorkspaceVitestTests,
+  countVitestTests,
+  formatRunFailure,
+} from "../scripts/check-test-count.mjs";
 
 /** One workspace's \`--reporter=json\` document, as vitest emits it. */
 function report(
@@ -146,5 +151,54 @@ describe("formatRunFailure", () => {
 
     expect(message).toContain("exited with code 2");
     expect(message).toMatch(/no failing test|could not/i);
+  });
+});
+
+describe("countVitestTests", () => {
+  it("finishes workspace suites before starting the live-server root suite", async () => {
+    const events: string[] = [];
+    let releaseWorkspace!: () => void;
+    const workspaceDone = new Promise<void>((resolve) => {
+      releaseWorkspace = resolve;
+    });
+
+    const totalPromise = countVitestTests(
+      async () => {
+        events.push("workspace:start");
+        await workspaceDone;
+        events.push("workspace:end");
+        return 12;
+      },
+      async () => {
+        events.push("root:start");
+        return 3;
+      },
+    );
+
+    await Promise.resolve();
+    expect(events).toEqual(["workspace:start"]);
+
+    releaseWorkspace();
+    await expect(totalPromise).resolves.toBe(15);
+    expect(events).toEqual(["workspace:start", "workspace:end", "root:start"]);
+  });
+
+  it("runs workspace suites one package at a time", async () => {
+    let command: string[] = [];
+
+    await countWorkspaceVitestTests(async (args: string[]) => {
+      command = args;
+      return 7;
+    });
+
+    expect(command).toEqual([
+      "pnpm",
+      "-r",
+      "--workspace-concurrency=1",
+      "exec",
+      "vitest",
+      "run",
+      "--reporter=json",
+    ]);
   });
 });

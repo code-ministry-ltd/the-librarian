@@ -113,16 +113,33 @@ function countNodeTests(testFiles) {
   });
 }
 
-function countVitestTests() {
-  return Promise.all([countWorkspaceVitestTests(), countRootVitestTests()]).then(
-    ([workspace, root]) => workspace + root,
-  );
+export async function countVitestTests(
+  countWorkspace = countWorkspaceVitestTests,
+  countRoot = countRootVitestTests,
+) {
+  // Keep these runs sequential. The root suite starts several live HTTP/tRPC
+  // servers with deliberately short startup deadlines; competing with every
+  // workspace suite at once can exhaust a busy development host and turn this
+  // counting guard into a source of false timeout failures.
+  const workspace = await countWorkspace();
+  const root = await countRoot();
+  return workspace + root;
 }
 
-function countWorkspaceVitestTests() {
+export function countWorkspaceVitestTests(run = runJsonReporter) {
   // Run vitest in every workspace package via `pnpm -r exec` so every
-  // package that ships a Vitest config gets counted automatically.
-  return runJsonReporter(["pnpm", "-r", "exec", "vitest", "run", "--reporter=json"]);
+  // package that ships a Vitest config gets counted automatically. Keep pnpm's
+  // workspace concurrency at one: several packages start real servers and the
+  // guard is measuring discovery, not parallel-test throughput.
+  return run([
+    "pnpm",
+    "-r",
+    "--workspace-concurrency=1",
+    "exec",
+    "vitest",
+    "run",
+    "--reporter=json",
+  ]);
 }
 
 function countRootVitestTests() {
