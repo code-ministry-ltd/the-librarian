@@ -32,3 +32,10 @@ export class DuplicateProjectKeyError extends Error {
     this.name = "DuplicateProjectKeyError";
   }
 }
+
+export class ProjectKeyImmutableError extends Error {
+  constructor(key: string) {
+    super(`Project key '${key}' is stable after approval and cannot be changed`);
+    this.name = "ProjectKeyImmutableError";
+  }
+}

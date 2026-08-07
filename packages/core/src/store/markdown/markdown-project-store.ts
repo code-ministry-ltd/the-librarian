@@ -10,6 +10,7 @@ import {
   DuplicateProjectKeyError,
   type ListProjectsInput,
   type ProjectStore,
+  ProjectKeyImmutableError,
   ProjectRecordExistsError,
   ProjectRecordNotFoundError,
 } from "../project-store.js";
@@ -70,6 +71,11 @@ export function createMarkdownProjectStore(deps: MarkdownProjectStoreDeps): Proj
     const projects = deps.vault
       .listMarkdown("projects")
       .map((rel) => readPath(rel, rel.slice("projects/".length, -".md".length)));
+    const seenKeys = new Set<string>();
+    for (const project of projects) {
+      if (seenKeys.has(project.key)) throw new DuplicateProjectKeyError(project.key);
+      seenKeys.add(project.key);
+    }
     return projects
       .filter((project) => input.status === undefined || project.status === input.status)
       .sort(compareProjects);
@@ -103,8 +109,12 @@ export function createMarkdownProjectStore(deps: MarkdownProjectStoreDeps): Proj
     const project = ProjectSchema.parse(input);
     const rel = projectPath(project.id);
     assertSafeProjectStorePath(deps.vault, rel);
-    if (!deps.vault.exists(rel)) throw new ProjectRecordNotFoundError(project.id);
+    const existing = getById(project.id);
+    if (existing === null) throw new ProjectRecordNotFoundError(project.id);
     assertUniqueKey(project);
+    if (existing.status !== "proposed" && existing.key !== project.key) {
+      throw new ProjectKeyImmutableError(existing.key);
+    }
     assertSafeProjectStorePath(deps.vault, rel);
     deps.vault.writeText(rel, serializeProjectDocument(project));
     commit([rel], commitSubject.projectUpdate(project.id), actorId);

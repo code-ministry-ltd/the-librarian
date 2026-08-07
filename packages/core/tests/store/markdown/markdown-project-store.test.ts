@@ -76,6 +76,41 @@ describe("Markdown ProjectStore", () => {
     );
   });
 
+  it("keeps an approved key stable while allowing a proposal key to be corrected", () => {
+    const store = createMarkdownProjectStore({ vault: createVault({ dataDir }) });
+    const proposed = projectRecord({
+      id: "prj_proposed",
+      key: "draft-key",
+      display_name: "Draft project",
+      status: "proposed",
+      proposal_rationale: "The source names a durable body of work.",
+      proposal_evidence_ids: ["memory:mem_123"],
+    });
+    store.create(proposed);
+    expect(store.update({ ...proposed, key: "corrected-key" }).key).toBe("corrected-key");
+
+    const active = projectRecord();
+    store.create(active);
+    expect(() => store.update({ ...active, key: "renamed-after-approval" })).toThrow(
+      /stable after approval/,
+    );
+  });
+
+  it("fails closed when hand-edited documents contain a duplicate key", () => {
+    const vault = createVault({ dataDir });
+    vault.writeText("projects/prj_123.md", serializeProjectDocument(projectRecord()));
+    vault.writeText(
+      "projects/prj_456.md",
+      serializeProjectDocument(
+        projectRecord({ id: "prj_456", display_name: "Ambiguous duplicate" }),
+      ),
+    );
+    const store = createMarkdownProjectStore({ vault });
+
+    expect(() => store.list()).toThrow(DuplicateProjectKeyError);
+    expect(() => store.getByKey("the-librarian")).toThrow(DuplicateProjectKeyError);
+  });
+
   it("refuses unsafe lookup ids and a document whose filename disagrees with its id", () => {
     const vault = createVault({ dataDir });
     const store = createMarkdownProjectStore({ vault });
