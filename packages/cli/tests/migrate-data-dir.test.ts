@@ -111,9 +111,9 @@ describe("the-librarian migrate-data-dir", () => {
       );
       expect(doc).not.toContain("domain:");
       expect(doc).not.toContain("category:");
-      // Retired once memories went project-less / dropped recall counters /
-      // dropped the priority field.
-      expect(doc).not.toContain("project_key:");
+      // The legacy scalar remains untouched until an intentional memory write;
+      // readers normalise a string value to plural project_keys in memory.
+      expect(doc).toContain("project_key: null");
       expect(doc).not.toContain("recall_count:");
       expect(doc).not.toContain("usefulness_score:");
       expect(doc).not.toContain("priority:");
