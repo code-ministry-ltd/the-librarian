@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.21.1] — 2026-08-09
+
+### Changed
+
+- **Comprehensive dependency upgrade across the monorepo.** vitest 2→4,
+  vite 5→8, eslint 9→10, typescript 5→6, eslint-plugin-unicorn 57→73,
+  globals 15→17, lefthook 1→2, jsdom 25→30, @types/node 22→26, diff 8→9,
+  tailwind-merge 2→3, lucide-react 0.4→1, @testing-library/jest-dom 6→7,
+  @types/chrome 0.0.287→0.2.5, astro 7.0→7.2, esbuild 0.21→0.28, and
+  numerous other packages. All 9 pnpm audit vulnerabilities resolved.
+- **Removed eslint-plugin-import** (2.x does not support eslint 10).
+  Dropped import/no-duplicates, import/newline-after-import, import/order
+  rules (style-only, not correctness).
+- **Migrated vitest config from `environmentMatchGlobs` to `projects` API**
+  (breaking change in vitest 4).
+- **Added `types: ["node"]` to tsconfig.base.json** (TypeScript 6 defaults
+  `types` to empty array instead of auto-discovering @types packages).
+- **Added `typescript: ^6.0.3` pnpm override** to prevent peer dependencies
+  (e.g., i18next) from pulling in TypeScript 7.x, which breaks typescript-eslint
+  due to missing programmatic API in the Go-based compiler.
+
 ## [1.21.0] — 2026-08-09
 
 ### Added
@@ -504,8 +525,8 @@ changes from this point forward are catalogued here.
 - **The typed audit export — the read half of the attribution substrate
   (spec 064 T6–T9, seam S5).** `store.exportAudit(principal, opts)` and the
   `activity.auditExport` tRPC procedure turn the vault's git history into a
-  stream of typed **`AuditEvent`**s answering _"who **successfully** changed
-  what, when, on which shelf"_ — no consumer ever parses git. `AuditEvent`, the
+  stream of typed **`AuditEvent`**s answering *"who **successfully** changed
+  what, when, on which shelf"* — no consumer ever parses git. `AuditEvent`, the
   **closed, permanent `AuditAction` union**, the zod schema, and the
   `AuditSourceError`/`AuditCursorError` classes are published from
   `@librarian/core` and re-exported from the stable
@@ -546,8 +567,8 @@ changes from this point forward are catalogued here.
   migration (the store used to thread the actor to the write path and discard
   it) and is OSS value on its own — an operator can read attribution straight
   from `git log`, no export needed.
-  - **Two commit primitives, and the axis is _"did this actor cause these
-    bytes"_.** Attributed writes get a **pathspec-limited** commit
+  - **Two commit primitives, and the axis is *"did this actor cause these
+    bytes"*.** Attributed writes get a **pathspec-limited** commit
     (`git commit -- <paths>`, not just a scoped `git add`) so a concurrent
     edit staged by another process (the CLI is a second process with no lock)
     can never ride into an actor's trailered commit — a false name is worse
@@ -555,7 +576,7 @@ changes from this point forward are catalogued here.
     pre-restore snapshot, the migration sweeps) keep a separate primitive and
     are **untrailered**, exporting the actor as an honest `null`: they capture
     other people's out-of-band bytes. The two sweeps whose bytes an actor
-    _does_ own — a whole-vault **restore** (the admin) and the intake
+    *does* own — a whole-vault **restore** (the admin) and the intake
     **consolidate sweep** (`system-consolidator`) — are trailered.
   - **Attribution is trustworthy.** The actor is charset-validated
     (canonical-id-or-nothing) before it reaches `--trailer`, and
@@ -1437,7 +1458,7 @@ in the entries below.
   rehome is now agent-only). Retired keys are swept from existing `memories/`
   vault docs by the data-dir migration.
 - **Removed the memory `priority` field** (`low`/`normal`/`high`/`core`). Unlike
-  the three above it was a _live_ field, but it was rarely set and added noise to
+  the three above it was a *live* field, but it was rarely set and added noise to
   the agent + curator surfaces, so it's dropped for simplicity. Gone from the
   schema/types/frontmatter, the `remember` input (server `memoryInputSchema` + the
   Pi adapter, in lockstep), the curator prompt (bumped v5.3 → v5.4), the analytics
@@ -2223,7 +2244,7 @@ one continuous product across every list surface.
   "Loading memories…" text with a verdigris MemoryOrb pulse +
   "CONSULTING MEMORY" mono small-caps + four hairline-bordered
   card skeletons that mirror the MemoryCard shape (title strip
-  + body strips + meta strip). The breathe-animation is the
+  - body strips + meta strip). The breathe-animation is the
   memory-orb-pulse keyframes; scale delta tuned down to ±1.5 %
   so the opacity carries the motion.
 
@@ -2234,7 +2255,7 @@ one continuous product across every list surface.
 
 - **EmptyState composite usage** on /memories. The hero
   LibrarianMark + constellation + "The library is empty." copy
-  + primary action — the system primitive built in rc.15 finally
+  - primary action — the system primitive built in rc.15 finally
   gets a real consumer.
 
 ### Changed
@@ -2633,7 +2654,7 @@ tool, no rename.
 - **`server enable-boot` / `disable-boot`** (and `up --enable-boot`) — generate a
   Linux systemd unit whose `ExecStart` is `docker start --attach the-librarian`
   (references the existing named container, so **no secret lands in the unit
-  file**). macOS launchd is deferred (clean notice). 
+  file**). macOS launchd is deferred (clean notice).
 - **`server admin <backup|restore|auth|rebuild>`** — runs the admin CLI inside the
   container (`docker exec`), so auth-lockout recovery works even when the dashboard
   is locked. The all-in-one image now bundles `@librarian/cli` (`the-librarian`)
@@ -3008,7 +3029,7 @@ live instance migrates cleanly.
 - **The 7-verb registry is pinned end-to-end** (rethink T13, spec §5.1):
   `scripts/healthcheck.js` now asserts the exact agent surface — `recall`/
   `remember`/`flag_memory` + `store_handoff`/`list_handoffs`/`claim_handoff`
-  + `search_references`, nothing missing, nothing extra (the retired
+  - `search_references`, nothing missing, nothing extra (the retired
   `conv_state_*`/`list_skills`/`get_skill` verbs stay pinned absent) — and
   the tool-registry test pins exactly 7 with no internal/admin-only tools.
 - **All five harness integrations live in-tree under `integrations/`**
@@ -3731,7 +3752,7 @@ live instance migrates cleanly.
   `search_references` (`resolveEmbedder`). Selection is env-driven:
   `LIBRARIAN_EMBEDDER=hash|llama` (default: hash under tests, the EmbeddingGemma
   model otherwise). The GGUF (`EmbeddingGemma-300M-Q8_0`, ~333 MB) is downloaded
-  + cached lazily on first embed under `<dataDir>/models`, or supply your own via
+  - cached lazily on first embed under `<dataDir>/models`, or supply your own via
   `LIBRARIAN_MODEL_PATH`. The model loads only on first use, so nothing downloads
   during boot/healthcheck.
 
@@ -4401,6 +4422,7 @@ another.
   rest. See [Harness integrations](./README.md#harness-integrations).
 
 [1.21.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.1...v1.21.0
+[1.21.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.0...v1.21.1
 [1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.20.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
@@ -4490,7 +4512,6 @@ another.
 [1.0.0-rc.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.4...v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.3...v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.2...v1.0.0-rc.3
-[1.0.0-rc.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.11.0...v1.0.0-rc.1
 [0.11.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v0.9.0...v0.10.0
