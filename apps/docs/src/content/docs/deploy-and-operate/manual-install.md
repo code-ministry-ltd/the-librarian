@@ -7,6 +7,12 @@ The [one-command self-host](/deploy-and-operate/self-host/) path covers most peo
 This page is for operators who want to drive Docker themselves: the published
 all-in-one image, image-only Compose, the source-build Compose stack, or Fly.io.
 
+The managed CLI path is deliberately stricter than these manual examples: stable
+`server up` and `server update` never use `latest`. They select an exact `vX.Y.Z`,
+match its source commit to the GitHub tag and its digest to the release receipt,
+and run the immutable digest. See [Self-host](/deploy-and-operate/self-host/) for
+its pull, provenance, and update-recovery contract.
+
 ## Single container (manual)
 
 One public image runs both services (the MCP server and the dashboard) under a

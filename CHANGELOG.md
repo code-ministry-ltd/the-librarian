@@ -9,6 +9,36 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.21.0] — 2026-08-09
+
+### Added
+
+- **Stable server installs and updates now consume the published all-in-one
+  image.** With no `--ref`, the CLI resolves the latest stable release; an exact
+  `vX.Y.Z` selects that release directly. It pulls the versioned GHCR image,
+  validates its platform and OCI metadata, matches its source commit to the
+  GitHub tag and its digest to the release receipt, then runs the immutable
+  digest without requiring Git or a source checkout.
+- **Managed deployment state records image provenance.** Status distinguishes
+  `published <version> (<short digest>)`, `source <ref>`, and legacy deployments
+  without making Git a requirement for normal Docker-only lifecycle commands.
+
+### Changed
+
+- **`server update` is now a recoverable transition.** Pulls, source builds,
+  image inspection, credential preparation, and configuration capture finish
+  before the current container is stopped. A failed replacement restores and
+  health-checks the previous immutable image and leaves deploy state unchanged;
+  migration failures explicitly distinguish executable recovery from persistent
+  data rollback.
+- **Development refs retain the source path.** `--ref main` and other non-release
+  refs still clone/fetch and build locally, and therefore require Git. Registry,
+  authentication, network, provenance, and architecture failures never silently
+  fall back to a source build.
+- **Automatic updates use the same exact-image and recovery path as manual
+  updates.** They retain the existing schedule, lock, fail-soft reporting, and
+  last-run behavior while avoiding Git and local builds for stable releases.
+
 ## [1.20.1] — 2026-08-09
 
 ### Added
@@ -4370,6 +4400,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.21.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.1...v1.21.0
 [1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.20.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5

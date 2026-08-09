@@ -30,9 +30,10 @@ It runs as a small self-hosted server, reachable locally or over the network.
 ## Self-host in one command
 
 The `librarian` CLI's `server` command group stands up the server for you — it
-builds and runs the all-in-one container, surfaces the master key once, and hands
-you the MCP URL + agent token to paste into clients. Run it with `npx` — no
-install needed:
+resolves the latest stable release, pulls and verifies that exact published image,
+runs it by immutable image digest, surfaces the master key once, and hands you the
+MCP URL + agent token to paste into clients. Stable installs need Docker, but not
+Git or a source checkout. Run it with `npx` — no install needed:
 
 ```sh
 npx @the-librarian/cli server up
@@ -53,11 +54,14 @@ npx @the-librarian/cli server up --data-dir /srv/librarian
 (`enable-boot`), and host-side admin (`server admin backup|restore|auth|rebuild`)
 are all covered in the
 [self-host guide](apps/docs/src/content/docs/deploy-and-operate/self-host.md) in
-the docs site.
+the docs site. Stable updates pull and validate the replacement before stopping
+the current server; a failed replacement restores the previous executable and
+container configuration. Pass `--ref main` (or another development ref) to keep
+the source checkout/build path; that path additionally requires Git.
 
 > **Use native Docker, not the snap.** `librarian server` is unsupported on
-> snap-packaged Docker (common on Ubuntu / LXC) — its confinement breaks the build
-> and hides container health. Install Docker CE. See the
+> snap-packaged Docker (common on Ubuntu / LXC) — its confinement breaks image and
+> container inspection and hides container health. Install Docker CE. See the
 > [self-host guide](apps/docs/src/content/docs/deploy-and-operate/self-host.md).
 
 Prefer to operate Docker yourself? The same all-in-one server and dashboard is

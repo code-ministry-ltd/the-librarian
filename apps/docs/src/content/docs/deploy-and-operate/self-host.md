@@ -5,9 +5,9 @@ description: Run and operate your own Librarian server with the one-command CLI.
 
 The Librarian runs as one small self-hosted server. The lowest-friction way to run
 it is the `librarian server` command group, which drives an all-in-one Docker
-container end to end — it builds the image, manages your data, mints your secrets,
-waits for health, and prints the values you paste into clients. You never hand-write
-a `docker run` for the happy path.
+container end to end — it pulls and verifies the exact stable image, manages your
+data, mints your secrets, waits for health, and prints the values you paste into
+clients. You never hand-write a `docker run` for the happy path.
 
 This page is the operator reference. If you just want to get started, the gentler
 [Install](/start-here/install/) walkthrough is the place to begin. Prefer to drive
@@ -15,7 +15,7 @@ Docker yourself? See [Manual deployment](/deploy-and-operate/manual-install/).
 
 ## Standing it up
 
-On a host with Docker and Git:
+On a host with native Docker (Git is not required for a stable release):
 
 ```sh
 npx @the-librarian/cli server up
@@ -23,9 +23,11 @@ npx @the-librarian/cli server up
 
 `server up` does the following:
 
-1. **Clones and builds.** It fetches the project at the latest release into a deploy
-   directory (`~/.librarian/server` by default; `--dir` overrides) and builds the
-   container image.
+1. **Pulls and verifies.** It resolves the latest stable GitHub release, pulls its
+   exact `ghcr.io/code-ministry-ltd/the-librarian:vX.Y.Z` image, verifies its OCI
+   metadata and `linux/amd64` platform, matches its source commit to the GitHub tag,
+   and matches its digest to the release's `docker-image-digest.txt` receipt. It
+   runs the verified repository digest, never the mutable `latest` tag.
 2. **Runs and health-checks.** It starts the all-in-one container on a named data
    volume (`librarian_data`), waits for **both** the MCP server and the dashboard to
    report healthy, and rolls back if they don't — your data volume is never touched
@@ -42,13 +44,22 @@ npx @the-librarian/cli server up
 5. **Optionally configures this machine.** It offers to write this box's own client
    config, so a single-machine setup is done in one shot.
 
+The managed deploy directory is `~/.librarian/server` by default (`--dir`
+overrides it). `deploy.env` contains the protected runtime credentials and is mode
+`0600`; `deploy-state.json` contains only non-secret configuration and provenance,
+including whether the deployment is `registry` or `source`, its readable image
+reference, and the immutable digest for a published release. A fresh stable install
+does not clone the repository. If an older source-managed deployment already has a
+checkout there, adopting a published release preserves it; the CLI never deletes it
+automatically.
+
 :::caution[Use native Docker, not the snap package]
 `librarian server` requires **native Docker** (Docker CE / `docker.io`). It does
 **not** work on snap-packaged Docker (common on Ubuntu, especially inside LXC),
-whose sandboxing breaks the build and hides container health in ways that surface as
-confusing, unrelated-looking failures. On Ubuntu/LXC, install the official Docker CE
-packages instead (and enable LXC nesting first if you're in an unprivileged
-container). With native Docker, no extra flags are needed.
+whose sandboxing breaks image/container inspection and hides container health in
+ways that surface as confusing, unrelated-looking failures. On Ubuntu/LXC, install
+the official Docker CE packages instead (and enable LXC nesting first if you're in
+an unprivileged container). With native Docker, no extra flags are needed.
 :::
 
 ## Reaching it from other machines (`--host`)
@@ -200,19 +211,45 @@ burn flag refuses claims until the operator removes it.
 
 ## Keeping it running and up to date
 
-- **`server update`** re-pins forward: fetch the latest release, rebuild, recreate
-  the container (your data volume is preserved), apply any pending data migrations,
-  and wait for health. It is idempotent — already current and healthy is a clean
-  no-op — and it reuses the existing agent token, so clients keep working untouched.
+- **`server update`** re-pins forward: resolve the latest stable release, pull and
+  verify its exact image while the current server keeps serving, then recreate the
+  container by immutable digest. Storage, host/ports, credentials, restart policy,
+  bootstrap-claim secret, and legacy dashboard-port choices are preserved. Pending
+  data migrations run only after the replacement is healthy. Once the target
+  release is resolved, an already-current, healthy deployment is a no-op before
+  pulling it again; an exact `--ref vX.Y.Z` also avoids resolving the latest release.
 - **`server down`** stops the container with `docker stop` only. It never removes the
   container or the volume; a later `up`/`update` recalls the same memories.
 - **`server status`** reports whether it's running, its health, the deployed and
-  latest versions, and an up-to-date / update-available badge (degrading gracefully
-  to "unknown" when offline rather than crashing).
+  latest versions, and an up-to-date / update-available badge. Provenance appears as
+  `published vX.Y.Z (<short-digest>)`, `source <ref>`, or `legacy <ref>`; offline or
+  unresolvable values degrade to `unknown` rather than crashing. Normal state-backed
+  status does not need Git.
 - **`server logs [-f] [--service mcp|dashboard|all]`** tails the container logs;
   `-f` follows live and `--service` filters the stream.
-- **`--ref <tag|main>`** pins `up`/`update` to a specific release or to `main`
-  (default: the latest release).
+- **`--ref vX.Y.Z`** selects that exact published release. With no `--ref`, the CLI
+  resolves the latest stable release. **`--ref main` and every other branch, tag, or
+  commit are development targets:** they require Git, use the managed checkout, and
+  build a local source image. A registry, authentication, network, provenance, or
+  unsupported-architecture failure is reported with recovery guidance; it never
+  silently falls back to a source build.
+
+### Update recovery
+
+`server update` finishes the pull or source build and prepares protected credentials
+before it interrupts the old container. It captures the old immutable image and
+complete run configuration, then replaces the container under the update lock. If
+the replacement fails to start or become healthy, the CLI recreates the previous
+executable and configuration, verifies it is healthy, and leaves deploy state
+unchanged.
+
+That recovery restores the executable, **not a historical copy of `/data`**. If a
+failure happens after a migration begins, the message states that persistent data
+changes were not rolled back. If restoring the old executable also fails, the CLI
+does not claim success: it preserves the data, protected credentials and state,
+reports both failures, and prints commands using immutable container/image IDs for
+manual recovery. Follow those commands before retrying; do not delete the named
+volume, bind mount, deploy files, or protected recovery env file.
 
 ### Automatic updates
 
@@ -229,7 +266,9 @@ This installs a systemd timer (or an hourly cron line where systemd is absent)
 that fires hourly and performs a `server update` when the cadence says one is
 due. The timer runs as the enabling user against their deploy dir — which is
 why the user matters: `enable` refuses, with an explanation, if it can't find
-the deploy state where it's looking.
+the deploy state where it's looking. A due update resolves, pulls, and verifies
+the exact stable release and does not invoke Git or a local build; this also lets
+an older source-built deployment adopt the published image in place.
 
 The dashboard's [Settings → Dashboard](/dashboard/settings/#dashboard) page
 holds the enable toggle and the cadence as *settings*; the host timer is what
@@ -242,9 +281,9 @@ acts on them. Flipping the toggle without installing the timer updates nothing
   and the next fire no-ops.
 - **`autoupdate uninstall`** — removes the timer/cron entirely.
 
-A failed auto-update (an unreachable server, a failed health check) leaves the
-previous container running and retries at the next fire — the same rollback
-guarantees as a manual `server update`.
+A failed auto-update is fail-soft and retries at the next fire. A pull or
+verification failure leaves the current container serving; a replacement failure
+uses the same executable-recovery contract as manual `server update`.
 
 :::note[If auto-update seems to do nothing]
 The timer logs one line per hourly fire to the **system** journal, which needs

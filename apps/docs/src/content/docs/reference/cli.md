@@ -41,12 +41,13 @@ Harnesses: claude, codex, opencode, hermes, pi
 ```text
 Usage: librarian server <subcommand> [flags]
 
-Self-host the Librarian server (build + run the all-in-one container),
+Self-host the Librarian server from an exact published release,
+or use --ref <development-ref>; source refs build locally,
 then hand its MCP URL + agent token to `librarian install` on clients.
 
 Subcommands:
-  up            Build + run the server; print the MCP URL + agent token
-  update        Re-pin to a release, rebuild, recreate (data volume kept)
+  up            Pull an exact release (or build a source ref) and start it
+  update        Prepare, verify and replace; recover the old image on failure
   down          Stop the container (the data volume is preserved)
   status        Running? healthy? deployed version vs latest release
   logs          Tail the container logs ([-f] [--service mcp|dashboard|all])

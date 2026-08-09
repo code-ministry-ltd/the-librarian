@@ -26,8 +26,9 @@ even your laptop to try it out), run:
 npx @the-librarian/cli server up
 ```
 
-This builds and starts The Librarian in a Docker container, waits until it is
-healthy, and then prints three things:
+This resolves the latest stable release, pulls and verifies its exact published
+image, starts it by immutable digest, waits until it is healthy, and then prints
+three things. You do not need Git or a source checkout for this stable path:
 
 - an **MCP URL** (like `http://your-host:3838/mcp`) — the address your agents
   connect to,

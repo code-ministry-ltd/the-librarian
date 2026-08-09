@@ -50,7 +50,7 @@ librarian report                 Push this machine's state to the server
 librarian server up              Self-host the server with Docker; prints the
                                   MCP URL + agent token to paste into `install`
 librarian server update          Upgrade the server to the latest release
-                                  (your data is preserved)
+                                  (pulls before stop; data/config are preserved)
 librarian server down|status|logs  Stop / inspect / tail the running server
 ```
 
@@ -63,8 +63,11 @@ an error.
 ## Self-host the server
 
 The Librarian needs a server to talk to. `server up` stands one up with Docker —
-it builds the all-in-one image, mints your secrets, waits for health, and prints
-the MCP URL + agent token to paste into `librarian install`:
+it resolves the latest stable release, pulls and verifies the exact published
+image, runs its immutable digest, mints your secrets, waits for health, and prints
+the MCP URL + agent token to paste into `librarian install`. Stable installs need
+Docker but not Git; pass `--ref main` (or another development ref) to use the
+Git-backed source checkout and local build path:
 
 ```sh
 npx @the-librarian/cli server up
@@ -98,11 +101,22 @@ writable by — you, not a container user. The directory is created if it doesn'
 exist, and `server update` reuses it automatically. (`--data-dir` and
 `--data-volume` are mutually exclusive.)
 
-Other server commands: `server update` (upgrade to the latest release, preserving
-your data), `server down` / `status` / `logs`, and `server enable-boot` (Linux
-systemd) to start it on boot. Run it on a private network / behind a VPN, or
-expose it with auth — see the
+Other server commands: `server update` pulls and verifies before stopping the old
+container, preserving storage, ports, credentials, restart policy, and deploy
+state. A failed replacement restores and health-checks the previous executable;
+if migration began, persistent data changes are explicitly **not** claimed as
+rolled back. `server status` labels deployments as published (with a short
+digest), source, or legacy. `server down` / `logs` and `server enable-boot`
+(Linux systemd) complete the lifecycle. Run it on a private network / behind a
+VPN, or expose it with auth — see the
 [deployment guide](https://github.com/code-ministry-ltd/the-librarian/blob/main/DEPLOYMENT.md).
+
+The managed server files live in `~/.librarian/server` by default:
+`deploy.env` is protected mode `0600`, while `deploy-state.json` contains only
+non-secret configuration and image provenance. Stable registry/network/auth/
+architecture failures are teaching errors and never trigger a source-build
+fallback. Existing source checkouts are preserved when a deployment adopts a
+published image.
 
 ## What it writes to your environment
 
