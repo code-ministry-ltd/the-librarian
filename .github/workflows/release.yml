@@ -1,31 +1,32 @@
 name: Release
 
-# The "every merge to main IS a release" model. When a PR that bumped the root
-# package.json version lands on main, this cuts the matching tag + GitHub
-# release automatically — no separate release PR, no hand-run `git tag` /
-# `gh release`. It is idempotent: a push to main whose version is already
-# tagged (e.g. a merge that didn't bump, or a re-run) is a clean no-op.
-#
-# CI green is enforced by branch protection on main, so a merge commit here is
-# already a passing build. The `release-guard` job in ci.yml independently keeps
-# the version ↔ CHANGELOG entry in sync on every PR.
+# Every merge to main is a release candidate. A new version is complete only
+# after its tag exists, the all-in-one image has survived a registry round trip,
+# and the GitHub release has been created. A rerun of the same release commit can
+# recover a partial failure; a later no-bump merge remains a clean no-op.
 
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Tag + GitHub release on version bump
+  prepare-release:
+    name: Prepare version tag
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      candidate: ${{ steps.candidate.outputs.candidate }}
 
     steps:
       - name: Check out repository
@@ -41,61 +42,270 @@ jobs:
 
       - name: Read version from package.json
         id: ver
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Has this version already been released?
-        id: check
         run: |
-          if git rev-parse "v${{ steps.ver.outputs.version }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "v${{ steps.ver.outputs.version }} is already tagged — nothing to release."
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Classify this commit
+        id: candidate
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            TAG_COMMIT="$(git rev-list -n 1 "$TAG")"
+            if [ "$TAG_COMMIT" = "$GITHUB_SHA" ]; then
+              echo "candidate=true" >> "$GITHUB_OUTPUT"
+              echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+              echo "$TAG already identifies this commit — recovering or verifying the release."
+            else
+              echo "candidate=false" >> "$GITHUB_OUTPUT"
+              echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+              echo "$TAG identifies $TAG_COMMIT, not $GITHUB_SHA — no version bump; nothing to release."
+            fi
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "v${{ steps.ver.outputs.version }} is new — will tag + release."
+            echo "candidate=true" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            echo "$TAG is new — preparing the release."
           fi
 
       - name: Validate release hygiene
-        if: steps.check.outputs.exists == 'false'
+        if: steps.candidate.outputs.candidate == 'true'
         run: node scripts/check-release.mjs
 
-      - name: Extract release notes from CHANGELOG
-        if: steps.check.outputs.exists == 'false'
-        run: node scripts/check-release.mjs --notes > "${{ runner.temp }}/notes.md"
-
-      - name: Create annotated tag + GitHub release
-        if: steps.check.outputs.exists == 'false'
+      - name: Create annotated version tag
+        if: >-
+          steps.candidate.outputs.candidate == 'true' &&
+          steps.candidate.outputs.tag_exists == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          V: v${{ steps.ver.outputs.version }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$V" -m "$V"
-          git push origin "$V"
-          gh release create "$V" --title "$V" --notes-file "${{ runner.temp }}/notes.md"
-          echo "Released $V."
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+          echo "Created $TAG."
 
-  # Publish the PUBLIC packages to npm. Runs AFTER `release` so the `vX.Y.Z` tag
-  # exists before we publish — the published CLI pins that tag for its runtime
-  # adapter fetch (hermes), so the order matters. Idempotent in two independent
-  # ways, mirroring the release job's "every merge is a release, re-runs no-op"
-  # contract:
-  #   - per package, it skips if that exact version is already on npm — so a
-  #     no-bump merge is a no-op AND a re-run after a half-failed publish
-  #     recovers (it publishes only what's still missing);
-  #   - if NPM_TOKEN isn't set yet, it logs and exits 0 — so this workflow is
-  #     safe to land BEFORE the secret exists; auto-publish switches on the
-  #     moment the owner adds the secret, with no further code change.
-  # Private `@librarian/*` workspace packages are never published (private:true).
-  publish-npm:
-    name: Publish public packages to npm
-    needs: release
+  publish-docker:
+    name: Publish all-in-one image to GHCR
+    needs: prepare-release
+    if: needs.prepare-release.outputs.candidate == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NAME: ghcr.io/code-ministry-ltd/the-librarian
+      VERSION: ${{ needs.prepare-release.outputs.version }}
+      TAG: ${{ needs.prepare-release.outputs.tag }}
+      VERSION_REF: ghcr.io/code-ministry-ltd/the-librarian:v${{ needs.prepare-release.outputs.version }}
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+      digest_ref: ${{ steps.digest.outputs.digest_ref }}
 
     steps:
-      - name: Check out repository
+      - name: Check out the exact release tag
         uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare-release.outputs.version }}"
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether the immutable version already exists
+        id: image
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$VERSION_REF" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$VERSION_REF already exists — it will be verified, never overwritten."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "$VERSION_REF does not exist — it will be built once."
+          fi
+
+      - name: Generate release image metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          flavor: latest=false
+          tags: type=raw,value=v${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.title=The Librarian
+            org.opencontainers.image.description=The Librarian all-in-one server and dashboard
+            org.opencontainers.image.source=https://github.com/code-ministry-ltd/the-librarian
+            org.opencontainers.image.url=https://github.com/code-ministry-ltd/the-librarian
+            org.opencontainers.image.documentation=https://code-ministry-ltd.github.io/the-librarian/
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push the immutable version
+        if: steps.image.outputs.exists == 'false'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/all-in-one.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.VERSION_REF }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Pull the published version back from GHCR
+        run: docker pull "$VERSION_REF"
+
+      - name: Verify version and source metadata
+        run: |
+          set -euo pipefail
+          ACTUAL_VERSION="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$VERSION_REF")"
+          ACTUAL_REVISION="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$VERSION_REF")"
+          if [ "$ACTUAL_VERSION" != "$VERSION" ]; then
+            echo "Version label mismatch: expected $VERSION, got $ACTUAL_VERSION" >&2
+            exit 1
+          fi
+          if [ "$ACTUAL_REVISION" != "$GITHUB_SHA" ]; then
+            echo "Revision label mismatch: expected $GITHUB_SHA, got $ACTUAL_REVISION" >&2
+            exit 1
+          fi
+
+      - name: Smoke the pulled version
+        env:
+          LIBRARIAN_SMOKE_CONTAINER_NAME: librarian-release-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/smoke-docker-image.mjs "$VERSION_REF"
+
+      - name: Resolve the verified manifest digest
+        id: digest
+        run: |
+          set -euo pipefail
+          INSPECT="$(docker buildx imagetools inspect "$VERSION_REF")"
+          DIGEST="$(printf '%s\n' "$INSPECT" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Could not resolve a canonical manifest digest for $VERSION_REF" >&2
+            printf '%s\n' "$INSPECT" >&2
+            exit 1
+          fi
+          DIGEST_REF="$IMAGE_NAME@$DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "digest_ref=$DIGEST_REF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$DIGEST_REF" > "${{ runner.temp }}/docker-image-digest.txt"
+          echo "Verified $DIGEST_REF"
+
+      - name: Compare an existing release digest receipt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST_REF: ${{ steps.digest.outputs.digest_ref }}
+        run: |
+          set -euo pipefail
+          RECEIPT_DIR="${{ runner.temp }}/existing-release-receipt"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mkdir -p "$RECEIPT_DIR"
+            if gh release download "$TAG" --pattern docker-image-digest.txt --dir "$RECEIPT_DIR" >/dev/null 2>&1; then
+              EXPECTED="$(tr -d '\r\n' < "$RECEIPT_DIR/docker-image-digest.txt")"
+              if [ "$EXPECTED" != "$DIGEST_REF" ]; then
+                echo "Immutable image digest mismatch: release records $EXPECTED, registry has $DIGEST_REF" >&2
+                exit 1
+              fi
+            fi
+          fi
+
+      - name: Promote latest to the verified digest
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          DIGEST_REF: ${{ steps.digest.outputs.digest_ref }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --tag "$IMAGE_NAME:latest" "$DIGEST_REF"
+          LATEST_INSPECT="$(docker buildx imagetools inspect "$IMAGE_NAME:latest")"
+          LATEST_DIGEST="$(printf '%s\n' "$LATEST_INSPECT" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)"
+          if [ "$LATEST_DIGEST" != "$DIGEST" ]; then
+            echo "latest digest mismatch: expected $DIGEST, got $LATEST_DIGEST" >&2
+            exit 1
+          fi
+          echo "Promoted $IMAGE_NAME:latest to $DIGEST_REF"
+
+  github-release:
+    name: Create GitHub release
+    needs: [prepare-release, publish-docker]
+    if: needs.prepare-release.outputs.candidate == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.prepare-release.outputs.tag }}
+      DIGEST_REF: ${{ needs.publish-docker.outputs.digest_ref }}
+
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare-release.outputs.version }}"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+
+      - name: Extract release notes from CHANGELOG
+        run: node scripts/check-release.mjs --notes > "${{ runner.temp }}/notes.md"
+
+      - name: Create or verify the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG GitHub release already exists — verifying its Docker digest receipt."
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file "${{ runner.temp }}/notes.md"
+          fi
+
+          RECEIPT="${{ runner.temp }}/docker-image-digest.txt"
+          printf '%s\n' "$DIGEST_REF" > "$RECEIPT"
+          EXISTING_DIR="${{ runner.temp }}/release-receipt"
+          mkdir -p "$EXISTING_DIR"
+          if gh release download "$TAG" --pattern docker-image-digest.txt --dir "$EXISTING_DIR" >/dev/null 2>&1; then
+            EXISTING="$(tr -d '\r\n' < "$EXISTING_DIR/docker-image-digest.txt")"
+            if [ "$EXISTING" != "$DIGEST_REF" ]; then
+              echo "Release receipt mismatch: expected $EXISTING, verified $DIGEST_REF" >&2
+              exit 1
+            fi
+          else
+            gh release upload "$TAG" "$RECEIPT"
+          fi
+          echo "Released $TAG with $DIGEST_REF."
+
+  # Publish public npm packages only after the tag, verified Docker artefact and
+  # GitHub release all exist. Registry checks make this job independently
+  # idempotent after a partial failure. Private workspaces are never published.
+  publish-npm:
+    name: Publish public packages to npm
+    needs: [prepare-release, github-release]
+    if: needs.prepare-release.outputs.candidate == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare-release.outputs.version }}"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -124,13 +334,8 @@ jobs:
             exit 0
           fi
           pnpm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
-          # Single source of truth: the ROOT package.json version (the one every
-          # PR bumps + the `release` job tags above). The published package's own
-          # version had drifted (frozen at rc.5 while root advanced), so the read
-          # below kept seeing a version already on npm and the publish silently
-          # no-op'd. Stamp the root version into every public workspace package so
-          # the npm artifact always matches the tag. `--no-git-checks` (below)
-          # tolerates the resulting dirty tree.
+          # The root package version is the release source of truth. Stamp it
+          # into every public workspace package immediately before publication.
           node scripts/stamp-version.mjs
           V="$(node -p "require('./package.json').version")"
           for PKG in @the-librarian/cli @the-librarian/pi-extension; do
