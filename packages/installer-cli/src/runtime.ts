@@ -28,7 +28,7 @@ import {
 } from "./server/autoupdate.js";
 import { disableBoot, enableBoot } from "./server/boot.js";
 import { runDown } from "./server/down.js";
-import { serverUsage } from "./server/index.js";
+import { isServerSubcommand, serverSubcommandUsage, serverUsage } from "./server/index.js";
 import { runLogs } from "./server/logs.js";
 import { serverStatus } from "./server/status.js";
 import { runUp } from "./server/up.js";
@@ -226,6 +226,9 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     return ok(serverUsage());
+  }
+  if (isServerSubcommand(subcommand) && subRest.some((arg) => arg === "--help" || arg === "-h")) {
+    return ok(serverSubcommandUsage(subcommand));
   }
   if (subcommand === "up") {
     return runServerUpCommand(subRest, options);

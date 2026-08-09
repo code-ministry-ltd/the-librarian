@@ -16,6 +16,7 @@ import {
 import { run, stream, type RunResult } from "./docker.js";
 import { dockerPreflight, sourcePreflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
+import { isCanonicalSourceRemote, redactGitDiagnostics } from "./source-repository.js";
 import {
   buildCreateArgs,
   CONTAINER_NAME,
@@ -563,7 +564,7 @@ async function resolveSourceTarget(deployDir: string, ref: string): Promise<Sour
   } else {
     const remote = await run("git", ["-C", checkout, "remote", "get-url", "origin"]);
     checkedResult("git", ["remote", "get-url", "origin"], remote, redactGitDiagnostics);
-    if (!sameRepository(remote.stdout.trim(), REPO_URL)) {
+    if (!isCanonicalSourceRemote(remote.stdout)) {
       throw new UpdateError(
         `Managed source checkout ${checkout} has an unexpected origin; refusing to modify it. ` +
           "Set origin to the canonical repository or use a different deploy directory.",
@@ -980,13 +981,6 @@ function errorDetail(error: unknown, redact: Redactor = redactSecrets): string {
   return redact(error instanceof Error ? error.message : String(error));
 }
 
-/** Git can echo credential-bearing remotes in stderr; never surface a remote URL. */
-function redactGitDiagnostics(text: string): string {
-  return redactSecrets(text)
-    .replace(/\b(?:https?|ssh|git):\/\/[^\s'"`]+/giu, "[redacted-remote]")
-    .replace(/\b[^\s/@:]+@[^\s/:]+:[^\s'"`]+/gu, "[redacted-remote]");
-}
-
 function envMap(value: unknown): Map<string, string> {
   const result = new Map<string, string>();
   if (!Array.isArray(value)) return result;
@@ -1058,30 +1052,6 @@ function verifiedNotFound(result: RunResult, identity: string): boolean {
   return new RegExp(`no such (?:object|container):?\\s*${escaped}(?:\\s|$)`, "i").test(
     `${result.stdout}\n${result.stderr}`,
   );
-}
-
-function sameRepository(left: string, right: string): boolean {
-  const normalize = (value: string): string => {
-    const trimmed = value.trim();
-    try {
-      const parsed = new URL(trimmed);
-      const repositoryPath = parsed.pathname.replace(/\/$/, "").replace(/\.git$/, "");
-      return `${parsed.hostname}${repositoryPath}`.toLowerCase();
-    } catch {
-      const scp = trimmed.match(/^(?:[^@/]+@)?([^:/]+):(.+)$/u);
-      if (scp) {
-        return `${scp[1]}/${scp[2]}`
-          .replace(/\/$/, "")
-          .replace(/\.git$/, "")
-          .toLowerCase();
-      }
-      return trimmed
-        .replace(/\/$/, "")
-        .replace(/\.git$/, "")
-        .toLowerCase();
-    }
-  };
-  return normalize(left) === normalize(right);
 }
 
 function shellWord(value: string): string {

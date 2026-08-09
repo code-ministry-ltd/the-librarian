@@ -735,6 +735,84 @@ describe("server up — the 0600 deploy env-file (ADR 0008 P4)", () => {
 });
 
 describe("server up — foreign deploy dir stops and asks (never clobbers)", () => {
+  it("accepts the canonical HTTPS origin with configured credentials without echoing them", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      fs.mkdirSync(path.join(deployDir, ".git"), { recursive: true });
+      const username = ["runtime", "user"].join("-");
+      const password = ["runtime", "credential"].join("-");
+      const remote = `https://${username}:${password}@github.com/code-ministry-ltd/the-librarian.git`;
+      const runner = healthyRunner().onRun(
+        "git",
+        ["-C", deployDir, "remote", "get-url", "origin"],
+        { stdout: `${remote}\n`, code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
+
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).not.toContain(username);
+      expect(r.stdout).not.toContain(password);
+    });
+  });
+
+  it("rejects an insecure canonical-looking origin without leaking credentials", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      fs.mkdirSync(path.join(deployDir, ".git"), { recursive: true });
+      const username = ["runtime", "user"].join("-");
+      const password = ["runtime", "credential"].join("-");
+      const remote = `http://${username}:${password}@github.com/code-ministry-ltd/the-librarian.git`;
+      const runner = healthyRunner().onRun(
+        "git",
+        ["-C", deployDir, "remote", "get-url", "origin"],
+        { stdout: `${remote}\n`, code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
+
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/different remote/i);
+      expect(r.stderr).not.toContain(username);
+      expect(r.stderr).not.toContain(password);
+      expect(r.stderr).not.toContain(remote);
+    });
+  });
+
+  it("redacts a credential-bearing remote from Git failure diagnostics", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      fs.mkdirSync(path.join(deployDir, ".git"), { recursive: true });
+      const secret = ["runtime", "fetch", "credential"].join("-");
+      const remote = `https://worker:${secret}@github.com/code-ministry-ltd/the-librarian.git`;
+      const runner = healthyRunner()
+        .onRun("git", ["-C", deployDir, "remote", "get-url", "origin"], {
+          stdout: "git@github.com:code-ministry-ltd/the-librarian.git\n",
+          code: 0,
+        })
+        .onRun("git", ["-C", deployDir, "fetch", "--tags", "origin"], {
+          stderr: `fatal: authentication failed for ${remote}`,
+          code: 1,
+        });
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
+
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain("[redacted-remote]");
+      expect(r.stderr).not.toContain(secret);
+      expect(r.stderr).not.toContain(remote);
+    });
+  });
+
   it("a git repo with a different remote halts before any clobbering git op", async () => {
     await withTempHome(async (home) => {
       const deployDir = path.join(home, ".librarian", "server");
