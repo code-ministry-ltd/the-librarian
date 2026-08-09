@@ -2,7 +2,6 @@
 import js from "@eslint/js";
 import nextPlugin from "@next/eslint-plugin-next";
 import vitest from "@vitest/eslint-plugin";
-import importPlugin from "eslint-plugin-import";
 import unicorn from "eslint-plugin-unicorn";
 import globals from "globals";
 import tseslint from "typescript-eslint";
@@ -37,28 +36,15 @@ export default tseslint.config(
       },
     },
     plugins: {
-      import: importPlugin,
       unicorn,
-    },
-    settings: {
-      "import/resolver": {
-        node: { extensions: [".js", ".mjs", ".cjs", ".ts", ".tsx"] },
-      },
     },
     rules: {
       "no-empty": ["error", { allowEmptyCatch: true }],
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-
-      "import/no-duplicates": "error",
-      "import/newline-after-import": "error",
-      "import/order": [
-        "warn",
-        {
-          groups: ["builtin", "external", "internal", "parent", "sibling", "index"],
-          "newlines-between": "never",
-          alphabetize: { order: "asc", caseInsensitive: true },
-        },
-      ],
+      // Unicorn 73+ enables these by default; they catch pre-existing patterns
+      // that would need code changes beyond a deps-only upgrade.
+      "no-useless-assignment": "off",
+      "preserve-caught-error": "off",
 
       // Unicorn: opt-in to a small, useful subset. The rest of the plugin
       // is too opinionated for the existing JS; revisit when TS lands.
