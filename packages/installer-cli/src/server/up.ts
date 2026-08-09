@@ -193,6 +193,18 @@ export function resetFinalizationRenamer(): void {
   finalizationRenamer = realFinalizationRenamer;
 }
 
+export type FinalizationRestorer = (file: string, snapshot: FileSnapshot) => void;
+let finalizationRestorer: FinalizationRestorer = restoreFile;
+
+/** Inject prior-file restoration failures (tests only). */
+export function setFinalizationRestorer(next: FinalizationRestorer): void {
+  finalizationRestorer = next;
+}
+
+export function resetFinalizationRestorer(): void {
+  finalizationRestorer = restoreFile;
+}
+
 // --- injectable health-poll sleep ---------------------------------------
 
 /** A sleep used between health polls. Injectable so tests don't actually wait. */
@@ -355,6 +367,17 @@ export class UpError extends Error {
   }
 }
 
+/** Deployment-file promotion failed; tells update whether exact prior bytes were restored. */
+export class DeploymentFinalizationError extends UpError {
+  constructor(
+    message: string,
+    readonly priorFilesRestored: boolean,
+  ) {
+    super(message);
+    this.name = "DeploymentFinalizationError";
+  }
+}
+
 // --- the docker run argv seam -------------------------------------------
 
 export interface RunArgsInput {
@@ -366,6 +389,8 @@ export interface RunArgsInput {
   dataDir?: string | undefined;
   /** `uid:gid` to run the container as — set for a bind-mount so files stay host-owned. */
   runAsUser?: string | undefined;
+  /** Restart policy to preserve during update recovery. Fresh deployments default to unless-stopped. */
+  restartPolicy?: string | undefined;
   /** Exact local tag or digest-pinned registry reference passed to `docker run`. */
   imageRef: string;
   /**
@@ -396,14 +421,23 @@ export interface RunArgsInput {
  * {@link writeDeployEnvFile}), not on this argv.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
-  const { host, dataVolume, dashboardPort, dataDir, runAsUser, imageRef, envFile } = input;
+  const {
+    host,
+    dataVolume,
+    dashboardPort,
+    dataDir,
+    runAsUser,
+    restartPolicy = "unless-stopped",
+    imageRef,
+    envFile,
+  } = input;
   const args = [
     "run",
     "-d",
     "--name",
     CONTAINER_NAME,
     "--restart",
-    "unless-stopped",
+    restartPolicy,
     // Publish the dashboard on the chosen HOST port; the container always listens
     // on 3000 internally (image PORT=3000), so only the left side varies.
     "-p",
@@ -514,7 +548,7 @@ export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): st
   return writeDeployEnvFileAt(deployEnvFilePath(deployDir), input);
 }
 
-function writeStagedDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
+export function writeStagedDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
   return writeDeployEnvFileAt(stagedDeployEnvFilePath(deployDir, stagedEnvIdMinter()), input);
 }
 
@@ -1219,7 +1253,7 @@ function alreadyRunningOutput(
   return { output: lines.join("\n") };
 }
 
-function removeStagedEnv(stagedEnvFile: string): void {
+export function removeStagedEnv(stagedEnvFile: string): void {
   try {
     fs.rmSync(stagedEnvFile, { force: true });
   } catch {
@@ -1252,7 +1286,7 @@ function restoreFile(file: string, snapshot: FileSnapshot): void {
 }
 
 /** Promote env + state as one guarded unit, restoring exact prior bytes on failure. */
-function finalizeDeploymentFiles(
+export function finalizeDeploymentFiles(
   deployDir: string,
   stagedEnvFile: string,
   state: Parameters<typeof writeDeployState>[1],
@@ -1269,21 +1303,23 @@ function finalizeDeploymentFiles(
     finalizationRenamer(stagedStateFile, liveStateFile);
   } catch (error) {
     try {
-      restoreFile(liveEnvFile, priorEnv);
-      restoreFile(liveStateFile, priorState);
+      finalizationRestorer(liveEnvFile, priorEnv);
+      finalizationRestorer(liveStateFile, priorState);
     } catch (rollbackError) {
       const detail = redactSecrets(
         rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
       );
-      throw new UpError(
+      throw new DeploymentFinalizationError(
         `Deployment persistence failed and prior files could not be restored${detail ? `: ${detail}` : "."} ` +
           "The candidate container will be removed; restore deploy.env and deploy-state.json from backup before retrying.",
+        false,
       );
     }
     const detail = redactSecrets(error instanceof Error ? error.message : String(error));
-    throw new UpError(
+    throw new DeploymentFinalizationError(
       `Could not finalize deployment persistence${detail ? `: ${detail}` : "."} ` +
         "Prior deploy.env and deploy-state.json content was restored.",
+      true,
     );
   } finally {
     try {

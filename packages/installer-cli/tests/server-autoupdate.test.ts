@@ -33,15 +33,25 @@ import {
 } from "../src/server/autoupdate.js";
 import { writeDeployState } from "../src/server/deploy-state.js";
 import {
+  CANONICAL_IMAGE_NAME,
+  resetReleaseProvenanceResolver,
+  setReleaseProvenanceResolver,
+} from "../src/server/deployment-image.js";
+import {
   resetRunner as resetDockerRunner,
+  resetStreamer,
   setRunner as setDockerRunner,
+  setStreamer,
 } from "../src/server/docker.js";
 import {
+  buildCreateArgs,
   resetSecretKeyMinter,
   resetSleep,
+  resetStagedEnvIdMinter,
   resetTokenMinter,
   setSecretKeyMinter,
   setSleep,
+  setStagedEnvIdMinter,
   setTokenMinter,
 } from "../src/server/up.js";
 import { updateLockPath } from "../src/server/update-lock.js";
@@ -58,6 +68,9 @@ afterEach(() => {
   resetSleep();
   resetTokenMinter();
   resetSecretKeyMinter();
+  resetStreamer();
+  resetStagedEnvIdMinter();
+  resetReleaseProvenanceResolver();
 });
 
 /** The config JSON a `get` bridge call returns, shaped like autoupdate.get's data. */
@@ -673,6 +686,106 @@ function seedDeployState(home: string, ref = "v1.4.2"): string {
   return dir;
 }
 
+const AUTOUPDATE_CANDIDATE_ID = "91".repeat(32);
+const AUTOUPDATE_IMAGE_ID = `sha256:${"92".repeat(32)}`;
+const AUTOUPDATE_DIGEST = `${CANONICAL_IMAGE_NAME}@sha256:${"93".repeat(32)}`;
+const AUTOUPDATE_REVISION = "94".repeat(20);
+const AUTOUPDATE_STAGED_ID = "autoupdate-test";
+
+/** Script the real stable update path while keeping these wrapper tests offline. */
+function configureSuccessfulStableUpdate(home: string, runner: FakeRunner): string[][] {
+  const streams: string[][] = [];
+  setStreamer({
+    stream: async (_cmd, args) => {
+      streams.push([...args]);
+      return 0;
+    },
+  });
+  setStagedEnvIdMinter(() => AUTOUPDATE_STAGED_ID);
+  setReleaseProvenanceResolver(async () => ({
+    revision: AUTOUPDATE_REVISION,
+    imageDigest: AUTOUPDATE_DIGEST,
+  }));
+  const dir = path.join(home, ".librarian", "server");
+  const stagedEnv = path.join(dir, `deploy.env.next-${AUTOUPDATE_STAGED_ID}`);
+  const createArgs = buildCreateArgs({
+    host: "127.0.0.1",
+    dataVolume: "librarian_data",
+    dashboardPort: 3000,
+    runAsUser: "node",
+    restartPolicy: "unless-stopped",
+    imageRef: AUTOUPDATE_DIGEST,
+    envFile: stagedEnv,
+  });
+  createArgs.splice(1, 0, "--cidfile", `${stagedEnv}.cid`);
+  const live = JSON.stringify({
+    Id: "95".repeat(32),
+    Image: AUTOUPDATE_IMAGE_ID,
+    State: { Status: "running", Health: { Status: "healthy" } },
+    Config: {
+      Image: "the-librarian:v1.4.2",
+      User: "node",
+      Env: [
+        "LIBRARIAN_AGENT_TOKEN=tok",
+        "LIBRARIAN_SECRET_KEY=key",
+        "LIBRARIAN_DATA_DIR=/data",
+        "LIBRARIAN_HOST=0.0.0.0",
+        "LIBRARIAN_PORT=3838",
+        "PORT=3000",
+      ],
+    },
+    HostConfig: {
+      RestartPolicy: { Name: "unless-stopped" },
+      PortBindings: {
+        "3000/tcp": [{ HostIp: "127.0.0.1", HostPort: "3000" }],
+        "3838/tcp": [{ HostIp: "127.0.0.1", HostPort: "3838" }],
+      },
+    },
+    Mounts: [{ Type: "volume", Name: "librarian_data", Destination: "/data" }],
+  });
+  runner
+    .onRun("docker", ["info", "--format", "{{json .}}"], {
+      stdout: JSON.stringify({ OSType: "linux", Architecture: "amd64" }),
+    })
+    .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+      stdout: live,
+    })
+    .onRun(
+      "docker",
+      ["image", "inspect", "--format", "{{json .}}", `${CANONICAL_IMAGE_NAME}:v1.5.0`],
+      {
+        stdout: JSON.stringify({
+          Os: "linux",
+          Architecture: "amd64",
+          Config: {
+            Labels: {
+              "org.opencontainers.image.source":
+                "https://github.com/code-ministry-ltd/the-librarian",
+              "org.opencontainers.image.version": "1.5.0",
+              "org.opencontainers.image.revision": AUTOUPDATE_REVISION,
+            },
+          },
+          RepoTags: [`${CANONICAL_IMAGE_NAME}:v1.5.0`],
+          RepoDigests: [AUTOUPDATE_DIGEST],
+        }),
+      },
+    )
+    .onRun("docker", createArgs, { stdout: `${AUTOUPDATE_CANDIDATE_ID}\n` })
+    .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", AUTOUPDATE_CANDIDATE_ID], {
+      stdout: "healthy\n",
+    });
+  const realRun = runner.run.bind(runner);
+  runner.run = async (cmd, args, opts) => {
+    const result = await realRun(cmd, args, opts);
+    if (cmd === "docker" && args[0] === "create" && result.code === 0) {
+      const cidfileIndex = args.indexOf("--cidfile");
+      if (cidfileIndex >= 0) fs.writeFileSync(args[cidfileIndex + 1]!, `${result.stdout.trim()}\n`);
+    }
+    return result;
+  };
+  return streams;
+}
+
 describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", () => {
   it("server unreachable → SKIP (never update a server in an unknown state), exit 0", async () => {
     const runner = new FakeRunner().withWhich("docker").withFallback({ code: 0 });
@@ -722,25 +835,10 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
 
   it("enabled AND due → invokes `server update`, then stamps last_run_at on success", async () => {
     await withTempHome(async (home) => {
-      const dir = seedDeployState(home);
+      seedDeployState(home);
       const runner = new FakeRunner()
         .withWhich("docker")
-        .withWhich("git")
         .onRun("docker", ["info"], { code: 0 })
-        // The OLD container's env read-back (agent token + master key).
-        .onRun(
-          "docker",
-          ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
-          { code: 0, stdout: "LIBRARIAN_AGENT_TOKEN=tok\nLIBRARIAN_SECRET_KEY=key\n" },
-        )
-        .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
-          code: 0,
-          stdout: "running\n",
-        })
-        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
-          code: 0,
-          stdout: "healthy\n",
-        })
         .withFallback({ code: 0 });
       const bridgeOps: string[] = [];
       // Enabled + never run → due. (current ref differs from latest so update runs.)
@@ -748,6 +846,7 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
         getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
         bridgeOps,
       });
+      const streams = configureSuccessfulStableUpdate(home, runner);
       setDockerRunner(runner);
       setLatestFetcher(async () => "1.5.0"); // newer than v1.4.2 → an actual upgrade
       setTokenMinter(() => "fresh-tok");
@@ -757,18 +856,9 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
 
       const result = await runAutoUpdate({ home, log: (l) => logs.push(l), healthIntervalMs: 0 });
 
-      // The update flow ran (git fetch + docker build for the new tag).
-      expect(runner.ran("git", ["-C", dir, "fetch", "--tags", "origin"])).toBe(true);
-      expect(
-        runner.ran("docker", [
-          "build",
-          "-f",
-          "docker/all-in-one.Dockerfile",
-          "-t",
-          "the-librarian:v1.5.0",
-          ".",
-        ]),
-      ).toBe(true);
+      // The stable update pulled the exact published tag; it did not need Git/build.
+      expect(streams).toContainEqual(["pull", `${CANONICAL_IMAGE_NAME}:v1.5.0`]);
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
       // And the stamp bridge fired AFTER the update succeeded.
       expect(bridgeOps).toContain("stampRun");
       expect(result.output).toMatch(/updated successfully/i);
@@ -801,6 +891,8 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
 
       const result = await runAutoUpdate({ home, log: (l) => logs.push(l), healthIntervalMs: 0 });
       expect(result.output).toMatch(/update failed/i);
+      expect(result.output).not.toMatch(/previous server running|left the previous/i);
+      expect(result.output).toMatch(/inspect.*server status/i);
       // CRUCIAL: a failed update must NOT stamp last_run_at (so it retries).
       expect(bridgeOps).not.toContain("stampRun");
       // It never threw — the wrapper resolved (the timer would exit 0).
@@ -846,7 +938,7 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
 
   it("a stale lock (older than the reclaim window) is reclaimed so the update proceeds (FIX C1)", async () => {
     await withTempHome(async (home) => {
-      const dir = seedDeployState(home);
+      seedDeployState(home);
       // A crashed holder left a lockfile ~2h old → stale → reclaimed, update runs.
       const lockPath = updateLockPath({ home });
       fs.mkdirSync(path.dirname(lockPath), { recursive: true });
@@ -855,27 +947,14 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
 
       const runner = new FakeRunner()
         .withWhich("docker")
-        .withWhich("git")
         .onRun("docker", ["info"], { code: 0 })
-        .onRun(
-          "docker",
-          ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "the-librarian"],
-          { code: 0, stdout: "LIBRARIAN_AGENT_TOKEN=tok\nLIBRARIAN_SECRET_KEY=key\n" },
-        )
-        .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
-          code: 0,
-          stdout: "running\n",
-        })
-        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
-          code: 0,
-          stdout: "healthy\n",
-        })
         .withFallback({ code: 0 });
       const bridgeOps: string[] = [];
       withBridge(runner, {
         getConfig: { enabled: true, cadence: "daily", lastRunAt: null },
         bridgeOps,
       });
+      const streams = configureSuccessfulStableUpdate(home, runner);
       setDockerRunner(runner);
       setLatestFetcher(async () => "1.5.0");
       setTokenMinter(() => "fresh-tok");
@@ -885,7 +964,7 @@ describe("autoupdate --run — the gated, fail-soft wrapper the timer fires", ()
       const result = await runAutoUpdate({ home, log: () => {}, healthIntervalMs: 0 });
 
       // The stale lock did NOT block the update.
-      expect(runner.ran("git", ["-C", dir, "fetch", "--tags", "origin"])).toBe(true);
+      expect(streams).toContainEqual(["pull", `${CANONICAL_IMAGE_NAME}:v1.5.0`]);
       expect(result.output).toMatch(/updated successfully/i);
       expect(bridgeOps).toContain("stampRun");
       // The lock was released after the update (so the next fire isn't blocked).
