@@ -139,16 +139,6 @@ landing than the autonomous run had room for.
   `fly.toml` and DEPLOYMENT.md. The host-agnostic `docker run` one-liner is the
   primary path.
 
-## Dependencies
-
-- **Upgrade `sharp` when 0.35 is published.** `pnpm audit --prod` reports
-  [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj)
-  against 0.34.5, but its stated patched version (0.35.0) is not yet available.
-  The dashboard only optimises its own bundled brand SVG and has no configured
-  remote image sources; the docs also process repository-owned images at build
-  time, so there is currently no untrusted image-input path. Recheck by
-  **2026-09-09** or as soon as 0.35.0 is released. _(A1)_
-
 ## Auth enhancements (optional)
 
 - **GitHub verified-email allowlisting.** The email allowlist
