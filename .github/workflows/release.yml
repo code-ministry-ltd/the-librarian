@@ -127,13 +127,32 @@ jobs:
         id: image
         run: |
           set -euo pipefail
-          if docker buildx imagetools inspect "$VERSION_REF" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "$VERSION_REF already exists — it will be verified, never overwritten."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "$VERSION_REF does not exist — it will be built once."
-          fi
+          STATUS_FILE="${{ runner.temp }}/version-image-inspect.txt"
+          for attempt in 1 2 3; do
+            if docker buildx imagetools inspect "$VERSION_REF" >"$STATUS_FILE" 2>&1; then
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "$VERSION_REF already exists — it will be verified, never overwritten."
+              exit 0
+            fi
+
+            # Only an explicit registry not-found response permits the first
+            # write. Auth, network and rate-limit failures are indeterminate and
+            # must fail closed so a version tag can never be overwritten.
+            if grep -Eiq 'manifest unknown|not found|no such manifest' "$STATUS_FILE"; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              echo "$VERSION_REF does not exist — it will be built once."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Registry lookup attempt $attempt was indeterminate; retrying."
+              sleep $((attempt * 2))
+            fi
+          done
+
+          echo "Registry lookup was indeterminate; refusing to risk overwriting $VERSION_REF." >&2
+          sed 's/^/registry: /' "$STATUS_FILE" >&2
+          exit 1
 
       - name: Generate release image metadata
         id: metadata
@@ -228,6 +247,13 @@ jobs:
           DIGEST_REF: ${{ steps.digest.outputs.digest_ref }}
         run: |
           set -euo pipefail
+          git fetch --depth=1 origin main
+          CURRENT_VERSION="$(git show FETCH_HEAD:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+          if [ "$CURRENT_VERSION" != "$VERSION" ]; then
+            echo "Skipping latest promotion: main is v$CURRENT_VERSION, this recovery run is v$VERSION."
+            exit 0
+          fi
+
           docker buildx imagetools create --tag "$IMAGE_NAME:latest" "$DIGEST_REF"
           LATEST_INSPECT="$(docker buildx imagetools inspect "$IMAGE_NAME:latest")"
           LATEST_DIGEST="$(printf '%s\n' "$LATEST_INSPECT" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)"
