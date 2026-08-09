@@ -141,9 +141,13 @@ landing than the autonomous run had room for.
 
 ## Dependencies
 
-- **Bump `next` / `postcss`.** A moderate advisory (GHSA-qx2v-qp2m-jg93) sits in
-  the lockfile via `next` (build-time CSS tooling, not a runtime input path — not a
-  regression). Worth a repo-wide bump in its own change. _(A1)_
+- **Upgrade `sharp` when 0.35 is published.** `pnpm audit --prod` reports
+  [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj)
+  against 0.34.5, but its stated patched version (0.35.0) is not yet available.
+  The dashboard only optimises its own bundled brand SVG and has no configured
+  remote image sources; the docs also process repository-owned images at build
+  time, so there is currently no untrusted image-input path. Recheck by
+  **2026-09-09** or as soon as 0.35.0 is released. _(A1)_
 
 ## Auth enhancements (optional)
 

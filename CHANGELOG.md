@@ -30,6 +30,14 @@ changes from this point forward are catalogued here.
   digest on the GitHub release, and only then publishes npm packages. Interrupted
   releases can be safely rerun without overwriting the versioned image.
 
+### Security
+
+- Updated Auth.js to `next-auth` 5.0.0-beta.32 / `@auth/core` 0.41.3 so a
+  server-side configuration error cannot produce a truthy auth object and make
+  an existence-based session check fail open. Next.js 15.5.21 closes its current
+  Server Action SSRF/denial-of-service advisories; workspace resolutions pin
+  patched `js-yaml`, `nanoid`, `postcss`, `svgo`, and `tar` releases.
+
 ## [1.20.0] — 2026-08-06
 
 ### Added
