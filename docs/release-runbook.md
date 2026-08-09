@@ -103,6 +103,10 @@ is a clean no-op.
   `docker-image-digest.txt`; verify it against both tags. The dashboard version
   badge compares the running `package.json` to the latest GitHub release,
   refreshing on its 1-hour cache (restart the server for an immediate update).
+  Stable `librarian server up` / `update` resolves the exact release tag, verifies
+  the pulled image against that receipt and the tag's source commit, and runs the
+  immutable digest. A release is not operationally ready for the managed CLI until
+  the versioned image is anonymously pullable on `linux/amd64`.
 - **Claude marketplace** — installs pull this repo; the manifest's `source`
   points at `./integrations/claude`. A marketplace-visible change should bump
   `plugins[].version` in `.claude-plugin/marketplace.json` in the same PR.
@@ -126,4 +130,5 @@ is a clean no-op.
 - [ ] CI green → merge. `release.yml` tags, verifies the image, then publishes the GitHub release automatically
 - [ ] Verify the release digest receipt matches `vX.Y.Z` and `latest`
 - [ ] On the first image release, make the GHCR package public if required; verify a logged-out pull
+- [ ] With the published CLI, verify a stable `server up` selects the new exact tag, reports its digest, and needs no Git/source checkout
 - [ ] Verify the GitHub release appeared (and, for a Pi publish, `npm view <pkg> version` reports the new version)
