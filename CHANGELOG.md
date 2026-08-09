@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.20.1] — 2026-08-06
+
+### Added
+
+- **Project Briefings now have their shelf-scoped storage foundation.** Projects,
+  append-only project updates and reviewable section suggestions are first-class,
+  deterministic Markdown records in the Git-backed vault. Their lifecycle and
+  path-safe identifiers are strictly validated, every mutation is attributed,
+  and both public and system access remain confined to one explicit shelf. This
+  is the internal domain layer for the forthcoming briefing compiler and UI; it
+  does not yet add a new agent verb or generate briefings.
+- **Memories can carry optional project associations.** `project_keys` is
+  relevance metadata, never an access-control signal. The field survives intake,
+  curator updates, proposals, splits, stable merge unions and cross-shelf moves;
+  exact list filtering is available, and old scalar `project_key` frontmatter is
+  read compatibly and rewritten as plural on the next intentional memory write.
+  `remember` accepts associations only when each key names an active project on
+  its resolved write shelf. A move remains non-blocking when the destination
+  lacks a matching active project: the bytes and associations are preserved and
+  the admin receives a warning.
+
 ## [1.17.5] — 2026-08-06
 
 ### Fixed
@@ -4294,6 +4315,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.2...v1.17.3
