@@ -122,28 +122,9 @@ jobs:
         run: docker build -f docker/all-in-one.Dockerfile -t librarian-all-in-one:ci .
 
       - name: Run it and smoke both health endpoints
-        run: |
-          set -euo pipefail
-          # Tokens are required: the image binds 0.0.0.0, so the MCP boot guard
-          # refuses to start without an admin token (the production contract).
-          # /healthz + /api/health are both public, so the smoke still works.
-          docker run -d --name librarian-ci -p 3000:3000 -p 3838:3838 \
-            -e LIBRARIAN_ADMIN_TOKEN=ci-admin-token \
-            -e LIBRARIAN_AGENT_TOKEN=ci-agent-token \
-            -e LIBRARIAN_SECRET_KEY="$(openssl rand -hex 32)" \
-            librarian-all-in-one:ci
-          ok=0
-          for _ in $(seq 1 45); do
-            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null \
-               && curl -fsS http://127.0.0.1:3838/healthz >/dev/null; then
-              ok=1; break
-            fi
-            sleep 2
-          done
-          echo "--- container logs ---"; docker logs librarian-ci || true
-          docker rm -f librarian-ci >/dev/null 2>&1 || true
-          if [ "$ok" != "1" ]; then echo "image did not become healthy"; exit 1; fi
-          echo "both endpoints healthy"
+        env:
+          LIBRARIAN_SMOKE_CONTAINER_NAME: librarian-ci
+        run: node scripts/smoke-docker-image.mjs librarian-all-in-one:ci
 
   e2e:
     name: Dashboard e2e (Playwright)
