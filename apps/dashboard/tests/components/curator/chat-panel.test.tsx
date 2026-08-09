@@ -78,15 +78,18 @@ describe("ChatPanel", () => {
   });
 
   it("calls the confirm action with the proposed action only when the admin clicks Confirm", async () => {
+    const user = userEvent.setup();
     const action: ProposedAction = { type: "unmerge", id: "mem-merged" };
     const onConfirmAction = vi.fn(async () => ({ ok: true as const }));
     renderPanel({
       onChat: scriptedChat({ kind: "proposed_action", action }).action,
       onConfirmAction,
     });
-    await userEvent.type(screen.getByRole("textbox", { name: /message/i }), "undo");
-    await userEvent.click(screen.getByRole("button", { name: /send/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /confirm/i }));
+    await user.type(screen.getByRole("textbox", { name: /message/i }), "undo");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    const confirm = await screen.findByRole("button", { name: /confirm/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await user.click(confirm);
     await waitFor(() => expect(onConfirmAction).toHaveBeenCalledTimes(1));
     expect(onConfirmAction).toHaveBeenCalledWith(action);
   });
