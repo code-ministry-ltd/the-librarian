@@ -74,11 +74,13 @@ jobs:
       - name: Guard — generated docs reference is in sync
         run: pnpm run check:docs
 
-      - name: Validate Docker Compose config
+      - name: Validate source-build Docker Compose config
         env:
-          LIBRARIAN_ADMIN_TOKEN: ci-admin-token
           LIBRARIAN_AGENT_TOKEN: ci-agent-token
-        run: docker compose -f docker/docker-compose.yml config
+        run: docker compose -f docker/docker-compose.yml config --quiet
+
+      - name: Validate image-only Docker Compose config
+        run: docker compose --env-file docker/all-in-one.env.example -f docker/docker-compose.image.yml config --quiet
 
   release-guard:
     name: Release hygiene (version bump + no [Unreleased])

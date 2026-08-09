@@ -1,0 +1,34 @@
+# Image-only all-in-one deployment for operators who do not want a source
+# checkout or local build. Copy all-in-one.env.example to a protected env file,
+# replace both credential placeholders, then pass it with `--env-file`.
+
+name: the-librarian
+
+services:
+  the-librarian:
+    image: ghcr.io/code-ministry-ltd/the-librarian:${LIBRARIAN_VERSION:-latest}
+    container_name: the-librarian
+    restart: unless-stopped
+    user: "${LIBRARIAN_DATA_UID:-1000}:${LIBRARIAN_DATA_GID:-1000}"
+    environment:
+      LIBRARIAN_AGENT_TOKEN: ${LIBRARIAN_AGENT_TOKEN:?missing}
+      LIBRARIAN_SECRET_KEY: ${LIBRARIAN_SECRET_KEY:?missing}
+      LIBRARIAN_AGENT_TOKENS: ${LIBRARIAN_AGENT_TOKENS:-}
+      LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: ${LIBRARIAN_BOOTSTRAP_CLAIM_SECRET:-}
+      LIBRARIAN_ALLOWED_ORIGINS: ${LIBRARIAN_ALLOWED_ORIGINS:-}
+      LIBRARIAN_SINGLE_PORT: ${LIBRARIAN_SINGLE_PORT:-}
+      LIBRARIAN_PUBLIC_URL: ${LIBRARIAN_PUBLIC_URL:-}
+      LIBRARIAN_DATA_DIR: /data
+      LIBRARIAN_HOST: 0.0.0.0
+      LIBRARIAN_PORT: "3838"
+    ports:
+      - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:${LIBRARIAN_DASHBOARD_PORT:-3042}:3000"
+      - "${LIBRARIAN_MCP_PUBLISHED_HOST:-127.0.0.1}:${LIBRARIAN_MCP_PORT:-3838}:3838"
+    volumes:
+      - "${LIBRARIAN_DATA_SOURCE:-librarian_data}:/data"
+    tmpfs:
+      - /tmp
+
+volumes:
+  librarian_data:
+    name: ${LIBRARIAN_DATA_VOLUME_NAME:-librarian_data}
