@@ -359,6 +359,8 @@ async function checkMcpToolSurface() {
 async function checkHttpMcpLocal() {
   const dir = makeTempDir();
   const port = await getFreePort();
+  let trpcPort = await getFreePort();
+  while (trpcPort === port) trpcPort = await getFreePort();
   const child = spawn(process.execPath, ["--no-warnings", HTTP_BIN], {
     cwd: REPO_ROOT,
     env: {
@@ -366,6 +368,10 @@ async function checkHttpMcpLocal() {
       LIBRARIAN_DATA_DIR: dir,
       LIBRARIAN_HOST: "127.0.0.1",
       LIBRARIAN_PORT: String(port),
+      // The local probe owns both listeners. Do not inherit a configured or
+      // default admin port that another running Librarian may already occupy.
+      LIBRARIAN_TRPC_HOST: "127.0.0.1",
+      LIBRARIAN_TRPC_PORT: String(trpcPort),
       LIBRARIAN_AUTH_TOKEN: "hc-admin-token",
       LIBRARIAN_AGENT_TOKEN: "hc-agent-token",
     },
