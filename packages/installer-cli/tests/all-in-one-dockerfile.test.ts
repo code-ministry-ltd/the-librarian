@@ -22,10 +22,17 @@ const dockerfile = fs.readFileSync(
   "utf8",
 );
 
+/** Docker context exclusions that must keep generated build state out. */
+const dockerignore = fs.readFileSync(new URL("../../../.dockerignore", import.meta.url), "utf8");
+
 /** Collapse whitespace so a multi-line `RUN … \` reads as one string to match. */
 const flat = dockerfile.replace(/\\\n/g, " ").replace(/[ \t]+/g, " ");
 
 describe("all-in-one.Dockerfile — builder builds the admin CLI", () => {
+  it("excludes TypeScript incremental metadata when build outputs are excluded", () => {
+    expect(dockerignore).toMatch(/^\*\*\/\*\.tsbuildinfo$/m);
+  });
+
   it("copies the packages/cli SOURCE into the builder (can't build what's absent)", () => {
     // The source COPY (not just the package.json manifest copy on line ~22).
     expect(flat).toMatch(/COPY packages\/cli \.\/packages\/cli/);

@@ -30,6 +30,13 @@ changes from this point forward are catalogued here.
   digest on the GitHub release, and only then publishes npm packages. Interrupted
   releases can be safely rerun without overwriting the versioned image.
 
+### Fixed
+
+- **Docker builds ignore local TypeScript incremental metadata.** A prior host
+  build could leave `*.tsbuildinfo` files in the context while generated `dist`
+  directories stayed excluded, causing the image build to skip core output and
+  fail when the MCP server resolved `@librarian/core`.
+
 ### Security
 
 - Updated Auth.js to `next-auth` 5.0.0-beta.32 / `@auth/core` 0.41.3 so a
