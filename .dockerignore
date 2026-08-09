@@ -12,6 +12,7 @@ npm-debug.log
 packages/*/dist
 apps/*/.next
 apps/*/dist
+**/*.tsbuildinfo
 
 # Editor / IDE
 .vscode
