@@ -892,8 +892,9 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
         log(line);
         return { output: line };
       }
-      // The update failed — its own health-check rollback left the prior container
-      // running. Do NOT stamp last_run_at (so the next fire retries). Log + exit 0.
+      // The update failed. Its typed detail says whether executable recovery also
+      // succeeded; the fail-soft wrapper must not invent a rollback outcome. Do
+      // NOT stamp last_run_at (so the next fire retries). Log + exit 0.
       const detail =
         error instanceof UpdateError || error instanceof Error
           ? redactSecrets(error.message)
@@ -907,7 +908,7 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
           "upgrade the CLI and re-run `librarian server autoupdate enable` as the user who ran " +
           "`server up`."
         : "";
-      const line = `autoupdate: update failed — left the previous server running, did NOT stamp last_run_at (will retry next fire). ${firstLine(detail)}${migrationHint}`;
+      const line = `autoupdate: update failed — deployment state was not advanced and last_run_at was NOT stamped (will retry next fire). Inspect \`librarian server status\`; recovery outcome: ${firstLine(detail)}${migrationHint}`;
       log(line);
       return { output: line };
     }
