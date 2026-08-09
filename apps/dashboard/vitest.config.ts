@@ -17,15 +17,30 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["tests/**/*.test.{ts,tsx}"],
     // The Server-Component renderToString tests run in plain Node; the
-    // component-interaction tests under tests/components need a DOM, so
-    // we pick jsdom there only. Vitest matches the glob top-down.
-    environmentMatchGlobs: [
-      ["tests/components/**", "jsdom"],
-      ["tests/**", "node"],
+    // component-interaction tests under tests/components need a DOM.
+    // Vitest 4 replaced environmentMatchGlobs with projects.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "components",
+          include: ["tests/components/**/*.test.{ts,tsx}"],
+          environment: "jsdom",
+          setupFiles: ["./tests/setup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "node",
+          include: ["tests/**/*.test.{ts,tsx}"],
+          exclude: ["tests/components/**"],
+          environment: "node",
+          setupFiles: ["./tests/setup.ts"],
+        },
+      },
     ],
-    setupFiles: ["./tests/setup.ts"],
     passWithNoTests: true,
   },
 });
