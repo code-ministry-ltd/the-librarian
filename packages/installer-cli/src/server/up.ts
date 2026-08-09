@@ -1,11 +1,13 @@
-// `librarian server up` — build + run the all-in-one container.
+// `librarian server up` — pull a stable release (or build a source ref) and run
+// the all-in-one container.
 //
-// This is the loop-closer: on a fresh Docker host it clones the monorepo at the
-// resolved release tag, builds `the-librarian:<tag>`, mints the master key +
-// agent token into a 0600 deploy env-file, runs the all-in-one container with
-// `docker run --env-file` (ADR 0008 P4 — secrets off argv), waits for it to
-// report healthy, surfaces the CLI-MINTED master key ONCE, and prints the MCP
-// URL + dashboard URL + the agent token ready to paste into `librarian install`.
+// This is the loop-closer: on a fresh Docker host it resolves and validates the
+// stable release image (or clones/builds an arbitrary `--ref`), mints the master
+// key + agent token into a 0600 deploy env-file, creates and starts the
+// all-in-one container with `docker create --env-file` (ADR 0008 P4 — secrets
+// off argv), waits for it to
+// report healthy, surfaces the CLI-MINTED master key ONCE, and prints the MCP URL
+// + dashboard URL + the agent token ready to paste into `librarian install`.
 //
 // ADR 0008 P3: there is no admin token. The admin tRPC API is served only on the
 // trusted internal listener (off the network), so `server up` neither reads back
@@ -34,7 +36,7 @@
 //
 // Security (AGENTS.md): the agent token, master key, and optional bootstrap
 // claim secret ride ONLY in the 0600 deploy env-file fed to
-// `docker run --env-file` (ADR 0008 P4) — never inline on argv. `--env-file`
+// `docker create --env-file` (ADR 0008 P4) — never inline on argv. `--env-file`
 // keeps them off the process argv (and out of any
 // argv-echoing error); it does NOT hide them from `docker inspect .Config.Env`
 // (docker expands the file client-side into the same env list) — that's an
@@ -53,10 +55,18 @@ import { librarianDir } from "../paths.js";
 import type { Prompter } from "../prompt.js";
 import { fetchLatestVersion } from "../status.js";
 import { enableBoot } from "./boot.js";
-import { writeDeployState } from "./deploy-state.js";
+import { deployStatePath, readDeployState, writeDeployState } from "./deploy-state.js";
+import {
+  CANONICAL_IMAGE_NAME,
+  prepareRegistryImage,
+  isReleasedVersionRef,
+  selectDeploymentTarget,
+  type PreparedRegistryImage,
+} from "./deployment-image.js";
 import { run, stream, which, type RunResult } from "./docker.js";
-import { sourcePreflight } from "./preflight.js";
+import { dockerPreflight, sourcePreflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
+import { acquireUpdateLock, updateLockPath } from "./update-lock.js";
 
 // Re-exported from its shared home so existing importers (`update.ts`) keep
 // working; new code should import from `./redact.js` directly.
@@ -138,9 +148,49 @@ export const SAVE_KEY_WARNING = "SAVE THIS KEY — excluded from backups";
  */
 export const DEPLOY_ENV_FILE = "deploy.env";
 
+/** Prefix for invocation-private credentials used while a candidate starts. */
+export const STAGED_DEPLOY_ENV_FILE = "deploy.env.next";
+
 /** `<deployDir>/deploy.env` — the 0600 deploy env-file path within a deploy dir. */
 export function deployEnvFilePath(deployDir: string): string {
   return path.join(deployDir, DEPLOY_ENV_FILE);
+}
+
+/** An invocation-private staged env path, promoted only after health succeeds. */
+export function stagedDeployEnvFilePath(deployDir: string, invocationId: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(invocationId)) {
+    throw new UpError("Could not create a safe invocation ID for the staged deploy env-file.");
+  }
+  return path.join(deployDir, `${STAGED_DEPLOY_ENV_FILE}-${invocationId}`);
+}
+
+export type StagedEnvIdMinter = () => string;
+
+const realStagedEnvIdMinter: StagedEnvIdMinter = () => randomBytes(12).toString("hex");
+let stagedEnvIdMinter = realStagedEnvIdMinter;
+
+/** Inject the non-secret staged-file suffix (tests only). */
+export function setStagedEnvIdMinter(next: StagedEnvIdMinter): void {
+  stagedEnvIdMinter = next;
+}
+
+export function resetStagedEnvIdMinter(): void {
+  stagedEnvIdMinter = realStagedEnvIdMinter;
+}
+
+export type FinalizationRenamer = (source: string, destination: string) => void;
+
+const realFinalizationRenamer: FinalizationRenamer = (source, destination) =>
+  fs.renameSync(source, destination);
+let finalizationRenamer = realFinalizationRenamer;
+
+/** Inject the two final promotion operations (tests force the second to fail). */
+export function setFinalizationRenamer(next: FinalizationRenamer): void {
+  finalizationRenamer = next;
+}
+
+export function resetFinalizationRenamer(): void {
+  finalizationRenamer = realFinalizationRenamer;
 }
 
 // --- injectable health-poll sleep ---------------------------------------
@@ -373,14 +423,10 @@ export function buildRunArgs(input: RunArgsInput): string[] {
   return args;
 }
 
-/**
- * Resolve a user-supplied `--data-dir` to an absolute host path, creating it if
- * absent. Absolute because docker treats a RELATIVE `-v` source as a volume name.
- */
-function resolveHostDataDir(input: string): string {
-  const abs = path.resolve(input);
-  fs.mkdirSync(abs, { recursive: true });
-  return abs;
+/** Build the detached candidate configuration without starting it. */
+export function buildCreateArgs(input: RunArgsInput): string[] {
+  const runArgs = buildRunArgs(input);
+  return ["create", ...runArgs.slice(2)];
 }
 
 /**
@@ -431,7 +477,7 @@ export interface DeployEnvInput {
  * raw value is safe; we reject a value with a newline (it would corrupt the file
  * / smuggle a second var) rather than emit a malformed file.
  */
-export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
+function writeDeployEnvFileAt(file: string, input: DeployEnvInput): string {
   const secretKey = input.secretKey?.trim() ?? "";
   const bootstrapClaimSecret = input.bootstrapClaimSecret ?? "";
   for (const [name, value] of [
@@ -444,7 +490,7 @@ export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): st
     }
   }
   validateBootstrapClaimSecret(bootstrapClaimSecret);
-  fs.mkdirSync(deployDir, { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   const lines = [`LIBRARIAN_AGENT_TOKEN=${input.agentToken}`];
   // Omit the key line entirely when absent (update's read-back-failed path) — the
   // server then resolves it from /data/secret.key, preserving encrypted secrets.
@@ -457,12 +503,19 @@ export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): st
   if (input.host === LOCALHOST) {
     lines.push("LIBRARIAN_ALLOW_NO_AUTH=true");
   }
-  const file = deployEnvFilePath(deployDir);
   fs.writeFileSync(file, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
   // writeFileSync only applies `mode` on create; chmod unconditionally so a
   // pre-existing looser file is tightened (env.ts discipline).
   fs.chmodSync(file, 0o600);
   return file;
+}
+
+export function writeDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
+  return writeDeployEnvFileAt(deployEnvFilePath(deployDir), input);
+}
+
+function writeStagedDeployEnvFile(deployDir: string, input: DeployEnvInput): string {
+  return writeDeployEnvFileAt(stagedDeployEnvFilePath(deployDir, stagedEnvIdMinter()), input);
 }
 
 /**
@@ -514,8 +567,12 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   // shows where it is + what remains, instead of a blank line.
   const log = deps.log ?? ((line: string): void => void process.stderr.write(`${line}\n`));
 
-  // 1) Preflight: docker (daemon reachable) + git, or a teaching error.
-  await sourcePreflight(deps.platform ? { platform: deps.platform } : {});
+  // 1) Select before preflight: stable releases need Docker only; arbitrary refs
+  // keep the source path's Docker + Git contract.
+  const target = selectDeploymentTarget(options.ref);
+  const preflightOptions = deps.platform ? { platform: deps.platform } : {};
+  if (target.imageSource === "registry") await dockerPreflight(preflightOptions);
+  else await sourcePreflight(preflightOptions);
 
   // 2) Resolve the bind host (default loopback; Tailscale offer; `0.0.0.0`
   //    ask-first). May throw `UpError` if the user declines a `0.0.0.0` bind —
@@ -545,110 +602,242 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
       "Pass either --data-dir (a host directory) or --data-volume (a Docker volume), not both.",
     );
   }
-  const dataDir = options.dataDir ? resolveHostDataDir(options.dataDir) : undefined;
-  const runAsUser = dataDir ? dirOwner(dataDir) : undefined;
+  // Resolve without creating yet: a registry pull/metadata failure must leave no
+  // new host material. Source behavior still creates it before clone/build.
+  const dataDir = options.dataDir ? path.resolve(options.dataDir) : undefined;
+  if (target.imageSource === "source" && dataDir) fs.mkdirSync(dataDir, { recursive: true });
 
-  // 3) Resolve the ref (default = latest release tag), then the deploy dir.
+  // 3) Resolve the ref, then prepare either the immutable registry image or the
+  // source checkout/build. Stable failures never fall back to source.
   log("[1/5] Resolving the latest release…");
-  const tag = await resolveRef(options.ref);
-  log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
-  await prepareDeployDir(deployDir, tag);
-  const existingDeployEnv = readDeployEnvFile(deployDir);
-  const bootstrapClaimSecret =
-    suppliedBootstrapClaimSecret === undefined
-      ? existingDeployEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET
-      : suppliedBootstrapClaimSecret || undefined;
-  validateBootstrapClaimSecret(bootstrapClaimSecret ?? "");
+  const tag =
+    target.imageSource === "registry"
+      ? await resolveRegistryRef(target.ref)
+      : await resolveRef(target.ref);
 
-  // 4) Mint the secrets the CLI owns (the loop-closer). Both are CSPRNG and
-  //    NEVER logged: the agent token, and — ADR 0008 P4 — the master key. The
-  //    CLI minting the master key (env wins in core's `env → file → generate`)
-  //    is what keeps it OFF `/data/secret.key`. They ride only in the 0600
-  //    deploy env-file fed to `--env-file`, never inline on argv.
-  //    The MASTER KEY must NOT be re-minted on a re-run — that orphans every
-  //    secret encrypted under the previous key. If the deploy env-file already
-  //    carries one, REUSE it; only a first deploy (no existing key) mints +
-  //    surfaces a new one. (Mirrors `update`'s preserve-don't-mint rule.)
-  const agentToken = minter();
-  const existingKey = existingDeployEnv.LIBRARIAN_SECRET_KEY?.trim() || undefined;
-  const masterKey = existingKey ?? mintSecretKey();
-  const mintedKey = existingKey === undefined;
-  const envFile = writeDeployEnvFile(deployDir, {
-    agentToken,
-    secretKey: masterKey,
-    bootstrapClaimSecret,
-    host,
-  });
+  // The shared deployment lock lives inside deployDir. An initial source clone
+  // must therefore happen before acquiring it; otherwise the lockfile itself
+  // makes the clone target non-empty. Existing managed clones are prepared
+  // under the lock below, alongside the rest of the deployment transaction.
+  const sourceNeedsInitialPreparation =
+    target.imageSource === "source" && !(await pathExists(path.join(deployDir, ".git")));
+  if (sourceNeedsInitialPreparation) {
+    log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
+    await prepareDeployDir(deployDir, tag);
+  }
 
-  // 5) Build the image, then run the container (secrets via `--env-file`).
-  log(
-    `[3/5] Building the image ${CONTAINER_NAME}:${tag} — the slow step: pulling the base ` +
-      `image, installing dependencies, and downloading the embeddings model. Expect several ` +
-      `minutes on a first run; live build output follows.`,
-  );
-  await build(deployDir, tag);
-  log("[4/5] Starting the container…");
-  await dockerRun(
-    buildRunArgs({
+  // `server up` and every update path share one host-level critical section.
+  // From the first container inspect through env/state finalization, no loser
+  // may observe or mutate the winner's deployment files or candidate.
+  const deploymentLockPath = updateLockPath({ home: deps.home, dir: options.dir });
+  const deploymentLock = acquireUpdateLock(deploymentLockPath);
+  if (!deploymentLock) {
+    throw new UpError(
+      `Another server deployment is already in progress (lock: ${deploymentLockPath}). ` +
+        "Wait for it to finish, then re-run `librarian server up`.",
+    );
+  }
+  let lockReleased = false;
+  const releaseDeploymentLock = (): void => {
+    if (lockReleased) return;
+    lockReleased = true;
+    deploymentLock.release();
+  };
+  let completedDeployment:
+    | {
+        agentToken: string;
+        masterKey: string;
+        mintedKey: boolean;
+      }
+    | undefined;
+
+  try {
+    const existingDeployEnv = readDeployEnvFile(deployDir);
+    const bootstrapClaimSecret =
+      suppliedBootstrapClaimSecret === undefined
+        ? existingDeployEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET
+        : suppliedBootstrapClaimSecret || undefined;
+    validateBootstrapClaimSecret(bootstrapClaimSecret ?? "");
+    const existingContainer = await inspectContainerPresence();
+    if (existingContainer.exists) {
+      if (target.imageSource !== "registry") throw existingContainerError([]);
+      const drift = registryDeploymentDrift(deployDir, tag, existingContainer.container, {
+        host,
+        dataVolume,
+        dataDir,
+        dashboardPort,
+        bootstrapClaimSecret,
+      });
+      if (drift.length > 0) throw existingContainerError(drift);
+      log("✓ The requested release is already running and healthy.");
+      releaseDeploymentLock();
+      return alreadyRunningOutput(tag, host, dashboardPort, await enableBootOutput(options, deps));
+    }
+
+    let registryImage: PreparedRegistryImage | undefined;
+    if (target.imageSource === "registry") {
+      log(`[2/5] Pulling and validating ${tag} from the release registry…`);
+      registryImage = await prepareRegistryImage(tag, (chunk) => {
+        if (deps.log) {
+          for (const line of chunk.split("\n")) if (line.length > 0) log(line);
+        } else {
+          process.stderr.write(chunk);
+        }
+      });
+    } else if (!sourceNeedsInitialPreparation) {
+      log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
+      await prepareDeployDir(deployDir, tag);
+    }
+
+    if (target.imageSource === "registry" && dataDir) fs.mkdirSync(dataDir, { recursive: true });
+    const runAsUser = dataDir ? dirOwner(dataDir) : undefined;
+
+    // 4) Source targets build locally; registry targets are already verified and
+    // run only by immutable digest. No credential material is staged until this
+    // preparation has succeeded.
+    let runImageRef: string;
+    if (registryImage) {
+      log(`[3/5] Release image verified at ${registryImage.imageDigest}.`);
+      runImageRef = registryImage.imageDigest;
+    } else {
+      log(
+        `[3/5] Building the image ${CONTAINER_NAME}:${tag} — the slow step: pulling the base ` +
+          `image, installing dependencies, and downloading the embeddings model. Expect several ` +
+          `minutes on a first run; live build output follows.`,
+      );
+      await build(deployDir, tag);
+      runImageRef = `${CONTAINER_NAME}:${tag}`;
+    }
+
+    // 5) Mint the secrets the CLI owns (the loop-closer). Both are CSPRNG and
+    //    NEVER logged: the agent token, and — ADR 0008 P4 — the master key. The
+    //    MASTER KEY must NOT be re-minted on a re-run — that orphans every secret
+    //    encrypted under the previous key. A candidate env-file is kept separate
+    //    from the live one until the new container reports healthy.
+    const agentToken = minter();
+    const existingKey = existingDeployEnv.LIBRARIAN_SECRET_KEY?.trim() || undefined;
+    const masterKey = existingKey ?? mintSecretKey();
+    const mintedKey = existingKey === undefined;
+    const envFile = writeStagedDeployEnvFile(deployDir, {
+      agentToken,
+      secretKey: masterKey,
+      bootstrapClaimSecret,
+      host,
+    });
+    const nextDeployState: Parameters<typeof writeDeployState>[1] = registryImage
+      ? {
+          containerName: CONTAINER_NAME,
+          host,
+          dataVolume,
+          dataDir,
+          dashboardPort,
+          ref: tag,
+          imageTag: registryImage.imageRef,
+          imageSource: "registry",
+          imageRef: registryImage.imageRef,
+          imageDigest: registryImage.imageDigest,
+        }
+      : {
+          containerName: CONTAINER_NAME,
+          host,
+          dataVolume,
+          dataDir,
+          dashboardPort,
+          ref: tag,
+          imageTag: `${CONTAINER_NAME}:${tag}`,
+          imageSource: "source",
+          imageRef: `${CONTAINER_NAME}:${tag}`,
+        };
+
+    log("[4/5] Starting the container…");
+    const createArgs = buildCreateArgs({
       host,
       dataVolume,
       dashboardPort,
       dataDir,
       runAsUser,
-      imageRef: `${CONTAINER_NAME}:${tag}`,
+      imageRef: runImageRef,
       envFile,
-    }),
-    deployDir,
-  );
+    });
+    let candidateId: string | null = null;
+    let healthRollbackComplete = false;
+    try {
+      const createResult = await run("docker", createArgs, { cwd: deployDir });
+      failIfNonZero("docker", createArgs, createResult);
+      const returnedId = createResult.stdout.trim();
+      if (!/^[0-9a-f]{64}$/.test(returnedId)) {
+        throw new UpError(
+          "Docker created the candidate container but did not return its full immutable ID. " +
+            `Refusing unsafe cleanup by mutable name; inspect ${CONTAINER_NAME} manually before retrying.`,
+        );
+      }
+      candidateId = returnedId;
+      const startArgs = ["start", candidateId];
+      const startResult = await run("docker", startArgs, { cwd: deployDir });
+      failIfNonZero("docker", startArgs, startResult);
 
-  // 6+7) Wait for health. ANY failure in this post-`docker run` phase — a
-  //      timeout/unhealthy report or an exception from `docker inspect`/`sleep`
-  //      — MUST force-remove the container so no half-up state is left behind
-  //      (spec §11). `waitForHealthy` already rolls back on its own
-  //      timeout/unhealthy path; this guard catches the throwing cases it
-  //      can't (the second `rm -f` is best-effort + idempotent).
-  //
-  //      ADR 0008 P4: the master key is no longer READ BACK from the container
-  //      (`docker exec cat /data/secret.key`) — the CLI minted it and supplied
-  //      it via env, so the server never writes that file. We surface the
-  //      key we minted.
-  log("[5/5] Waiting for the server to become healthy…");
-  try {
-    await waitForHealthy(options);
-    log("✓ The server is healthy.");
-  } catch (error) {
-    await run("docker", ["rm", "-f", CONTAINER_NAME]).catch(() => undefined);
-    throw error;
+      // 6+7) Wait for health. ANY failure in this post-`docker start` phase — a
+      //      timeout/unhealthy report or an exception from `docker inspect`/`sleep`
+      //      — MUST force-remove the container so no half-up state is left behind
+      //      (spec §11). `waitForHealthy` already rolls back on its own
+      //      timeout/unhealthy path; this guard catches the throwing cases it
+      //      can't. Every cleanup targets the immutable candidate ID.
+      //
+      //      ADR 0008 P4: the master key is no longer READ BACK from the container
+      //      (`docker exec cat /data/secret.key`) — the CLI minted it and supplied
+      //      it via env, so the server never writes that file. We surface the
+      //      key we minted.
+      log("[5/5] Waiting for the server to become healthy…");
+      await waitForHealthy({ ...options, containerIdentity: candidateId });
+      log("✓ The server is healthy.");
+
+      // Promote the non-secret deploy state and the secret-bearing env-file as
+      // one recoverable operation. A failed promotion restores both exact prior
+      // files (or their absence) before the candidate is removed.
+      finalizeDeploymentFiles(deployDir, envFile, nextDeployState);
+      candidateId = null;
+    } catch (error) {
+      if (error instanceof HealthRollbackCompleteError) {
+        healthRollbackComplete = true;
+        candidateId = null;
+      }
+      if (candidateId && !healthRollbackComplete) {
+        try {
+          await removeAttemptContainer(candidateId);
+          candidateId = null;
+        } catch (cleanupError) {
+          removeStagedEnv(envFile);
+          throw cleanupError;
+        }
+        if (error instanceof CleanupError) {
+          removeStagedEnv(envFile);
+          throw new UpError(
+            "The candidate container could not start or become healthy. The first cleanup " +
+              "attempt failed, but a retry " +
+              "removed the candidate container; the data volume is untouched. Fix the startup " +
+              "cause, then re-run `librarian server up`.",
+          );
+        }
+      }
+      removeStagedEnv(envFile);
+      throw error;
+    }
+
+    completedDeployment = { agentToken, masterKey, mintedKey };
+  } finally {
+    releaseDeploymentLock();
   }
 
-  // 7b) Persist the NON-SECRET deploy-state so `update` can recreate the
-  //     container with the same config and `status` can report the deployed
-  //     ref reliably. This carries the bind host / data volume / ref / image
-  //     tag / container name — NEVER a token or key (deploy-state.ts whitelists
-  //     the fields). Only after a confirmed-healthy run, so the recorded state
-  //     reflects a container that actually came up.
-  writeDeployState(deployDir, {
-    containerName: CONTAINER_NAME,
-    host,
-    dataVolume,
-    dataDir,
-    dashboardPort,
-    ref: tag,
-    imageTag: `${CONTAINER_NAME}:${tag}`,
-    imageSource: "source",
-    imageRef: `${CONTAINER_NAME}:${tag}`,
-  });
+  // A successful locked body always assigns this before releasing the lock;
+  // every failure throws through the finally above.
+  const { agentToken, masterKey, mintedKey } = completedDeployment!;
 
   // 8) Boot persistence (opt-in, spec §5.8). With `--enable-boot`, install +
   //    enable the systemd unit AFTER a healthy up (so the named container the
   //    unit references actually exists). On macOS this prints the deferred
   //    notice and continues — the `up` still succeeds. The unit references the
   //    EXISTING container by name and carries NO secret (boot.ts).
-  const lines: string[] = [];
-  if (options.enableBoot) {
-    const bootResult = await enableBoot(deps.platform ? { platform: deps.platform } : {});
-    lines.push(bootResult.output, "");
-  }
+  const lines = await enableBootOutput(options, deps);
 
   // 9) Close the loop: surface secrets/URLs + offer the local env write.
   await closeTheLoop(lines, {
@@ -793,6 +982,318 @@ async function resolveRef(ref: string | undefined): Promise<string> {
   return `v${latest}`;
 }
 
+/** Resolve an omitted stable ref and reject any non-release response fail-closed. */
+async function resolveRegistryRef(ref: string | undefined): Promise<string> {
+  if (ref !== undefined) return ref;
+  const latest = await fetchLatestVersion();
+  const candidate = latest ? `v${latest}` : "";
+  if (!candidate || !isReleasedVersionRef(candidate)) {
+    throw new UpError(
+      "Could not resolve a valid latest stable release tag from GitHub. Check your network and " +
+        "GitHub availability, or pin an exact stable tag with `--ref vX.Y.Z`. Stable installs " +
+        "never fall back to a source build.",
+    );
+  }
+  return candidate;
+}
+
+interface DesiredDeploymentConfig {
+  host: string;
+  dataVolume: string;
+  dataDir?: string | undefined;
+  dashboardPort: number;
+  bootstrapClaimSecret?: string | undefined;
+}
+
+interface LiveContainer {
+  State?: { Health?: { Status?: unknown } };
+  Config?: { Image?: unknown; User?: unknown; Env?: unknown };
+  HostConfig?: {
+    RestartPolicy?: { Name?: unknown };
+    PortBindings?: unknown;
+  };
+  Mounts?: unknown;
+}
+
+type ContainerPresence = { exists: false } | { exists: true; container: LiveContainer };
+
+function verifiedNotFound(result: RunResult, identity = CONTAINER_NAME): boolean {
+  const detail = `${result.stdout}\n${result.stderr}`;
+  const escapedIdentity = identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    new RegExp(`no such (?:object|container):?\\s*${escapedIdentity}(?:\\s|$)`, "i").test(detail) ||
+    new RegExp(`no container .*${escapedIdentity}.* found`, "i").test(detail)
+  );
+}
+
+/** Inspect the fixed container name without treating daemon/permission failures as absence. */
+async function inspectContainerPresence(): Promise<ContainerPresence> {
+  const result = await run("docker", [
+    "container",
+    "inspect",
+    "--format",
+    "{{json .}}",
+    CONTAINER_NAME,
+  ]);
+  if (result.code !== 0) {
+    if (verifiedNotFound(result)) return { exists: false };
+    const detail = redactSecrets(result.stderr.trim() || result.stdout.trim());
+    throw new UpError(
+      `Could not inspect the existing ${CONTAINER_NAME} container` +
+        (detail ? `: ${detail}` : ".") +
+        " Fix Docker access, then re-run `librarian server up`.",
+    );
+  }
+  try {
+    const parsed: unknown = JSON.parse(result.stdout);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+    return { exists: true, container: parsed as LiveContainer };
+  } catch {
+    throw new UpError(
+      `Docker returned malformed metadata for the existing ${CONTAINER_NAME} container. ` +
+        "Refusing to replace it; inspect or remove it manually, then re-run `librarian server up`.",
+    );
+  }
+}
+
+function envRecord(value: unknown): Record<string, string> | null {
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) return null;
+  const record: Record<string, string> = {};
+  for (const entry of value) {
+    const equals = entry.indexOf("=");
+    if (equals > 0) record[entry.slice(0, equals)] = entry.slice(equals + 1);
+  }
+  return record;
+}
+
+function exactPortBinding(bindings: unknown, key: string, host: string, port: number): boolean {
+  if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) return false;
+  const value = (bindings as Record<string, unknown>)[key];
+  return (
+    Array.isArray(value) &&
+    value.length === 1 &&
+    value[0] !== null &&
+    typeof value[0] === "object" &&
+    !Array.isArray(value[0]) &&
+    (value[0] as Record<string, unknown>).HostIp === host &&
+    (value[0] as Record<string, unknown>).HostPort === String(port)
+  );
+}
+
+/** Exact live + persisted identity check performed before any registry access. */
+function registryDeploymentDrift(
+  deployDir: string,
+  ref: string,
+  container: LiveContainer,
+  desired: DesiredDeploymentConfig,
+): string[] {
+  const drift: string[] = [];
+  const state = readDeployState(deployDir);
+  if (
+    !state ||
+    state.imageSource !== "registry" ||
+    state.ref !== ref ||
+    state.imageRef !== `${CANONICAL_IMAGE_NAME}:${ref}` ||
+    state.imageTag !== `${CANONICAL_IMAGE_NAME}:${ref}` ||
+    !state.imageDigest ||
+    state.host !== desired.host ||
+    state.dataVolume !== desired.dataVolume ||
+    state.dataDir !== desired.dataDir ||
+    state.dashboardPort !== desired.dashboardPort
+  ) {
+    drift.push("persisted deployment state");
+  }
+
+  const digest = state?.imageSource === "registry" ? state.imageDigest : undefined;
+  if (container.State?.Health?.Status !== "healthy") drift.push("health status");
+  if (!digest || container.Config?.Image !== digest) drift.push("image digest");
+
+  const mounts = Array.isArray(container.Mounts)
+    ? container.Mounts.filter(
+        (mount) =>
+          mount !== null &&
+          typeof mount === "object" &&
+          !Array.isArray(mount) &&
+          (mount as Record<string, unknown>).Destination === "/data",
+      )
+    : [];
+  const mount = mounts.length === 1 ? (mounts[0] as Record<string, unknown>) : undefined;
+  if (
+    !mount ||
+    (desired.dataDir
+      ? mount.Type !== "bind" || mount.Source !== desired.dataDir
+      : mount.Type !== "volume" || mount.Name !== desired.dataVolume)
+  ) {
+    drift.push("/data mount source or type");
+  }
+
+  const bindings = container.HostConfig?.PortBindings;
+  if (
+    !bindings ||
+    typeof bindings !== "object" ||
+    Array.isArray(bindings) ||
+    Object.keys(bindings).sort().join(",") !== `3000/tcp,${MCP_PUBLISHED_PORT}/tcp` ||
+    !exactPortBinding(bindings, "3000/tcp", desired.host, desired.dashboardPort) ||
+    !exactPortBinding(bindings, `${MCP_PUBLISHED_PORT}/tcp`, desired.host, MCP_PUBLISHED_PORT)
+  ) {
+    drift.push("published host or ports");
+  }
+  if (container.HostConfig?.RestartPolicy?.Name !== "unless-stopped") {
+    drift.push("restart policy");
+  }
+
+  let expectedUser = "node";
+  if (desired.dataDir) {
+    try {
+      expectedUser = dirOwner(desired.dataDir);
+    } catch {
+      drift.push("bind-mounted data directory");
+    }
+  }
+  if (container.Config?.User !== expectedUser) drift.push("container user");
+
+  const persistedEnv = readDeployEnvFile(deployDir);
+  const liveEnv = envRecord(container.Config?.Env);
+  const requiredRuntime: Record<string, string> = {
+    LIBRARIAN_DATA_DIR: "/data",
+    LIBRARIAN_HOST: ALL_INTERFACES,
+    LIBRARIAN_PORT: String(MCP_PUBLISHED_PORT),
+    PORT: "3000",
+  };
+  let envMatches = liveEnv !== null;
+  for (const [name, value] of Object.entries(requiredRuntime)) {
+    if (liveEnv?.[name] !== value) envMatches = false;
+  }
+  for (const name of [
+    "LIBRARIAN_AGENT_TOKEN",
+    "LIBRARIAN_SECRET_KEY",
+    "LIBRARIAN_BOOTSTRAP_CLAIM_SECRET",
+  ]) {
+    const expected = persistedEnv[name];
+    if ((liveEnv?.[name] || undefined) !== (expected || undefined)) envMatches = false;
+  }
+  if (!persistedEnv.LIBRARIAN_AGENT_TOKEN || !persistedEnv.LIBRARIAN_SECRET_KEY) {
+    envMatches = false;
+  }
+  if (
+    (persistedEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET || undefined) !==
+    (desired.bootstrapClaimSecret || undefined)
+  ) {
+    envMatches = false;
+  }
+  const expectedNoAuth = desired.host === LOCALHOST ? "true" : undefined;
+  if ((liveEnv?.LIBRARIAN_ALLOW_NO_AUTH || undefined) !== expectedNoAuth) envMatches = false;
+  if (!envMatches) drift.push("authentication or runtime environment");
+
+  return drift;
+}
+
+async function enableBootOutput(options: UpOptions, deps: UpDeps): Promise<string[]> {
+  if (!options.enableBoot) return [];
+  const bootResult = await enableBoot(deps.platform ? { platform: deps.platform } : {});
+  return [bootResult.output, ""];
+}
+
+function existingContainerError(drift: string[]): UpError {
+  const detail = drift.length > 0 ? ` (${drift.join(", ")})` : "";
+  return new UpError(
+    `The existing ${CONTAINER_NAME} container differs from the ` +
+      `requested healthy deployment${detail}. Refusing to pull, rewrite credentials, or replace ` +
+      "it. Run `librarian server down` if you intend to replace it, then retry.",
+  );
+}
+
+function alreadyRunningOutput(
+  tag: string,
+  host: string,
+  dashboardPort: number,
+  bootLines: string[],
+): UpResult {
+  const lines = [...bootLines];
+  lines.push(
+    `The Librarian server is already running and healthy at ${tag}.`,
+    "",
+    `  MCP URL:     http://${host}:${MCP_PUBLISHED_PORT}/mcp`,
+    `  Dashboard:   http://${host}:${dashboardPort}`,
+  );
+  return { output: lines.join("\n") };
+}
+
+function removeStagedEnv(stagedEnvFile: string): void {
+  try {
+    fs.rmSync(stagedEnvFile, { force: true });
+  } catch {
+    // The primary deployment/cleanup error is more useful than a temp-file error.
+  }
+}
+
+interface FileSnapshot {
+  contents: Buffer | null;
+  mode?: number | undefined;
+}
+
+function snapshotFile(file: string): FileSnapshot {
+  try {
+    const stat = fs.statSync(file);
+    return { contents: fs.readFileSync(file), mode: stat.mode & 0o777 };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { contents: null };
+    throw error;
+  }
+}
+
+function restoreFile(file: string, snapshot: FileSnapshot): void {
+  if (snapshot.contents === null) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  fs.writeFileSync(file, snapshot.contents, { mode: snapshot.mode });
+  if (snapshot.mode !== undefined) fs.chmodSync(file, snapshot.mode);
+}
+
+/** Promote env + state as one guarded unit, restoring exact prior bytes on failure. */
+function finalizeDeploymentFiles(
+  deployDir: string,
+  stagedEnvFile: string,
+  state: Parameters<typeof writeDeployState>[1],
+): void {
+  const liveEnvFile = deployEnvFilePath(deployDir);
+  const liveStateFile = deployStatePath(deployDir);
+  const priorEnv = snapshotFile(liveEnvFile);
+  const priorState = snapshotFile(liveStateFile);
+  const stagedStateDir = fs.mkdtempSync(path.join(deployDir, ".deploy-state-next-"));
+  const stagedStateFile = deployStatePath(stagedStateDir);
+  try {
+    writeDeployState(stagedStateDir, state);
+    finalizationRenamer(stagedEnvFile, liveEnvFile);
+    finalizationRenamer(stagedStateFile, liveStateFile);
+  } catch (error) {
+    try {
+      restoreFile(liveEnvFile, priorEnv);
+      restoreFile(liveStateFile, priorState);
+    } catch (rollbackError) {
+      const detail = redactSecrets(
+        rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+      );
+      throw new UpError(
+        `Deployment persistence failed and prior files could not be restored${detail ? `: ${detail}` : "."} ` +
+          "The candidate container will be removed; restore deploy.env and deploy-state.json from backup before retrying.",
+      );
+    }
+    const detail = redactSecrets(error instanceof Error ? error.message : String(error));
+    throw new UpError(
+      `Could not finalize deployment persistence${detail ? `: ${detail}` : "."} ` +
+        "Prior deploy.env and deploy-state.json content was restored.",
+    );
+  } finally {
+    try {
+      fs.rmSync(stagedStateDir, { recursive: true, force: true });
+    } catch {
+      // Non-secret staging residue must not override persistence/rollback truth.
+    }
+  }
+}
+
 /**
  * Ready the deploy dir at `tag`:
  *   - absent → `git clone <repo> <dir>` then checkout the ref;
@@ -878,9 +1379,21 @@ async function build(deployDir: string, tag: string): Promise<void> {
   }
 }
 
-/** Run the container (the assembled run argv) from the deploy dir. */
-async function dockerRun(args: string[], deployDir: string): Promise<void> {
-  await dockerInDir(args, deployDir);
+class CleanupError extends UpError {}
+
+class HealthRollbackCompleteError extends UpError {}
+
+/** Remove only the container created by this attempt, and verify the outcome. */
+async function removeAttemptContainer(candidateId: string): Promise<void> {
+  const result = await run("docker", ["rm", "-f", candidateId]);
+  if (result.code === 0 || verifiedNotFound(result, candidateId)) return;
+  const detail = redactSecrets(result.stderr.trim() || result.stdout.trim());
+  throw new CleanupError(
+    `Could not remove failed candidate container ${candidateId}` +
+      (detail ? `: ${detail}` : ".") +
+      ` The data volume was not removed. Run \`docker rm -f ${candidateId}\` manually, ` +
+      "then re-run `librarian server up`.",
+  );
 }
 
 /**
@@ -895,6 +1408,8 @@ export interface HealthWaitOptions {
   healthIntervalMs?: number | undefined;
   /** Lines of `docker logs` to surface on a failed health-wait. */
   logTailLines?: number | undefined;
+  /** Immutable container ID for owned-candidate cleanup; update omits this for legacy name use. */
+  containerIdentity?: string | undefined;
 }
 
 /**
@@ -910,6 +1425,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   const attempts = options.healthAttempts ?? 60;
   const intervalMs = options.healthIntervalMs ?? 2000;
   const tail = options.logTailLines ?? 50;
+  const identity = options.containerIdentity ?? CONTAINER_NAME;
 
   // Track whether ANY poll yielded a non-empty status. Snap docker's confinement
   // does not emit stdout to a non-TTY pipe, so every `docker inspect` comes back
@@ -923,7 +1439,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
       "inspect",
       "--format",
       "{{.State.Health.Status}}",
-      CONTAINER_NAME,
+      identity,
     ]);
     if (result.code !== 0) allInspectsOk = false; // a failing inspect is NOT the snap signature
     const state = result.stdout.trim();
@@ -939,8 +1455,8 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   // (defense-in-depth, e.g. an older image) — none of that may reach an error
   // message (spec §5.6 wants logs surfaced, just not secrets). Then roll back so
   // no half-up container survives.
-  const logs = await run("docker", ["logs", "--tail", String(tail), CONTAINER_NAME]);
-  await run("docker", ["rm", "-f", CONTAINER_NAME]);
+  const logs = await run("docker", ["logs", "--tail", String(tail), identity]);
+  await removeAttemptContainer(identity);
 
   // Conservative snap-docker detection: every `docker inspect` SUCCEEDED (exit 0)
   // yet returned empty output — never a single "starting"/"healthy"/"unhealthy".
@@ -948,7 +1464,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   // (exit ≠ 0) is a different problem and falls through to the normal error below.
   // The container may well be running fine — we just can't see it through snap.
   if (!sawAnyStatus && allInspectsOk) {
-    throw new UpError(
+    throw new HealthRollbackCompleteError(
       `Could not read the container's health — every \`docker inspect\` returned empty ` +
         `output. That is the signature of snap docker, whose confinement does not emit ` +
         `stdout to a non-TTY pipe, so \`librarian server\` cannot read health or logs (the ` +
@@ -960,7 +1476,7 @@ export async function waitForHealthy(options: HealthWaitOptions): Promise<void> 
   }
 
   const detail = redactSecrets(logs.stdout.trim() || logs.stderr.trim());
-  throw new UpError(
+  throw new HealthRollbackCompleteError(
     `The server did not become healthy in time and was rolled back ` +
       `(container removed; the data volume is untouched). Recent logs:\n` +
       (detail ? detail : "(no log output captured)") +
@@ -1117,12 +1633,6 @@ export async function checkoutRef(dir: string, ref: string): Promise<void> {
   ]);
   failIfNonZero("git", ["-C", dir, "rev-parse", ref], resolved);
   await git(["-C", dir, "checkout", resolved.stdout.trim()]);
-}
-
-/** Run a `docker …` command from the deploy dir; non-zero exit → teaching error. */
-async function dockerInDir(args: string[], cwd: string): Promise<void> {
-  const result = await run("docker", args, { cwd });
-  failIfNonZero("docker", args, result);
 }
 
 function failIfNonZero(cmd: string, args: string[], result: RunResult): void {

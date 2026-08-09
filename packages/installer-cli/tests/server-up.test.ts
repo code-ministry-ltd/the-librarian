@@ -12,7 +12,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readEnvFile } from "../src/env.js";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
-import { deployStatePath, readDeployState } from "../src/server/deploy-state.js";
+import { deployStatePath, readDeployState, writeDeployState } from "../src/server/deploy-state.js";
+import {
+  CANONICAL_IMAGE_NAME,
+  resetReleaseProvenanceResolver,
+  setReleaseProvenanceResolver,
+} from "../src/server/deployment-image.js";
 import {
   resetRunner as resetDockerRunner,
   resetStreamer,
@@ -20,14 +25,20 @@ import {
   setStreamer,
 } from "../src/server/docker.js";
 import {
+  buildCreateArgs,
   buildRunArgs,
   deployEnvFilePath,
+  stagedDeployEnvFilePath,
   resetSecretKeyMinter,
+  resetFinalizationRenamer,
   resetSleep,
+  resetStagedEnvIdMinter,
   resetTokenMinter,
   runUp,
   setSecretKeyMinter,
+  setFinalizationRenamer,
   setSleep,
+  setStagedEnvIdMinter,
   setTokenMinter,
   waitForHealthy,
   writeDeployEnvFile,
@@ -43,6 +54,30 @@ const MASTER_KEY = "master-key-minted-by-the-cli-deterministic";
 const BOOTSTRAP_CLAIM_SECRET = "managed-bootstrap-claim-secret-".repeat(2);
 const LATEST = "1.4.2"; // fetchLatestVersion returns the v-stripped version
 const LATEST_TAG = "v1.4.2";
+const REGISTRY_HASH = "ab".repeat(32);
+const REGISTRY_DIGEST = `${CANONICAL_IMAGE_NAME}@sha256:${REGISTRY_HASH}`;
+const REGISTRY_IMAGE_REF = `${CANONICAL_IMAGE_NAME}:${LATEST_TAG}`;
+const REGISTRY_REVISION = "12".repeat(20);
+const CANDIDATE_CONTAINER_ID = "cafebabedeadbeef".repeat(4);
+const UNRELATED_CONTAINER_ID = "decafbad01234567".repeat(4);
+const STAGED_ENV_INVOCATION_ID = "deterministic-invocation";
+
+function registryInspectJson(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    Os: "linux",
+    Architecture: "amd64",
+    Config: {
+      Labels: {
+        "org.opencontainers.image.source": "https://github.com/code-ministry-ltd/the-librarian",
+        "org.opencontainers.image.version": LATEST,
+        "org.opencontainers.image.revision": REGISTRY_REVISION,
+      },
+    },
+    RepoTags: [REGISTRY_IMAGE_REF],
+    RepoDigests: [REGISTRY_DIGEST],
+    ...overrides,
+  });
+}
 
 // The image build STREAMS its output live (so a multi-minute build isn't a blank
 // line) — it goes through the streamer seam, not the capture runner. Record the
@@ -50,6 +85,11 @@ const LATEST_TAG = "v1.4.2";
 let buildStream: { cmd: string; args: string[]; opts?: { cwd?: string } }[];
 beforeEach(() => {
   buildStream = [];
+  setStagedEnvIdMinter(() => STAGED_ENV_INVOCATION_ID);
+  setReleaseProvenanceResolver(async () => ({
+    revision: REGISTRY_REVISION,
+    imageDigest: REGISTRY_DIGEST,
+  }));
   setStreamer({
     stream: async (cmd, args, _handlers, opts) => {
       buildStream.push({ cmd, args: [...args], opts });
@@ -63,14 +103,21 @@ function streamedBuildArgs(): string[] | undefined {
   return buildStream.find((c) => c.cmd === "docker" && c.args[0] === "build")?.args;
 }
 
+function streamedPullArgs(): string[] | undefined {
+  return buildStream.find((c) => c.cmd === "docker" && c.args[0] === "pull")?.args;
+}
+
 afterEach(() => {
   resetRunner();
   resetDockerRunner();
   resetStreamer();
   resetLatestFetcher();
   resetSleep();
+  resetStagedEnvIdMinter();
   resetTokenMinter();
   resetSecretKeyMinter();
+  resetReleaseProvenanceResolver();
+  resetFinalizationRenamer();
 });
 
 /** A FakeRunner wired for a fully-successful localhost `up`. */
@@ -78,14 +125,79 @@ function healthyRunner(): FakeRunner {
   // ADR 0008 P4: secrets are CLI-minted into a 0600 deploy env-file and delivered
   // via `docker run --env-file`; the master key is NOT read back from the
   // container, so there is no `docker exec cat /data/secret.key` to script.
-  return new FakeRunner()
-    .withWhich("docker")
-    .withWhich("git")
-    .onRun("docker", ["info"], { code: 0 })
-    .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
-      stdout: "healthy\n",
-      code: 0,
-    });
+  return withCandidateLifecycle(
+    new FakeRunner()
+      .withWhich("docker")
+      .withWhich("git")
+      .onRun("docker", ["info"], { code: 0 })
+      .onRun("docker", ["info", "--format", "{{json .}}"], {
+        stdout: JSON.stringify({ OSType: "linux", Architecture: "amd64" }),
+        code: 0,
+      })
+      .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+        stderr: "No such container: the-librarian",
+        code: 1,
+      })
+      .onRun("docker", ["image", "inspect", "--format", "{{json .}}", REGISTRY_IMAGE_REF], {
+        stdout: `${registryInspectJson()}\n`,
+        code: 0,
+      })
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "healthy\n",
+        code: 0,
+      })
+      .onRun(
+        "docker",
+        ["inspect", "--format", "{{.State.Health.Status}}", CANDIDATE_CONTAINER_ID],
+        { stdout: "healthy\n", code: 0 },
+      ),
+  );
+}
+
+/** A fully-successful registry deployment runner; Git is intentionally absent. */
+function healthyRegistryRunner(): FakeRunner {
+  return withCandidateLifecycle(
+    new FakeRunner()
+      .withWhich("docker")
+      .onRun("docker", ["info"], { code: 0 })
+      .onRun("docker", ["info", "--format", "{{json .}}"], {
+        stdout: JSON.stringify({ OSType: "linux", Architecture: "x86_64" }),
+        code: 0,
+      })
+      .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+        stderr: "No such container: the-librarian",
+        code: 1,
+      })
+      .onRun("docker", ["image", "inspect", "--format", "{{json .}}", REGISTRY_IMAGE_REF], {
+        stdout: `${registryInspectJson()}\n`,
+        code: 0,
+      })
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "healthy\n",
+        code: 0,
+      })
+      .onRun(
+        "docker",
+        ["inspect", "--format", "{{.State.Health.Status}}", CANDIDATE_CONTAINER_ID],
+        { stdout: "healthy\n", code: 0 },
+      ),
+  );
+}
+
+function withCandidateLifecycle(runner: FakeRunner): FakeRunner {
+  const realRun = runner.run.bind(runner);
+  runner.run = async (cmd, args, options) => {
+    if (cmd === "docker" && args[0] === "create") {
+      runner.calls.push({ cmd, args: [...args], opts: options });
+      return { stdout: `${CANDIDATE_CONTAINER_ID}\n`, stderr: "", code: 0 };
+    }
+    if (cmd === "docker" && args[0] === "start" && args[1] === CANDIDATE_CONTAINER_ID) {
+      runner.calls.push({ cmd, args: [...args], opts: options });
+      return { stdout: `${CANDIDATE_CONTAINER_ID}\n`, stderr: "", code: 0 };
+    }
+    return realRun(cmd, args, options);
+  };
+  return runner;
 }
 
 /** Install the deterministic seams shared by the happy-path tests. */
@@ -101,20 +213,72 @@ function deployEnvOf(home: string): string {
   return deployEnvFilePath(path.join(home, ".librarian", "server"));
 }
 
-/** The argv (after `docker`) any `run -d …` call recorded by the runner. */
-function dockerRunArgs(runner: FakeRunner): string[] | undefined {
-  return runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "run")?.args;
+function stagedDeployEnvOf(home: string): string {
+  return stagedDeployEnvFilePath(path.join(home, ".librarian", "server"), STAGED_ENV_INVOCATION_ID);
 }
 
-describe("server up — fresh localhost happy path (exact argv)", () => {
-  it("clones at the latest tag, builds, then runs the localhost container", async () => {
+/** The argv (after `docker`) any `run -d …` call recorded by the runner. */
+function dockerRunArgs(runner: FakeRunner): string[] | undefined {
+  return runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "create")?.args;
+}
+
+function liveRegistryContainer() {
+  return {
+    State: { Health: { Status: "healthy" } },
+    Config: {
+      Image: REGISTRY_DIGEST,
+      User: "node",
+      Env: [
+        "LIBRARIAN_AGENT_TOKEN=existing-agent-token",
+        "LIBRARIAN_SECRET_KEY=existing-master-key-long-enough-for-safe-reuse",
+        "LIBRARIAN_ALLOW_NO_AUTH=true",
+        "LIBRARIAN_DATA_DIR=/data",
+        "LIBRARIAN_HOST=0.0.0.0",
+        "LIBRARIAN_PORT=3838",
+        "PORT=3000",
+      ],
+    },
+    HostConfig: {
+      RestartPolicy: { Name: "unless-stopped" },
+      PortBindings: {
+        "3000/tcp": [{ HostIp: "127.0.0.1", HostPort: "3042" }],
+        "3838/tcp": [{ HostIp: "127.0.0.1", HostPort: "3838" }],
+      },
+    },
+    Mounts: [{ Destination: "/data", Type: "volume", Name: "librarian_data" }],
+  };
+}
+
+function seedRegistryDeployment(home: string): string {
+  const deployDir = path.join(home, ".librarian", "server");
+  writeDeployEnvFile(deployDir, {
+    agentToken: "existing-agent-token",
+    secretKey: "existing-master-key-long-enough-for-safe-reuse",
+    host: "127.0.0.1",
+  });
+  writeDeployState(deployDir, {
+    containerName: "the-librarian",
+    host: "127.0.0.1",
+    dataVolume: "librarian_data",
+    dashboardPort: 3042,
+    ref: LATEST_TAG,
+    imageTag: REGISTRY_IMAGE_REF,
+    imageSource: "registry",
+    imageRef: REGISTRY_IMAGE_REF,
+    imageDigest: REGISTRY_DIGEST,
+  });
+  return deployDir;
+}
+
+describe("server up — source localhost happy path (exact argv)", () => {
+  it("clones at an arbitrary source ref, builds, then runs the localhost container", async () => {
     await withTempHome(async (home) => {
       const runner = healthyRunner();
       setDockerRunner(runner);
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
       const deployDir = path.join(home, ".librarian", "server");
@@ -137,7 +301,7 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
           "rev-parse",
           "--verify",
           "--end-of-options",
-          `${LATEST_TAG}^{commit}`,
+          "main^{commit}",
         ]),
       ).toBe(true);
 
@@ -148,15 +312,14 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
         "-f",
         "docker/all-in-one.Dockerfile",
         "-t",
-        `the-librarian:${LATEST_TAG}`,
+        "the-librarian:main",
         ".",
       ]);
 
       // docker run — the EXACT localhost argv. ADR 0008 P4: secrets ride in the
       // 0600 deploy env-file via `--env-file <path>`, NOT inline `-e`. No --init.
       expect(dockerRunArgs(runner)).toEqual([
-        "run",
-        "-d",
+        "create",
         "--name",
         "the-librarian",
         "--restart",
@@ -168,8 +331,8 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
         "-v",
         "librarian_data:/data",
         "--env-file",
-        deployEnvOf(home),
-        `the-librarian:${LATEST_TAG}`,
+        stagedDeployEnvOf(home),
+        "the-librarian:main",
       ]);
 
       // The secrets must NOT appear on argv (off-argv invariant — ADR 0008 P4).
@@ -187,11 +350,11 @@ describe("server up — fresh localhost happy path (exact argv)", () => {
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
-      await runCli(["server", "up"], { home, prompter });
+      await runCli(["server", "up", "--ref", "main"], { home, prompter });
 
       const deployDir = path.join(home, ".librarian", "server");
       const build = buildStream.find((c) => c.args[0] === "build");
-      const dRun = runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "run");
+      const dRun = runner.calls.find((c) => c.cmd === "docker" && c.args[0] === "create");
       expect(build?.opts?.cwd).toBe(deployDir);
       expect(dRun?.opts?.cwd).toBe(deployDir);
     });
@@ -302,25 +465,46 @@ describe("server up — health-wait failure rolls back (no half-up)", () => {
         .withWhich("docker")
         .withWhich("git")
         .onRun("docker", ["info"], { code: 0 })
+        .onRun("docker", ["info", "--format", "{{json .}}"], {
+          stdout: JSON.stringify({ OSType: "linux", Architecture: "amd64" }),
+          code: 0,
+        })
+        .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+          stderr: "No such container: the-librarian",
+          code: 1,
+        })
+        .onRun("docker", ["image", "inspect", "--format", "{{json .}}", REGISTRY_IMAGE_REF], {
+          stdout: registryInspectJson(),
+          code: 0,
+        })
         .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
           stdout: "unhealthy\n",
           code: 0,
         })
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{.State.Health.Status}}", CANDIDATE_CONTAINER_ID],
+          { stdout: "unhealthy\n", code: 0 },
+        )
         .onRun("docker", ["logs", "--tail", "50", "the-librarian"], {
           stdout: "boom: the server crashed on boot\n",
           code: 0,
+        })
+        .onRun("docker", ["logs", "--tail", "50", CANDIDATE_CONTAINER_ID], {
+          stdout: "boom: the server crashed on boot\n",
+          code: 0,
         });
-      setDockerRunner(runner);
+      setDockerRunner(withCandidateLifecycle(runner));
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
       // The container reports `unhealthy`, so the poll terminates fast (no need
       // to wait out the bound) and the flow rolls back.
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
 
       expect(r.exitCode).toBe(1);
       // Rolled back — the container was force-removed.
-      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(true);
+      expect(runner.ran("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID])).toBe(true);
       // Logs were surfaced to the operator.
       expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "logs")).toBe(true);
       expect(r.stderr).toMatch(/did not become healthy/i);
@@ -334,6 +518,24 @@ describe("server up — health-wait failure rolls back (no half-up)", () => {
 });
 
 describe("server up — a failed docker step REDACTS secret-bearing output (S-2)", () => {
+  it("removes staged credentials when the source image build fails", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      setStreamer({ stream: async () => 1 });
+
+      const result = await runCli(["server", "up", "--ref", "main"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+      expect(fs.existsSync(deployEnvOf(home))).toBe(false);
+    });
+  });
+
   it("a docker run failure is surfaced redacted; the secrets never reach argv or the error", async () => {
     await withTempHome(async (home) => {
       // The real minters yield 64-hex values; mirror that shape here (assembled
@@ -355,14 +557,18 @@ describe("server up — a failed docker step REDACTS secret-bearing output (S-2)
         .withWhich("docker")
         .withWhich("git")
         .withFallback({ code: 0 })
-        .onRun("docker", ["info"], { code: 0 });
+        .onRun("docker", ["info"], { code: 0 })
+        .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+          stderr: "No such container: the-librarian",
+          code: 1,
+        });
       // Script the failing `docker run` by matching its full argv.
-      const runArgs = buildRunArgs({
+      const runArgs = buildCreateArgs({
         host: "127.0.0.1",
         dataVolume: "librarian_data",
         dashboardPort: 3042,
-        imageRef: `the-librarian:${LATEST_TAG}`,
-        envFile: deployEnvOf(home),
+        imageRef: "the-librarian:main",
+        envFile: stagedDeployEnvOf(home),
       });
       runner.onRun("docker", runArgs, {
         stderr:
@@ -373,10 +579,10 @@ describe("server up — a failed docker step REDACTS secret-bearing output (S-2)
       setDockerRunner(runner);
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(1);
-      // It failed at the `docker run` step (not earlier).
-      expect(r.stderr).toMatch(/docker run/);
+      // It failed at the `docker create` step (not earlier).
+      expect(r.stderr).toMatch(/docker create/);
       // The secrets are NOT on the docker run argv (off-argv invariant).
       expect(runArgs.some((a) => a.includes(hexAgentToken))).toBe(false);
       expect(runArgs.some((a) => a.includes(hexMasterKey))).toBe(false);
@@ -386,8 +592,8 @@ describe("server up — a failed docker step REDACTS secret-bearing output (S-2)
       // ...but the non-secret remainder of the error IS surfaced.
       expect(r.stderr).toMatch(/Error response from daemon/);
       // ...and neither leaked into any file other than the 0600 deploy env-file.
-      expect(filesContaining(home, hexAgentToken)).toEqual([deployEnvOf(home)]);
-      expect(filesContaining(home, hexMasterKey)).toEqual([deployEnvOf(home)]);
+      expect(filesContaining(home, hexAgentToken)).toEqual([]);
+      expect(filesContaining(home, hexMasterKey)).toEqual([]);
     });
   });
 });
@@ -403,7 +609,7 @@ describe("server up — master key surfaced once, persisted only in the 0600 dep
       // key's ONLY host home is the 0600 deploy env-file (ADR 0008 P4).
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "y" } });
 
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
       // Surfaced exactly once, beside the SAVE warning — the CLI-minted key.
@@ -426,7 +632,7 @@ describe("server up — the 0600 deploy env-file (ADR 0008 P4)", () => {
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
       const envFile = deployEnvOf(home);
@@ -446,7 +652,7 @@ describe("server up — the 0600 deploy env-file (ADR 0008 P4)", () => {
       const runArgs = dockerRunArgs(runner) ?? [];
       const envFlagIdx = runArgs.indexOf("--env-file");
       expect(envFlagIdx).toBeGreaterThanOrEqual(0);
-      expect(runArgs[envFlagIdx + 1]).toBe(envFile);
+      expect(runArgs[envFlagIdx + 1]).toBe(stagedDeployEnvOf(home));
       expect(runArgs).not.toContain("-e");
       expect(runArgs.some((a) => a.includes(AGENT_TOKEN))).toBe(false);
       expect(runArgs.some((a) => a.includes(MASTER_KEY))).toBe(false);
@@ -542,7 +748,7 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toMatch(/different remote/i);
 
@@ -570,7 +776,7 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
-      const r = await runCli(["server", "up"], { home, prompter });
+      const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(0);
 
       // No clone (already ours); fetch tags + resolve the ref on `rev-parse`
@@ -584,7 +790,7 @@ describe("server up — foreign deploy dir stops and asks (never clobbers)", () 
           "rev-parse",
           "--verify",
           "--end-of-options",
-          `${LATEST_TAG}^{commit}`,
+          "main^{commit}",
         ]),
       ).toBe(true);
     });
@@ -662,9 +868,10 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
         dataVolume: "librarian_data",
         dashboardPort: 3042,
         ref: LATEST_TAG,
-        imageTag: `the-librarian:${LATEST_TAG}`,
-        imageSource: "source",
-        imageRef: `the-librarian:${LATEST_TAG}`,
+        imageTag: REGISTRY_IMAGE_REF,
+        imageSource: "registry",
+        imageRef: REGISTRY_IMAGE_REF,
+        imageDigest: REGISTRY_DIGEST,
       });
 
       // The state file carries NO secret: not the agent token, not the master key.
@@ -909,16 +1116,37 @@ describe("server up — failed health-wait redacts secrets from surfaced logs (C
         .withWhich("docker")
         .withWhich("git")
         .onRun("docker", ["info"], { code: 0 })
+        .onRun("docker", ["info", "--format", "{{json .}}"], {
+          stdout: JSON.stringify({ OSType: "linux", Architecture: "amd64" }),
+          code: 0,
+        })
+        .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+          stderr: "No such container: the-librarian",
+          code: 1,
+        })
+        .onRun("docker", ["image", "inspect", "--format", "{{json .}}", REGISTRY_IMAGE_REF], {
+          stdout: registryInspectJson(),
+          code: 0,
+        })
         .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
           stdout: "unhealthy\n",
           code: 0,
         })
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{.State.Health.Status}}", CANDIDATE_CONTAINER_ID],
+          { stdout: "unhealthy\n", code: 0 },
+        )
         // The boot logs CONTAIN the one-time admin-token generation line.
         .onRun("docker", ["logs", "--tail", "50", "the-librarian"], {
           stdout: `boot: starting up\n${FAKE_ADMIN_LOG_LINE}\nboot: health probe failed\n`,
           code: 0,
+        })
+        .onRun("docker", ["logs", "--tail", "50", CANDIDATE_CONTAINER_ID], {
+          stdout: `boot: starting up\n${FAKE_ADMIN_LOG_LINE}\nboot: health probe failed\n`,
+          code: 0,
         });
-      setDockerRunner(runner);
+      setDockerRunner(withCandidateLifecycle(runner));
       stubSeams();
       const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
 
@@ -934,7 +1162,7 @@ describe("server up — failed health-wait redacts secrets from surfaced logs (C
       expect(r.stderr).toMatch(/did not become healthy/i);
 
       // Rolled back — no half-up container.
-      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(true);
+      expect(runner.ran("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID])).toBe(true);
     });
   });
 });
@@ -946,7 +1174,7 @@ describe("server up — any post-run failure rolls back (I2, no half-up)", () =>
       // Make `docker inspect` (the health probe) REJECT instead of returning.
       const realRun = runner.run.bind(runner);
       runner.run = async (cmd, args, opts) => {
-        if (cmd === "docker" && args[0] === "inspect") {
+        if (cmd === "docker" && args[0] === "inspect" && args[2] === "{{.State.Health.Status}}") {
           // still record the call so we can reason about ordering
           runner.calls.push({ cmd, args: [...args], opts });
           throw new Error("docker inspect exploded mid-health-loop");
@@ -962,7 +1190,7 @@ describe("server up — any post-run failure rolls back (I2, no half-up)", () =>
 
       // Even though the failure was an exception (not the timeout/unhealthy return
       // path), the container must be force-removed — no half-up state survives.
-      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(true);
+      expect(runner.ran("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID])).toBe(true);
     });
   });
 });
@@ -1365,6 +1593,28 @@ describe("server up — snap-docker health-read detection (P5)", () => {
     );
   });
 
+  it("treats a verified already-absent container as successful health cleanup", async () => {
+    const runner = new FakeRunner()
+      .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+        stdout: "unhealthy\n",
+        code: 0,
+      })
+      .onRun("docker", ["logs", "--tail", "50", "the-librarian"], {
+        stdout: "boot failed\n",
+        code: 0,
+      })
+      .onRun("docker", ["rm", "-f", "the-librarian"], {
+        stderr: "Error: No such container: the-librarian",
+        code: 1,
+      });
+    setDockerRunner(runner);
+
+    await expect(waitForHealthy({ healthAttempts: 1 })).rejects.toThrow(
+      /did not become healthy.*rolled back/i,
+    );
+    expect(runner.calls.filter((call) => call.args[0] === "rm")).toHaveLength(1);
+  });
+
   it("a FAILING inspect (exit≠0, empty) is NOT snap — falls through to the normal error", async () => {
     // Empty output but a non-zero exit is a different failure (container gone /
     // daemon hiccup), not snap's exit-0-empty signature.
@@ -1381,6 +1631,656 @@ describe("server up — snap-docker health-read detection (P5)", () => {
     await expect(waitForHealthy({ healthAttempts: 2, healthIntervalMs: 0 })).rejects.toThrow(
       /did not become healthy/i,
     );
+  });
+});
+
+describe("server up — stable registry deployments (B2)", () => {
+  it("pulls the latest release without Git/build and runs its exact canonical digest", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const result = await runCli(["server", "up"], { home, prompter });
+
+      expect(result.exitCode).toBe(0);
+      expect(streamedPullArgs()).toEqual(["pull", REGISTRY_IMAGE_REF]);
+      expect(streamedBuildArgs()).toBeUndefined();
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+      expect(dockerRunArgs(runner)?.at(-1)).toBe(REGISTRY_DIGEST);
+      expect(dockerRunArgs(runner)).toContain(stagedDeployEnvOf(home));
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+      expect(fs.existsSync(deployEnvOf(home))).toBe(true);
+      expect(readDeployState(path.join(home, ".librarian", "server"))).toEqual({
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        dashboardPort: 3042,
+        ref: LATEST_TAG,
+        imageTag: REGISTRY_IMAGE_REF,
+        imageSource: "registry",
+        imageRef: REGISTRY_IMAGE_REF,
+        imageDigest: REGISTRY_DIGEST,
+      });
+    });
+  });
+
+  it("uses an exact release ref directly without consulting latest", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner();
+      setDockerRunner(runner);
+      let latestCalls = 0;
+      setLatestFetcher(async () => {
+        latestCalls += 1;
+        return LATEST;
+      });
+      setTokenMinter(() => AGENT_TOKEN);
+      setSecretKeyMinter(() => MASTER_KEY);
+      setSleep(async () => undefined);
+
+      const result = await runCli(["server", "up", "--ref", LATEST_TAG], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(latestCalls).toBe(0);
+      expect(streamedPullArgs()).toEqual(["pull", REGISTRY_IMAGE_REF]);
+      expect(dockerRunArgs(runner)?.at(-1)).toBe(REGISTRY_DIGEST);
+    });
+  });
+
+  it("preserves named-volume and bind-directory storage argv with a digest run target", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const dataDir = path.join(home, "vault-data");
+
+      const result = await runCli(["server", "up", "--data-dir", dataDir], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(dockerRunArgs(runner)).toContain(`${dataDir}:/data`);
+      expect(dockerRunArgs(runner)?.at(-1)).toBe(REGISTRY_DIGEST);
+      expect(readDeployState(path.join(home, ".librarian", "server"))?.dataDir).toBe(dataDir);
+    });
+  });
+
+  it("a failed pull leaves no container, deploy state, or newly minted credential material", async () => {
+    await withTempHome(async (home) => {
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .onRun("docker", ["info"], { code: 0 })
+        .onRun("docker", ["info", "--format", "{{json .}}"], {
+          stdout: JSON.stringify({ OSType: "linux", Architecture: "amd64" }),
+          code: 0,
+        })
+        .onRun("docker", ["container", "inspect", "--format", "{{json .}}", "the-librarian"], {
+          stderr: "No such container: the-librarian",
+          code: 1,
+        });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => LATEST);
+      let minted = 0;
+      setTokenMinter(() => {
+        minted += 1;
+        return AGENT_TOKEN;
+      });
+      setSecretKeyMinter(() => {
+        minted += 1;
+        return MASTER_KEY;
+      });
+      setStreamer({ stream: async () => 1 });
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+      const deployDir = path.join(home, ".librarian", "server");
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/docker pull.*failed/i);
+      expect(minted).toBe(0);
+      expect(fs.existsSync(deployEnvFilePath(deployDir))).toBe(false);
+      expect(fs.existsSync(deployStatePath(deployDir))).toBe(false);
+      expect(readEnvFile(home)).toBeNull();
+      expect(runner.calls.some((call) => call.args[0] === "run")).toBe(false);
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+    });
+  });
+
+  it("rejects a malformed latest-release response without pulling or falling back", async () => {
+    await withTempHome(async (home) => {
+      const runner = new FakeRunner().withWhich("docker").onRun("docker", ["info"], { code: 0 });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.4.2-beta.1");
+      setTokenMinter(() => {
+        throw new Error("must not mint for an invalid latest release");
+      });
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/valid latest stable release tag/i);
+      expect(streamedPullArgs()).toBeUndefined();
+      expect(streamedBuildArgs()).toBeUndefined();
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+      expect(fs.existsSync(path.join(home, ".librarian", "server"))).toBe(false);
+    });
+  });
+
+  it("metadata or digest mismatch fails closed without source fallback or credentials", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner().onRun(
+        "docker",
+        ["image", "inspect", "--format", "{{json .}}", REGISTRY_IMAGE_REF],
+        { stdout: registryInspectJson({ RepoDigests: [] }), code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+      const deployDir = path.join(home, ".librarian", "server");
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/canonical repository digest/i);
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+      expect(streamedBuildArgs()).toBeUndefined();
+      expect(fs.existsSync(deployEnvFilePath(deployDir))).toBe(false);
+      expect(fs.existsSync(deployStatePath(deployDir))).toBe(false);
+    });
+  });
+
+  it("a concurrent up refuses before touching the winner's staged credentials or deployment files", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      const runner = healthyRegistryRunner();
+      const realRun = runner.run.bind(runner);
+      let createCalls = 0;
+      let releaseWinnerCreate!: () => void;
+      const winnerCreateHeld = new Promise<void>((resolve) => {
+        releaseWinnerCreate = resolve;
+      });
+      let markWinnerAtCreate!: () => void;
+      const winnerAtCreate = new Promise<void>((resolve) => {
+        markWinnerAtCreate = resolve;
+      });
+      runner.run = async (cmd, args, options) => {
+        if (cmd === "docker" && args[0] === "create") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          createCalls += 1;
+          if (createCalls === 1) {
+            markWinnerAtCreate();
+            await winnerCreateHeld;
+            return { stdout: `${CANDIDATE_CONTAINER_ID}\n`, stderr: "", code: 0 };
+          }
+          return {
+            stdout: "",
+            stderr: "Conflict. The container name is already in use.",
+            code: 1,
+          };
+        }
+        return realRun(cmd, args, options);
+      };
+      setDockerRunner(runner);
+      setLatestFetcher(async () => LATEST);
+      const mintedTokens = ["winner-agent-token", "loser-agent-token"];
+      const stagedInvocationIds = ["winner-invocation", "loser-invocation"];
+      setTokenMinter(() => mintedTokens.shift() ?? "unexpected-third-token");
+      setStagedEnvIdMinter(() => stagedInvocationIds.shift() ?? "unexpected-third-invocation");
+      setSecretKeyMinter(() => MASTER_KEY);
+      setSleep(async () => undefined);
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const winnerPromise = runCli(["server", "up"], { home, prompter });
+      await winnerAtCreate;
+      const winnerCreate = runner.calls.find(
+        (call) => call.cmd === "docker" && call.args[0] === "create",
+      );
+      const envFlag = winnerCreate?.args.indexOf("--env-file") ?? -1;
+      const winnerStagedEnv = winnerCreate?.args[envFlag + 1];
+      expect(winnerStagedEnv).toBeTruthy();
+      const winnerStagedBytes = fs.readFileSync(winnerStagedEnv!);
+
+      const loser = await runCli(["server", "up"], { home, prompter });
+      const stageFilesWhileWinnerHeld = fs
+        .readdirSync(deployDir)
+        .filter((name) => name.startsWith("deploy.env.next"));
+      const winnerStageStillExists = fs.existsSync(winnerStagedEnv!);
+      const winnerStageAfterLoser = winnerStageStillExists
+        ? fs.readFileSync(winnerStagedEnv!)
+        : Buffer.alloc(0);
+      const liveEnvExistsWhileWinnerHeld = fs.existsSync(deployEnvFilePath(deployDir));
+      const liveStateExistsWhileWinnerHeld = fs.existsSync(deployStatePath(deployDir));
+
+      releaseWinnerCreate();
+      const winner = await winnerPromise;
+
+      expect(loser.exitCode).toBe(1);
+      expect(loser.stderr).toMatch(/another.*(?:deployment|update).*in progress/i);
+      expect(createCalls).toBe(1);
+      expect(path.basename(winnerStagedEnv!)).toBe("deploy.env.next-winner-invocation");
+      expect(stagedInvocationIds).toEqual(["loser-invocation"]);
+      expect(stageFilesWhileWinnerHeld).toEqual([path.basename(winnerStagedEnv!)]);
+      expect(winnerStageStillExists).toBe(true);
+      expect(winnerStageAfterLoser).toEqual(winnerStagedBytes);
+      expect(liveEnvExistsWhileWinnerHeld).toBe(false);
+      expect(liveStateExistsWhileWinnerHeld).toBe(false);
+      expect(winner.exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvFilePath(deployDir), "utf8")).toContain(
+        "LIBRARIAN_AGENT_TOKEN=winner-agent-token",
+      );
+      expect(fs.readdirSync(deployDir).some((name) => name.startsWith("deploy.env.next"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(deployDir, ".autoupdate.lock"))).toBe(false);
+    });
+  });
+
+  it("cleans up the immutable candidate after docker start fails and removes staged credentials", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner();
+      const realRun = runner.run.bind(runner);
+      runner.run = async (cmd, args, options) => {
+        if (cmd === "docker" && args[0] === "start") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: "", stderr: "daemon failed during start", code: 1 };
+        }
+        return realRun(cmd, args, options);
+      };
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/docker start.*failed/i);
+      expect(runner.ran("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID])).toBe(true);
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+      expect(fs.existsSync(deployEnvOf(home))).toBe(false);
+      expect(fs.existsSync(deployStatePath(path.join(home, ".librarian", "server")))).toBe(false);
+    });
+  });
+
+  it("never removes a same-name unrelated container that appears after candidate creation fails", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner();
+      const realRun = runner.run.bind(runner);
+      let nameInspects = 0;
+      runner.run = async (cmd, args, options) => {
+        if (cmd === "docker" && args[0] === "container" && args.at(-1) === "the-librarian") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          nameInspects += 1;
+          return nameInspects === 1
+            ? { stdout: "", stderr: "No such container: the-librarian", code: 1 }
+            : {
+                stdout: JSON.stringify({ Id: UNRELATED_CONTAINER_ID }),
+                stderr: "",
+                code: 0,
+              };
+        }
+        if (cmd === "docker" && (args[0] === "create" || args[0] === "run")) {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: "", stderr: "candidate creation failed", code: 1 };
+        }
+        return realRun(cmd, args, options);
+      };
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(runner.calls.filter((call) => call.args[0] === "rm")).toEqual([]);
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+    });
+  });
+
+  it("health rollback targets only the immutable candidate ID after its name is reused", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner();
+      const realRun = runner.run.bind(runner);
+      runner.run = async (cmd, args, options) => {
+        if (cmd === "docker" && args[0] === "create") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: `${CANDIDATE_CONTAINER_ID}\n`, stderr: "", code: 0 };
+        }
+        if (cmd === "docker" && args[0] === "start") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: `${CANDIDATE_CONTAINER_ID}\n`, stderr: "", code: 0 };
+        }
+        if (cmd === "docker" && args[0] === "run") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: "legacy run succeeded", stderr: "", code: 0 };
+        }
+        if (cmd === "docker" && args[0] === "inspect") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: "unhealthy\n", stderr: "", code: 0 };
+        }
+        if (cmd === "docker" && args[0] === "logs") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return { stdout: "candidate failed\n", stderr: "", code: 0 };
+        }
+        if (cmd === "docker" && args[0] === "rm") {
+          runner.calls.push({ cmd, args: [...args], opts: options });
+          return args.at(-1) === CANDIDATE_CONTAINER_ID
+            ? {
+                stdout: "",
+                stderr: `No such container: ${CANDIDATE_CONTAINER_ID}`,
+                code: 1,
+              }
+            : { stdout: UNRELATED_CONTAINER_ID, stderr: "", code: 0 };
+        }
+        return realRun(cmd, args, options);
+      };
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      const removals = runner.calls.filter((call) => call.args[0] === "rm");
+      expect(removals).toHaveLength(1);
+      expect(removals[0]?.args.at(-1)).toBe(CANDIDATE_CONTAINER_ID);
+      expect(removals.some((call) => call.args.at(-1) === "the-librarian")).toBe(false);
+      expect(removals.some((call) => call.args.at(-1) === UNRELATED_CONTAINER_ID)).toBe(false);
+      const healthAndLogs = runner.calls.filter(
+        (call) => call.args[0] === "inspect" || call.args[0] === "logs",
+      );
+      expect(healthAndLogs).not.toHaveLength(0);
+      expect(healthAndLogs.every((call) => call.args.at(-1) === CANDIDATE_CONTAINER_ID)).toBe(true);
+    });
+  });
+
+  it("reports cleanup failure truthfully when both health rollback attempts fail", async () => {
+    await withTempHome(async (home) => {
+      const leaked = "fedcba9876543210".repeat(4);
+      const runner = healthyRegistryRunner()
+        .onRun(
+          "docker",
+          ["inspect", "--format", "{{.State.Health.Status}}", CANDIDATE_CONTAINER_ID],
+          { stdout: "unhealthy\n", code: 0 },
+        )
+        .onRun("docker", ["logs", "--tail", "50", CANDIDATE_CONTAINER_ID], {
+          stdout: "server failed\n",
+          code: 0,
+        })
+        .onRun("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID], {
+          stderr: `permission denied ${leaked}`,
+          code: 1,
+        });
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/could not remove|cleanup failed/i);
+      expect(result.stderr).toContain(`docker rm -f ${CANDIDATE_CONTAINER_ID}`);
+      expect(result.stderr).not.toContain(leaked);
+      expect(result.stderr).not.toMatch(/container removed|was rolled back/i);
+      expect(runner.calls.filter((call) => call.args[0] === "rm")).toHaveLength(2);
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+      expect(fs.existsSync(deployEnvOf(home))).toBe(false);
+    });
+  });
+
+  it("restores prior env/state bytes and removes the exact candidate when state promotion fails", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = seedRegistryDeployment(home);
+      const priorEnv = fs.readFileSync(deployEnvFilePath(deployDir));
+      const priorState = fs.readFileSync(deployStatePath(deployDir));
+      const runner = healthyRegistryRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      let promotions = 0;
+      setFinalizationRenamer((source, destination) => {
+        promotions += 1;
+        if (promotions === 2) throw new Error("injected state promotion failure");
+        fs.renameSync(source, destination);
+      });
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/persist|finaliz|promotion/i);
+      expect(runner.ran("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID])).toBe(true);
+      expect(fs.readFileSync(deployEnvFilePath(deployDir))).toEqual(priorEnv);
+      expect(fs.readFileSync(deployStatePath(deployDir))).toEqual(priorState);
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+      expect(fs.readdirSync(deployDir).some((name) => name.startsWith(".deploy-state-next-"))).toBe(
+        false,
+      );
+    });
+  });
+
+  it("restores file absence and removes the exact candidate when fresh state promotion fails", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      const runner = healthyRegistryRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      let promotions = 0;
+      setFinalizationRenamer((source, destination) => {
+        promotions += 1;
+        if (promotions === 2) throw new Error("injected fresh state promotion failure");
+        fs.renameSync(source, destination);
+      });
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/persist|finaliz|promotion/i);
+      expect(runner.ran("docker", ["rm", "-f", CANDIDATE_CONTAINER_ID])).toBe(true);
+      expect(fs.existsSync(deployEnvFilePath(deployDir))).toBe(false);
+      expect(fs.existsSync(deployStatePath(deployDir))).toBe(false);
+      expect(fs.existsSync(stagedDeployEnvOf(home))).toBe(false);
+      expect(fs.readdirSync(deployDir).some((name) => name.startsWith(".deploy-state-next-"))).toBe(
+        false,
+      );
+    });
+  });
+
+  it("a healthy deployment already running the same registry digest is a clean no-op", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = seedRegistryDeployment(home);
+      const beforeEnv = fs.readFileSync(deployEnvFilePath(deployDir), "utf8");
+      const beforeState = fs.readFileSync(deployStatePath(deployDir), "utf8");
+      const runner = healthyRegistryRunner().onRun(
+        "docker",
+        ["container", "inspect", "--format", "{{json .}}", "the-librarian"],
+        { stdout: JSON.stringify(liveRegistryContainer()), code: 0 },
+      );
+      setDockerRunner(runner);
+      let pulls = 0;
+      setStreamer({
+        stream: async () => {
+          pulls += 1;
+          throw new Error("registry unavailable");
+        },
+      });
+      setLatestFetcher(async () => LATEST);
+      setTokenMinter(() => {
+        throw new Error("must not mint on a no-op");
+      });
+      setSecretKeyMinter(() => {
+        throw new Error("must not mint on a no-op");
+      });
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(/already running.*healthy/i);
+      expect(pulls).toBe(0);
+      expect(dockerRunArgs(runner)).toBeUndefined();
+      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(false);
+      expect(fs.readFileSync(deployEnvFilePath(deployDir), "utf8")).toBe(beforeEnv);
+      expect(fs.readFileSync(deployStatePath(deployDir), "utf8")).toBe(beforeState);
+      expect(readEnvFile(home)).toBeNull();
+    });
+  });
+
+  it("does not mistake an unrelated Docker not-found error for an absent container", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRegistryRunner().onRun(
+        "docker",
+        ["container", "inspect", "--format", "{{json .}}", "the-librarian"],
+        { stderr: "Docker context 'remote' not found", code: 1 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/could not inspect.*container/i);
+      expect(streamedPullArgs()).toBeUndefined();
+      expect(dockerRunArgs(runner)).toBeUndefined();
+    });
+  });
+
+  it.each([
+    ["a different value", "replacement-bootstrap-claim-secret-".repeat(2)],
+    ["explicit removal", ""],
+  ])(
+    "refuses a registry no-op when the invocation requests %s for the bootstrap claim secret",
+    async (_description, requestedSecret) => {
+      await withTempHome(async (home) => {
+        const existingSecret = "existing-bootstrap-claim-secret-".repeat(2);
+        const deployDir = seedRegistryDeployment(home);
+        writeDeployEnvFile(deployDir, {
+          agentToken: "existing-agent-token",
+          secretKey: "existing-master-key-long-enough-for-safe-reuse",
+          bootstrapClaimSecret: existingSecret,
+          host: "127.0.0.1",
+        });
+        const live = liveRegistryContainer();
+        live.Config.Env.push(`LIBRARIAN_BOOTSTRAP_CLAIM_SECRET=${existingSecret}`);
+        const beforeEnv = fs.readFileSync(deployEnvFilePath(deployDir));
+        const beforeState = fs.readFileSync(deployStatePath(deployDir));
+        const runner = healthyRegistryRunner().onRun(
+          "docker",
+          ["container", "inspect", "--format", "{{json .}}", "the-librarian"],
+          { stdout: JSON.stringify(live), code: 0 },
+        );
+        setDockerRunner(runner);
+        stubSeams();
+
+        const result = await runCli(["server", "up"], {
+          home,
+          env: { LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: requestedSecret },
+          prompter: new FakePrompter({}),
+        });
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toMatch(/existing.*container.*differs/i);
+        expect(streamedPullArgs()).toBeUndefined();
+        expect(runner.calls.some((call) => call.args[0] === "rm")).toBe(false);
+        expect(fs.readFileSync(deployEnvFilePath(deployDir))).toEqual(beforeEnv);
+        expect(fs.readFileSync(deployStatePath(deployDir))).toEqual(beforeState);
+      });
+    },
+  );
+
+  it.each([
+    [
+      "image digest",
+      (live: ReturnType<typeof liveRegistryContainer>) => (live.Config.Image += "x"),
+    ],
+    [
+      "mount source",
+      (live: ReturnType<typeof liveRegistryContainer>) => (live.Mounts[0]!.Name = "other"),
+    ],
+    [
+      "mount type",
+      (live: ReturnType<typeof liveRegistryContainer>) => (live.Mounts[0]!.Type = "bind"),
+    ],
+    [
+      "published host",
+      (live: ReturnType<typeof liveRegistryContainer>) =>
+        (live.HostConfig.PortBindings["3000/tcp"][0]!.HostIp = "0.0.0.0"),
+    ],
+    [
+      "published port",
+      (live: ReturnType<typeof liveRegistryContainer>) =>
+        (live.HostConfig.PortBindings["3000/tcp"][0]!.HostPort = "3001"),
+    ],
+    [
+      "restart policy",
+      (live: ReturnType<typeof liveRegistryContainer>) =>
+        (live.HostConfig.RestartPolicy.Name = "always"),
+    ],
+    [
+      "container user",
+      (live: ReturnType<typeof liveRegistryContainer>) => (live.Config.User = "root"),
+    ],
+    [
+      "auth environment",
+      (live: ReturnType<typeof liveRegistryContainer>) =>
+        live.Config.Env.splice(live.Config.Env.indexOf("LIBRARIAN_ALLOW_NO_AUTH=true"), 1),
+    ],
+  ])("refuses a live same-name container with drifted %s before mutation", async (_name, drift) => {
+    await withTempHome(async (home) => {
+      const deployDir = seedRegistryDeployment(home);
+      const beforeEnv = fs.readFileSync(deployEnvFilePath(deployDir), "utf8");
+      const beforeState = fs.readFileSync(deployStatePath(deployDir), "utf8");
+      const live = liveRegistryContainer();
+      drift(live);
+      const runner = healthyRegistryRunner().onRun(
+        "docker",
+        ["container", "inspect", "--format", "{{json .}}", "the-librarian"],
+        { stdout: JSON.stringify(live), code: 0 },
+      );
+      setDockerRunner(runner);
+      stubSeams();
+
+      const result = await runCli(["server", "up"], {
+        home,
+        prompter: new FakePrompter({}),
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/existing.*container.*differs|refusing to replace/i);
+      expect(streamedPullArgs()).toBeUndefined();
+      expect(dockerRunArgs(runner)).toBeUndefined();
+      expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(false);
+      expect(fs.readFileSync(deployEnvFilePath(deployDir), "utf8")).toBe(beforeEnv);
+      expect(fs.readFileSync(deployStatePath(deployDir), "utf8")).toBe(beforeState);
+    });
   });
 });
 
@@ -1402,11 +2302,10 @@ describe("server up — progress feedback", () => {
       const joined = lines.join("\n");
       expect(joined).toContain("[1/5]");
       expect(joined).toContain("[2/5]");
-      expect(joined).toMatch(/\[3\/5\].*[Bb]uilding/);
+      expect(joined).toMatch(/\[3\/5\].*[Vv]erified/);
       expect(joined).toContain("[4/5]");
       expect(joined).toContain("[5/5]");
-      // The slow step is flagged with a time expectation, so the user knows the wait.
-      expect(joined).toMatch(/several minutes/i);
+      expect(joined).toMatch(/pulling and validating/i);
       expect(joined).toContain("✓ The server is healthy.");
     });
   });
