@@ -37,17 +37,13 @@ const COMBINED = [MCP_LINE_A, DASH_LINE_A, MCP_LINE_B, DASH_LINE_B].join("\n") +
 function dockerReady(logsArgs: string[]): FakeRunner {
   return new FakeRunner()
     .withWhich("docker")
-    .withWhich("git")
     .onRun("docker", ["info"], { code: 0 })
     .onRun("docker", logsArgs, { stdout: COMBINED, code: 0 });
 }
 
 /** docker present + daemon reachable, WITHOUT scripting `docker logs` (follow streams). */
 function dockerReadyForFollow(): FakeRunner {
-  return new FakeRunner()
-    .withWhich("docker")
-    .withWhich("git")
-    .onRun("docker", ["info"], { code: 0 });
+  return new FakeRunner().withWhich("docker").onRun("docker", ["info"], { code: 0 });
 }
 
 /** The argv (after `docker`) of the recorded `logs` call. */

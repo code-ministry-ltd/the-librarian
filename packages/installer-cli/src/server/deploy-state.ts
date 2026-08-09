@@ -8,21 +8,22 @@
 //
 // SECURITY (AGENTS.md / spec §11): this file is NON-SECRET by construction. It
 // carries ONLY non-secret fields — a bind host, a volume name (and an optional
-// host data dir), a ref, an image tag, and the container name. It NEVER carries
-// a bearer token, master
-// key, or admin token. `writeDeployState` whitelists exactly those fields, so a
+// host data dir), a ref, image identity/provenance, and the container name. It
+// NEVER carries a bearer token, master key, or admin token. `writeDeployState`
+// whitelists exactly those fields, so a
 // caller that accidentally passes extra keys (a smuggled secret) cannot leak
 // them into the file. The master key / admin token are surfaced to stdout once
 // by `up` and persisted nowhere host-side — that contract is unchanged.
 
 import fs from "node:fs";
 import path from "node:path";
+import { CANONICAL_IMAGE_NAME, isReleasedVersionRef } from "./deployment-image.js";
 
 /**
  * The deploy-state recorded after a successful `up` (and rewritten by `update`).
  * Every field is NON-SECRET — see the module header. Do NOT add a token/key.
  */
-export interface DeployState {
+interface DeployStateBase {
   /** The container name every `server` command operates on. */
   containerName: string;
   /** The resolved bind host the container publishes on (`127.0.0.1`, a tailnet IP, `0.0.0.0`). */
@@ -38,7 +39,7 @@ export interface DeployState {
   dataDir?: string | undefined;
   /** The deployed ref — a `vX.Y.Z` tag or `main` (what was checked out + built). */
   ref: string;
-  /** The built image tag (`the-librarian:<ref>`). */
+  /** Legacy-compatible image identity: local tag for source, registry tag for registry. */
   imageTag: string;
   /**
    * The host port the dashboard is published on (`-p <host>:<dashboardPort>:3000`).
@@ -50,8 +51,88 @@ export interface DeployState {
   dashboardPort?: number | undefined;
 }
 
-/** The keys we ever persist — the whitelist that keeps secrets out of the file. */
-const STATE_KEYS = ["containerName", "host", "dataVolume", "ref", "imageTag"] as const;
+/** State written before explicit image provenance existed; interpreted as source. */
+export interface LegacyDeployState extends DeployStateBase {
+  imageSource?: undefined;
+  imageRef?: undefined;
+  imageDigest?: undefined;
+}
+
+/** A locally built source image; its explicit ref is the existing local image tag. */
+export interface SourceDeployState extends DeployStateBase {
+  imageSource: "source";
+  imageRef: string;
+  imageDigest?: undefined;
+}
+
+/** A released registry image, retaining both its readable tag and immutable digest. */
+export interface RegistryDeployState extends DeployStateBase {
+  imageSource: "registry";
+  imageRef: string;
+  imageDigest: string;
+}
+
+export type DeployState = LegacyDeployState | SourceDeployState | RegistryDeployState;
+
+interface DeployStateCandidate extends DeployStateBase {
+  imageSource?: "registry" | "source" | undefined;
+  imageRef?: string | undefined;
+  imageDigest?: string | undefined;
+}
+
+/** Required legacy keys; optional fields are individually picked and validated below. */
+const REQUIRED_STATE_KEYS = ["containerName", "host", "dataVolume", "ref", "imageTag"] as const;
+const PERSISTED_STATE_KEYS = new Set<string>([
+  ...REQUIRED_STATE_KEYS,
+  "dataDir",
+  "dashboardPort",
+  "imageSource",
+  "imageRef",
+  "imageDigest",
+]);
+
+const IMAGE_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const VERSION_IMAGE_PREFIX = `${CANONICAL_IMAGE_NAME}:`;
+const DIGEST_IMAGE_PREFIX = `${CANONICAL_IMAGE_NAME}@`;
+
+function isCanonicalVersionImageRef(imageRef: string): boolean {
+  return (
+    imageRef.startsWith(VERSION_IMAGE_PREFIX) &&
+    isReleasedVersionRef(imageRef.slice(VERSION_IMAGE_PREFIX.length))
+  );
+}
+
+function isCanonicalDigestImageRef(imageRef: string): boolean {
+  return (
+    imageRef.startsWith(DIGEST_IMAGE_PREFIX) &&
+    IMAGE_DIGEST_PATTERN.test(imageRef.slice(DIGEST_IMAGE_PREFIX.length))
+  );
+}
+
+function validImageMetadata(state: DeployStateCandidate): state is DeployState {
+  if (state.imageSource === undefined) {
+    return state.imageRef === undefined && state.imageDigest === undefined;
+  }
+  if (state.imageSource === "source") {
+    return state.imageRef === state.imageTag && state.imageDigest === undefined;
+  }
+  if (state.imageSource !== "registry") return false;
+  const expectedVersionRef = `${CANONICAL_IMAGE_NAME}:${state.ref}`;
+  return (
+    isReleasedVersionRef(state.ref) &&
+    state.imageRef === expectedVersionRef &&
+    isCanonicalVersionImageRef(state.imageRef) &&
+    state.imageTag === expectedVersionRef &&
+    state.imageDigest !== undefined &&
+    isCanonicalDigestImageRef(state.imageDigest)
+  );
+}
+
+function hasOnlyPersistedStateKeys(state: object): boolean {
+  return Reflect.ownKeys(state).every(
+    (key) => typeof key === "string" && PERSISTED_STATE_KEYS.has(key),
+  );
+}
 
 /** `<dir>/deploy-state.json` — the deploy-state file path within a deploy dir. */
 export function deployStatePath(dir: string): string {
@@ -61,15 +142,24 @@ export function deployStatePath(dir: string): string {
 /**
  * Write the deploy-state to `<dir>/deploy-state.json`, creating `dir` if absent.
  *
- * Only the five declared fields are persisted — a `pick`, not a spread — so no
- * extra key (e.g. a smuggled token) can ride along into the file. The file is
- * non-secret, so it gets ordinary (not 0600) permissions.
+ * Inputs with undeclared own keys are rejected, then declared fields are picked
+ * explicitly. The file is non-secret, so it gets ordinary permissions.
  */
 export function writeDeployState(dir: string, state: DeployState): void {
+  if (!hasOnlyPersistedStateKeys(state)) {
+    throw new TypeError(
+      "Invalid deploy state fields: only whitelisted non-secret deployment metadata is allowed; unexpected own keys are rejected.",
+    );
+  }
+  if (!validImageMetadata(state)) {
+    throw new TypeError(
+      "Invalid deploy image metadata: expected legacy fields only; source with imageRef matching imageTag and no digest; or registry with a matching canonical version tag and full lowercase sha256 digest reference.",
+    );
+  }
   fs.mkdirSync(dir, { recursive: true });
   // Pick ONLY the whitelisted keys — never spread `state`, which could carry
   // extra (secret-shaped) properties a caller smuggled in.
-  const safe: DeployState = {
+  const safe: Record<string, string | number> = {
     containerName: state.containerName,
     host: state.host,
     dataVolume: state.dataVolume,
@@ -82,6 +172,9 @@ export function writeDeployState(dir: string, state: DeployState): void {
   // Persist the published dashboard port when set, so `update` reuses it (a state
   // written before this field stays byte-compatible until the next write).
   if (state.dashboardPort !== undefined) safe.dashboardPort = state.dashboardPort;
+  if (state.imageSource !== undefined) safe.imageSource = state.imageSource;
+  if (state.imageRef !== undefined) safe.imageRef = state.imageRef;
+  if (state.imageDigest !== undefined) safe.imageDigest = state.imageDigest;
   fs.writeFileSync(deployStatePath(dir), `${JSON.stringify(safe, null, 2)}\n`, "utf8");
 }
 
@@ -105,16 +198,29 @@ export function readDeployState(dir: string): DeployState | null {
   }
   if (typeof parsed !== "object" || parsed === null) return null;
   const obj = parsed as Record<string, unknown>;
-  for (const key of STATE_KEYS) {
+  if (!hasOnlyPersistedStateKeys(obj)) return null;
+  for (const key of REQUIRED_STATE_KEYS) {
     if (typeof obj[key] !== "string") return null;
   }
-  const result: DeployState = {
+  const result: DeployStateCandidate = {
     containerName: obj.containerName as string,
     host: obj.host as string,
     dataVolume: obj.dataVolume as string,
     ref: obj.ref as string,
     imageTag: obj.imageTag as string,
   };
+  if (
+    obj.imageSource !== undefined &&
+    obj.imageSource !== "registry" &&
+    obj.imageSource !== "source"
+  ) {
+    return null;
+  }
+  if (obj.imageRef !== undefined && typeof obj.imageRef !== "string") return null;
+  if (obj.imageDigest !== undefined && typeof obj.imageDigest !== "string") return null;
+  if (obj.imageSource !== undefined) result.imageSource = obj.imageSource;
+  if (typeof obj.imageRef === "string") result.imageRef = obj.imageRef;
+  if (typeof obj.imageDigest === "string") result.imageDigest = obj.imageDigest;
   // Optional, back-compatible: present only on `--data-dir` deploys written after
   // this field existed; left undefined otherwise (old states still validate).
   if (typeof obj.dataDir === "string") result.dataDir = obj.dataDir;
@@ -125,5 +231,5 @@ export function readDeployState(dir: string): DeployState | null {
   if (typeof obj.dashboardPort === "number" && Number.isInteger(obj.dashboardPort)) {
     result.dashboardPort = obj.dashboardPort;
   }
-  return result;
+  return validImageMetadata(result) ? result : null;
 }

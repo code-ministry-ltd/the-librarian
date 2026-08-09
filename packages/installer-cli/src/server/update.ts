@@ -64,7 +64,7 @@ import { librarianDir } from "../paths.js";
 import { fetchLatestVersion } from "../status.js";
 import { type DeployState, readDeployState, writeDeployState } from "./deploy-state.js";
 import { run, type RunResult } from "./docker.js";
-import { preflight } from "./preflight.js";
+import { sourcePreflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
 import {
   buildRunArgs,
@@ -119,7 +119,7 @@ export interface UpdateResult {
  */
 export async function runUpdate(options: UpdateOptions = {}): Promise<UpdateResult> {
   // 1) Preflight: docker (daemon reachable) + git, or a teaching error.
-  await preflight(options.platform ? { platform: options.platform } : {});
+  await sourcePreflight(options.platform ? { platform: options.platform } : {});
 
   const deployDir = options.dir ?? path.join(librarianDir(options.home), "server");
 
@@ -227,7 +227,7 @@ async function performUpdate(
       // the deploy chose one, else the named volume. The data is sacred either way.
       dataDir: state.dataDir,
       runAsUser: state.dataDir ? dirOwner(state.dataDir) : undefined,
-      tag: targetRef,
+      imageRef: `${CONTAINER_NAME}:${targetRef}`,
       envFile,
     }),
     deployDir,
@@ -252,6 +252,8 @@ async function performUpdate(
     dashboardPort,
     ref: targetRef,
     imageTag: `${CONTAINER_NAME}:${targetRef}`,
+    imageSource: "source",
+    imageRef: `${CONTAINER_NAME}:${targetRef}`,
   });
 
   return { output: renderSuccess(targetRef, tokenIsFresh ? agentToken : null) };

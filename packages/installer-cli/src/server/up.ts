@@ -55,7 +55,7 @@ import { fetchLatestVersion } from "../status.js";
 import { enableBoot } from "./boot.js";
 import { writeDeployState } from "./deploy-state.js";
 import { run, stream, which, type RunResult } from "./docker.js";
-import { preflight } from "./preflight.js";
+import { sourcePreflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
 
 // Re-exported from its shared home so existing importers (`update.ts`) keep
@@ -316,7 +316,8 @@ export interface RunArgsInput {
   dataDir?: string | undefined;
   /** `uid:gid` to run the container as — set for a bind-mount so files stay host-owned. */
   runAsUser?: string | undefined;
-  tag: string;
+  /** Exact local tag or digest-pinned registry reference passed to `docker run`. */
+  imageRef: string;
   /**
    * Absolute path to the 0600 deploy env-file ({@link writeDeployEnvFile}). The
    * secrets (`LIBRARIAN_AGENT_TOKEN`, `LIBRARIAN_SECRET_KEY`, and optional
@@ -345,7 +346,7 @@ export interface RunArgsInput {
  * {@link writeDeployEnvFile}), not on this argv.
  */
 export function buildRunArgs(input: RunArgsInput): string[] {
-  const { host, dataVolume, dashboardPort, dataDir, runAsUser, tag, envFile } = input;
+  const { host, dataVolume, dashboardPort, dataDir, runAsUser, imageRef, envFile } = input;
   const args = [
     "run",
     "-d",
@@ -368,7 +369,7 @@ export function buildRunArgs(input: RunArgsInput): string[] {
   // For a bind-mount, run as the directory's owner so the vault stays owned by —
   // and writable by — the operator, not the image's default user.
   if (runAsUser) args.push("--user", runAsUser);
-  args.push(`${CONTAINER_NAME}:${tag}`);
+  args.push(imageRef);
   return args;
 }
 
@@ -514,7 +515,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const log = deps.log ?? ((line: string): void => void process.stderr.write(`${line}\n`));
 
   // 1) Preflight: docker (daemon reachable) + git, or a teaching error.
-  await preflight(deps.platform ? { platform: deps.platform } : {});
+  await sourcePreflight(deps.platform ? { platform: deps.platform } : {});
 
   // 2) Resolve the bind host (default loopback; Tailscale offer; `0.0.0.0`
   //    ask-first). May throw `UpError` if the user declines a `0.0.0.0` bind —
@@ -588,7 +589,15 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   await build(deployDir, tag);
   log("[4/5] Starting the container…");
   await dockerRun(
-    buildRunArgs({ host, dataVolume, dashboardPort, dataDir, runAsUser, tag, envFile }),
+    buildRunArgs({
+      host,
+      dataVolume,
+      dashboardPort,
+      dataDir,
+      runAsUser,
+      imageRef: `${CONTAINER_NAME}:${tag}`,
+      envFile,
+    }),
     deployDir,
   );
 
@@ -626,6 +635,8 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     dashboardPort,
     ref: tag,
     imageTag: `${CONTAINER_NAME}:${tag}`,
+    imageSource: "source",
+    imageRef: `${CONTAINER_NAME}:${tag}`,
   });
 
   // 8) Boot persistence (opt-in, spec §5.8). With `--enable-boot`, install +

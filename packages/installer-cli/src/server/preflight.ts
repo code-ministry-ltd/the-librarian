@@ -1,8 +1,9 @@
 // Preflight for the `server` command group.
 //
-// Every `server` subcommand that drives a container (up / update / down /
-// status / logs / boot / admin) first confirms the host actually has the tools
-// it needs: `docker` installed AND its daemon reachable, and `git` installed.
+// Every `server` subcommand that directly drives a container (up / update /
+// down / status / logs / admin) first confirms the host actually has the tools
+// it needs: `docker` installed AND its daemon reachable. Source deployments
+// additionally require `git`; registry-backed and Docker-only commands do not.
 // A missing or unreachable tool is a TEACHING error (what to install, or "is
 // the daemon running?") — never a stack trace, never a bare "error".
 //
@@ -51,13 +52,13 @@ function dockerDaemonHint(platform: NodeJS.Platform): string {
 }
 
 /**
- * Confirm `docker` (daemon reachable) and `git` are available, or throw a
- * `PreflightError` with a teaching message. Resolves to nothing on success.
+ * Confirm `docker` is installed with a reachable daemon, or throw a teaching
+ * `PreflightError`. Resolves to nothing on success.
  *
  * Order matters: report a missing binary before probing the daemon, so a host
  * without Docker is told to install it (not told the daemon is down).
  */
-export async function preflight(options: PreflightOptions = {}): Promise<void> {
+export async function dockerPreflight(options: PreflightOptions = {}): Promise<void> {
   const platform = options.platform ?? process.platform;
 
   if ((await which("docker")) === null) {
@@ -70,7 +71,11 @@ export async function preflight(options: PreflightOptions = {}): Promise<void> {
   if (info.code !== 0) {
     throw new PreflightError(dockerDaemonHint(platform));
   }
+}
 
+/** Confirm Docker plus Git for a lifecycle path that operates on source. */
+export async function sourcePreflight(options: PreflightOptions = {}): Promise<void> {
+  await dockerPreflight(options);
   if ((await which("git")) === null) {
     throw new PreflightError(GIT_INSTALL);
   }

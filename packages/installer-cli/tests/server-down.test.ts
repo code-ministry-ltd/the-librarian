@@ -22,10 +22,7 @@ afterEach(() => {
 
 /** A runner with docker present + daemon reachable (preflight passes). */
 function dockerReady(): FakeRunner {
-  return new FakeRunner()
-    .withWhich("docker")
-    .withWhich("git")
-    .onRun("docker", ["info"], { code: 0 });
+  return new FakeRunner().withWhich("docker").onRun("docker", ["info"], { code: 0 });
 }
 
 /** True iff the runner ever issued a destructive docker op (rm / volume / -v). */

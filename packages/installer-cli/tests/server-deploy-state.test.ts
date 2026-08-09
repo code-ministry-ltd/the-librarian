@@ -26,6 +26,17 @@ const SAMPLE: DeployState = {
   imageTag: "the-librarian:v1.4.2",
 };
 
+const RAW_DIGEST = `sha256:${"0123456789abcdef".repeat(4)}`;
+const VERSION_IMAGE_REF = "ghcr.io/code-ministry-ltd/the-librarian:v1.4.2";
+const DIGEST_IMAGE_REF = `ghcr.io/code-ministry-ltd/the-librarian@${RAW_DIGEST}`;
+
+function expectReadAndWriteReject(dir: string, state: Record<string, unknown>): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(deployStatePath(dir), JSON.stringify(state), "utf8");
+  expect(readDeployState(dir)).toBeNull();
+  expect(() => writeDeployState(dir, state as unknown as DeployState)).toThrow(/invalid deploy/i);
+}
+
 describe("deploy-state — round-trip under a fake home", () => {
   it("writeDeployState then readDeployState returns the same state", async () => {
     await withTempHome(async (home) => {
@@ -74,6 +85,159 @@ describe("deploy-state — round-trip under a fake home", () => {
         unknown
       >;
       expect(parsed.dashboardPort).toBe(3500);
+    });
+  });
+
+  it("round-trips a digest-pinned registry deployment", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      const registryState: DeployState = {
+        ...SAMPLE,
+        imageTag: VERSION_IMAGE_REF,
+        imageSource: "registry",
+        imageRef: VERSION_IMAGE_REF,
+        imageDigest: DIGEST_IMAGE_REF,
+      };
+      writeDeployState(dir, registryState);
+      expect(readDeployState(dir)).toEqual(registryState);
+    });
+  });
+
+  it("round-trips an explicitly recorded source deployment", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      const sourceState: DeployState = {
+        ...SAMPLE,
+        imageSource: "source",
+        imageRef: "the-librarian:v1.4.2",
+      };
+      writeDeployState(dir, sourceState);
+      expect(readDeployState(dir)).toEqual(sourceState);
+    });
+  });
+
+  it("an old state with no image provenance still parses as a legacy source deployment", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(deployStatePath(dir), JSON.stringify(SAMPLE), "utf8");
+      const state = readDeployState(dir);
+      expect(state).toEqual(SAMPLE);
+      expect(state?.imageSource ?? "source").toBe("source");
+    });
+  });
+
+  it.each([
+    DIGEST_IMAGE_REF,
+    "docker.io/code-ministry-ltd/the-librarian:v1.4.2",
+    "ghcr.io/code-ministry-ltd/the-librarian:1.4.2",
+    "ghcr.io/code-ministry-ltd/the-librarian:v01.4.2",
+    "ghcr.io/code-ministry-ltd/the-librarian:v1.4.2-beta.1",
+  ])("rejects a registry state with non-canonical version imageRef %j", async (imageRef) => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      expectReadAndWriteReject(dir, {
+        ...SAMPLE,
+        imageTag: VERSION_IMAGE_REF,
+        imageSource: "registry",
+        imageRef,
+        imageDigest: DIGEST_IMAGE_REF,
+      });
+    });
+  });
+
+  it.each([
+    RAW_DIGEST,
+    `docker.io/code-ministry-ltd/the-librarian@${RAW_DIGEST}`,
+    `ghcr.io/code-ministry-ltd/the-librarian@SHA256:${"0123456789abcdef".repeat(4)}`,
+    `ghcr.io/code-ministry-ltd/the-librarian@sha256:${"ABCDEF0123456789".repeat(4)}`,
+    "ghcr.io/code-ministry-ltd/the-librarian@sha256:abcd",
+  ])("rejects a registry state with non-canonical imageDigest %j", async (imageDigest) => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      expectReadAndWriteReject(dir, {
+        ...SAMPLE,
+        imageTag: VERSION_IMAGE_REF,
+        imageSource: "registry",
+        imageRef: VERSION_IMAGE_REF,
+        imageDigest,
+      });
+    });
+  });
+
+  it.each([{ imageRef: VERSION_IMAGE_REF }, { imageDigest: DIGEST_IMAGE_REF }])(
+    "rejects a registry state missing one required image identity field",
+    async (identity) => {
+      await withTempHome(async (home) => {
+        const dir = path.join(home, ".librarian", "server");
+        expectReadAndWriteReject(dir, {
+          ...SAMPLE,
+          imageTag: VERSION_IMAGE_REF,
+          imageSource: "registry",
+          ...identity,
+        });
+      });
+    },
+  );
+
+  it.each([
+    {
+      label: "source discriminator without imageRef",
+      state: { ...SAMPLE, imageSource: "source" },
+    },
+    {
+      label: "imageRef without a discriminator",
+      state: { ...SAMPLE, imageRef: SAMPLE.imageTag },
+    },
+    {
+      label: "imageDigest without a discriminator",
+      state: { ...SAMPLE, imageDigest: DIGEST_IMAGE_REF },
+    },
+    {
+      label: "source deployment carrying a registry digest",
+      state: {
+        ...SAMPLE,
+        imageSource: "source",
+        imageRef: SAMPLE.imageTag,
+        imageDigest: DIGEST_IMAGE_REF,
+      },
+    },
+    {
+      label: "source imageRef differing from the local imageTag",
+      state: { ...SAMPLE, imageSource: "source", imageRef: "the-librarian:main" },
+    },
+    {
+      label: "registry imageTag differing from its configured imageRef",
+      state: {
+        ...SAMPLE,
+        imageSource: "registry",
+        imageRef: VERSION_IMAGE_REF,
+        imageDigest: DIGEST_IMAGE_REF,
+      },
+    },
+    {
+      label: "registry imageRef version differing from ref",
+      state: {
+        ...SAMPLE,
+        imageTag: "ghcr.io/code-ministry-ltd/the-librarian:v1.5.0",
+        imageSource: "registry",
+        imageRef: "ghcr.io/code-ministry-ltd/the-librarian:v1.5.0",
+        imageDigest: DIGEST_IMAGE_REF,
+      },
+    },
+    {
+      label: "unsupported imageSource discriminator",
+      state: {
+        ...SAMPLE,
+        imageTag: VERSION_IMAGE_REF,
+        imageSource: "cache",
+        imageRef: VERSION_IMAGE_REF,
+        imageDigest: DIGEST_IMAGE_REF,
+      },
+    },
+  ])("rejects incoherent provenance: $label", async ({ state }) => {
+    await withTempHome(async (home) => {
+      expectReadAndWriteReject(path.join(home, ".librarian", "server"), state);
     });
   });
 
@@ -143,7 +307,7 @@ describe("deploy-state — round-trip under a fake home", () => {
 });
 
 describe("deploy-state — carries NO secret (the file is non-secret)", () => {
-  it("the serialized state contains exactly the five non-secret fields", async () => {
+  it("the serialized legacy state contains exactly the five non-secret fields", async () => {
     await withTempHome(async (home) => {
       const dir = path.join(home, ".librarian", "server");
       writeDeployState(dir, SAMPLE);
@@ -157,23 +321,65 @@ describe("deploy-state — carries NO secret (the file is non-secret)", () => {
     });
   });
 
-  it("a secret-shaped value smuggled onto the input is NOT persisted", async () => {
+  it("persists only the eight whitelisted non-secret fields for registry state", async () => {
     await withTempHome(async (home) => {
       const dir = path.join(home, ".librarian", "server");
-      // Assemble a secret-shaped literal at runtime (GitGuardian scans commits).
-      const fakeToken = "tok_" + "0123456789abcdef".repeat(4);
-      // Even if a caller passes extra keys, writeDeployState only ever persists
-      // the five declared non-secret fields.
       writeDeployState(dir, {
         ...SAMPLE,
-        // @ts-expect-error — extra keys are not part of DeployState and must be dropped.
-        token: fakeToken,
-        // @ts-expect-error — same for an admin token / master key.
-        adminToken: fakeToken,
+        imageTag: VERSION_IMAGE_REF,
+        imageSource: "registry",
+        imageRef: VERSION_IMAGE_REF,
+        imageDigest: DIGEST_IMAGE_REF,
       });
-      const raw = fs.readFileSync(deployStatePath(dir), "utf8");
-      expect(raw).not.toContain(fakeToken);
-      expect(raw).not.toContain("token");
+      const parsed = JSON.parse(fs.readFileSync(deployStatePath(dir), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(parsed).sort()).toEqual(
+        [
+          "containerName",
+          "dataVolume",
+          "host",
+          "imageDigest",
+          "imageRef",
+          "imageSource",
+          "imageTag",
+          "ref",
+        ].sort(),
+      );
+    });
+  });
+
+  it.each([
+    {
+      variant: "legacy",
+      extraKey: "token",
+      state: SAMPLE,
+    },
+    {
+      variant: "source",
+      extraKey: "secretKey",
+      state: { ...SAMPLE, imageSource: "source", imageRef: SAMPLE.imageTag },
+    },
+    {
+      variant: "registry",
+      extraKey: "futureField",
+      state: {
+        ...SAMPLE,
+        imageTag: VERSION_IMAGE_REF,
+        imageSource: "registry",
+        imageRef: VERSION_IMAGE_REF,
+        imageDigest: DIGEST_IMAGE_REF,
+      },
+    },
+  ])("rejects an unexpected own key on $variant state during read and write", async (input) => {
+    await withTempHome(async (home) => {
+      // Assemble a secret-shaped value at runtime (GitGuardian scans commits).
+      const extraValue = "tok_" + "0123456789abcdef".repeat(4);
+      expectReadAndWriteReject(path.join(home, ".librarian", "server"), {
+        ...input.state,
+        [input.extraKey]: extraValue,
+      });
     });
   });
 });

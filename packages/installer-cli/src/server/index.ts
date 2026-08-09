@@ -1,7 +1,7 @@
 // The `librarian server` command group — self-host the Librarian from the CLI.
 //
 // S1 lays the foundation the later slices build on: the command SURFACE (the
-// help table from spec §4), the `docker.ts` seam, and `preflight()`. The
+// help table from spec §4), the `docker.ts` seam, and server preflights. The
 // individual subcommands (up / update / down / status / logs / enable-boot /
 // disable-boot / admin) are implemented in their own slices; here they resolve
 // to a clear "arrives in a later slice" notice so the surface is honest about

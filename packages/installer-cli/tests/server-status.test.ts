@@ -180,6 +180,30 @@ describe("server status — deployed version from deploy-state, else git describ
       expect(r.stdout).not.toMatch(/update-available/i);
     });
   });
+
+  it("deployed unknown without git → unknown without failing or running git", async () => {
+    await withTempHome(async (home) => {
+      const runner = new FakeRunner()
+        .withWhich("docker")
+        .onRun("docker", ["info"], { code: 0 })
+        .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
+          stdout: "running\n",
+          code: 0,
+        })
+        .onRun("docker", ["inspect", "--format", "{{.State.Health.Status}}", "the-librarian"], {
+          stdout: "healthy\n",
+          code: 0,
+        });
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0");
+
+      const r = await runCli(["server", "status"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/Deployed:\s+unknown/);
+      expect(r.stdout).toContain("?");
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+    });
+  });
 });
 
 describe("server status — preflight teaches when docker is missing", () => {

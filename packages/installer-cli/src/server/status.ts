@@ -21,8 +21,8 @@ import { librarianDir } from "../paths.js";
 import { isBehind } from "../semver.js";
 import { fetchLatestVersion } from "../status.js";
 import { readDeployState } from "./deploy-state.js";
-import { run } from "./docker.js";
-import { preflight } from "./preflight.js";
+import { run, which } from "./docker.js";
+import { dockerPreflight } from "./preflight.js";
 import { CONTAINER_NAME } from "./up.js";
 
 export interface ServerStatusOptions {
@@ -63,6 +63,7 @@ async function resolveDeployed(deployDir: string): Promise<string | null> {
   const state = readDeployState(deployDir);
   if (state?.ref) return state.ref;
 
+  if ((await which("git")) === null) return null;
   const described = await run("git", ["-C", deployDir, "describe", "--tags"]);
   if (described.code === 0) {
     const tag = described.stdout.trim();
@@ -78,7 +79,7 @@ async function resolveDeployed(deployDir: string): Promise<string | null> {
  * `unknown`/`?`.
  */
 export async function serverStatus(options: ServerStatusOptions = {}): Promise<ServerStatusResult> {
-  await preflight(options.platform ? { platform: options.platform } : {});
+  await dockerPreflight(options.platform ? { platform: options.platform } : {});
   const deployDir = resolveDeployDir(options);
 
   // Probe the container. A null status means `docker inspect` failed → absent.
