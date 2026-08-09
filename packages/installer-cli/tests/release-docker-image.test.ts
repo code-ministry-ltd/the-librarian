@@ -49,7 +49,8 @@ describe("release workflow — published all-in-one image", () => {
     const publish = job("publish-docker", "github-release");
     expect(publish).toContain("docker buildx imagetools inspect");
     expect(publish).toContain("for attempt in 1 2 3");
-    expect(publish).toContain("manifest unknown|not found|no such manifest");
+    expect(publish).toContain("manifest unknown|no such manifest|name unknown|404 Not Found");
+    expect(publish).toContain('grep -Fqx "ERROR: $VERSION_REF: not found"');
     expect(publish).toContain("Registry lookup was indeterminate");
     expect(publish).toContain("if: steps.image.outputs.exists == 'false'");
     expect(publish).toContain('docker pull "$VERSION_REF"');
