@@ -12,6 +12,7 @@ catalog:
 # pnpm 11 reads dependency-resolution settings here; keep these selectors in
 # sync with package.json#pnpm.overrides while Docker and CI remain on pnpm 9.
 overrides:
+  "typescript": "^6.0.3"
   "js-yaml@>=3.0.0 <3.15.1": "3.15.1"
   "js-yaml@>=4.0.0 <4.3.1": "4.3.1"
   "nanoid@>=3.0.0 <3.3.17": "3.3.17"
