@@ -7,6 +7,7 @@
   "packageManager": "pnpm@9.15.0",
   "pnpm": {
     "overrides": {
+      "typescript": "^6.0.3",
       "js-yaml@>=3.0.0 <3.15.1": "3.15.1",
       "js-yaml@>=4.0.0 <4.3.1": "4.3.1",
       "nanoid@>=3.0.0 <3.3.17": "3.3.17",
