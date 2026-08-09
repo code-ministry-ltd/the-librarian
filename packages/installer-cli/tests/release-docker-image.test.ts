@@ -48,6 +48,9 @@ describe("release workflow — published all-in-one image", () => {
   it("never rebuilds an existing version tag and verifies it after a registry round trip", () => {
     const publish = job("publish-docker", "github-release");
     expect(publish).toContain("docker buildx imagetools inspect");
+    expect(publish).toContain("for attempt in 1 2 3");
+    expect(publish).toContain("manifest unknown|not found|no such manifest");
+    expect(publish).toContain("Registry lookup was indeterminate");
     expect(publish).toContain("if: steps.image.outputs.exists == 'false'");
     expect(publish).toContain('docker pull "$VERSION_REF"');
     expect(publish).toContain("node scripts/smoke-docker-image.mjs");
@@ -61,6 +64,9 @@ describe("release workflow — published all-in-one image", () => {
     expect(latestIndex).toBeGreaterThan(digestIndex);
     expect(publish).toContain("docker-image-digest.txt");
     expect(publish).toContain('"$LATEST_DIGEST" != "$DIGEST"');
+    expect(publish).toContain("git fetch --depth=1 origin main");
+    expect(publish).toContain('if [ "$CURRENT_VERSION" != "$VERSION" ]');
+    expect(publish).toContain("Skipping latest promotion");
   });
 
   it("creates the GitHub release only after Docker succeeds, then publishes npm", () => {
