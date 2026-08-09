@@ -474,6 +474,7 @@ describe("server update — strategy and preparation", () => {
       const result = await runCli(["server", "update", "--ref", "main"], { home });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toMatch(/already up to date/i);
+      expect(result.stdout).toMatch(/source main/i);
       expect(streamCalls).toEqual([]);
       expect(callIndex(runner, "stop")).toBe(-1);
     });
@@ -726,6 +727,7 @@ describe("server update — exact no-op and preserved configuration", () => {
       const result = await runCli(["server", "update", "--ref", OLD_REF], { home });
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toMatch(/already up to date/i);
+      expect(result.stdout).toMatch(/published v1\.20\.1 \(101010101010\)/i);
       expect(streamCalls).toEqual([]);
       expect(callIndex(runner, "stop")).toBe(-1);
     });

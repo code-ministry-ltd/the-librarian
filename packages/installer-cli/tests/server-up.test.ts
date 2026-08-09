@@ -280,6 +280,7 @@ describe("server up — source localhost happy path (exact argv)", () => {
 
       const r = await runCli(["server", "up", "--ref", "main"], { home, prompter });
       expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/up and healthy from source main/i);
 
       const deployDir = path.join(home, ".librarian", "server");
 
@@ -1645,6 +1646,7 @@ describe("server up — stable registry deployments (B2)", () => {
       const result = await runCli(["server", "up"], { home, prompter });
 
       expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(/up and healthy from published v1\.4\.2 \(abababababab\)/i);
       expect(streamedPullArgs()).toEqual(["pull", REGISTRY_IMAGE_REF]);
       expect(streamedBuildArgs()).toBeUndefined();
       expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
@@ -2142,6 +2144,7 @@ describe("server up — stable registry deployments (B2)", () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toMatch(/already running.*healthy/i);
+      expect(result.stdout).toMatch(/published v1\.4\.2 \(abababababab\)/i);
       expect(pulls).toBe(0);
       expect(dockerRunArgs(runner)).toBeUndefined();
       expect(runner.ran("docker", ["rm", "-f", "the-librarian"])).toBe(false);
@@ -2307,6 +2310,29 @@ describe("server up — progress feedback", () => {
       expect(joined).toContain("[5/5]");
       expect(joined).toMatch(/pulling and validating/i);
       expect(joined).toContain("✓ The server is healthy.");
+    });
+  });
+
+  it("names source selection, checkout and build phases for a development ref", async () => {
+    await withTempHome(async (home) => {
+      setDockerRunner(healthyRunner());
+      stubSeams();
+      const lines: string[] = [];
+
+      const result = await runUp(
+        { ref: "main" },
+        {
+          home,
+          prompter: new FakePrompter({ answers: { "~/.librarian/env": "n" } }),
+          interactive: false,
+          log: (line) => lines.push(line),
+        },
+      );
+
+      expect(result.output).toMatch(/up and healthy from source main/i);
+      expect(lines.join("\n")).toMatch(/\[1\/5\].*source ref main/i);
+      expect(lines.join("\n")).toMatch(/\[2\/5\].*source checkout/i);
+      expect(lines.join("\n")).toMatch(/\[3\/5\].*building.*source image/i);
     });
   });
 });

@@ -55,12 +55,18 @@ import { librarianDir } from "../paths.js";
 import type { Prompter } from "../prompt.js";
 import { fetchLatestVersion } from "../status.js";
 import { enableBoot } from "./boot.js";
-import { deployStatePath, readDeployState, writeDeployState } from "./deploy-state.js";
+import {
+  deployStatePath,
+  readDeployState,
+  writeDeployState,
+  type DeployState,
+} from "./deploy-state.js";
 import {
   CANONICAL_IMAGE_NAME,
   prepareRegistryImage,
   isReleasedVersionRef,
   selectDeploymentTarget,
+  shortImageDigest,
   type PreparedRegistryImage,
 } from "./deployment-image.js";
 import { run, stream, which, type RunResult } from "./docker.js";
@@ -643,7 +649,15 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
 
   // 3) Resolve the ref, then prepare either the immutable registry image or the
   // source checkout/build. Stable failures never fall back to source.
-  log("[1/5] Resolving the latest release…");
+  if (target.imageSource === "registry") {
+    log(
+      target.ref
+        ? `[1/5] Selecting exact published release ${target.ref}…`
+        : "[1/5] Resolving the latest published release…",
+    );
+  } else {
+    log(`[1/5] Selecting source ref ${target.ref}…`);
+  }
   const tag =
     target.imageSource === "registry"
       ? await resolveRegistryRef(target.ref)
@@ -656,7 +670,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   const sourceNeedsInitialPreparation =
     target.imageSource === "source" && !(await pathExists(path.join(deployDir, ".git")));
   if (sourceNeedsInitialPreparation) {
-    log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
+    log(`[2/5] Preparing the source checkout at ${deployDir} (cloning the repository)…`);
     await prepareDeployDir(deployDir, tag);
   }
 
@@ -682,6 +696,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
         agentToken: string;
         masterKey: string;
         mintedKey: boolean;
+        deploymentIdentity: string;
       }
     | undefined;
 
@@ -695,17 +710,32 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     const existingContainer = await inspectContainerPresence();
     if (existingContainer.exists) {
       if (target.imageSource !== "registry") throw existingContainerError([]);
-      const drift = registryDeploymentDrift(deployDir, tag, existingContainer.container, {
-        host,
-        dataVolume,
-        dataDir,
-        dashboardPort,
-        bootstrapClaimSecret,
-      });
+      const existingState = readDeployState(deployDir);
+      const drift = registryDeploymentDrift(
+        deployDir,
+        tag,
+        existingState,
+        existingContainer.container,
+        {
+          host,
+          dataVolume,
+          dataDir,
+          dashboardPort,
+          bootstrapClaimSecret,
+        },
+      );
       if (drift.length > 0) throw existingContainerError(drift);
+      if (existingState?.imageSource !== "registry") {
+        throw existingContainerError(["persisted deployment state"]);
+      }
       log("✓ The requested release is already running and healthy.");
       releaseDeploymentLock();
-      return alreadyRunningOutput(tag, host, dashboardPort, await enableBootOutput(options, deps));
+      return alreadyRunningOutput(
+        `published ${tag} (${shortImageDigest(existingState.imageDigest)})`,
+        host,
+        dashboardPort,
+        await enableBootOutput(options, deps),
+      );
     }
 
     let registryImage: PreparedRegistryImage | undefined;
@@ -719,7 +749,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
         }
       });
     } else if (!sourceNeedsInitialPreparation) {
-      log(`[2/5] Preparing the deploy directory at ${deployDir} (cloning the repository)…`);
+      log(`[2/5] Preparing the source checkout at ${deployDir} (cloning the repository)…`);
       await prepareDeployDir(deployDir, tag);
     }
 
@@ -735,7 +765,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
       runImageRef = registryImage.imageDigest;
     } else {
       log(
-        `[3/5] Building the image ${CONTAINER_NAME}:${tag} — the slow step: pulling the base ` +
+        `[3/5] Building source image ${CONTAINER_NAME}:${tag} — the slow step: pulling the base ` +
           `image, installing dependencies, and downloading the embeddings model. Expect several ` +
           `minutes on a first run; live build output follows.`,
       );
@@ -857,14 +887,21 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
       throw error;
     }
 
-    completedDeployment = { agentToken, masterKey, mintedKey };
+    completedDeployment = {
+      agentToken,
+      masterKey,
+      mintedKey,
+      deploymentIdentity: registryImage
+        ? `published ${tag} (${shortImageDigest(registryImage.imageDigest)})`
+        : `source ${tag}`,
+    };
   } finally {
     releaseDeploymentLock();
   }
 
   // A successful locked body always assigns this before releasing the lock;
   // every failure throws through the finally above.
-  const { agentToken, masterKey, mintedKey } = completedDeployment!;
+  const { agentToken, masterKey, mintedKey, deploymentIdentity } = completedDeployment!;
 
   // 8) Boot persistence (opt-in, spec §5.8). With `--enable-boot`, install +
   //    enable the systemd unit AFTER a healthy up (so the named container the
@@ -880,6 +917,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
     agentToken,
     masterKey,
     mintedKey,
+    deploymentIdentity,
     options,
     deps,
   });
@@ -1118,11 +1156,11 @@ function exactPortBinding(bindings: unknown, key: string, host: string, port: nu
 function registryDeploymentDrift(
   deployDir: string,
   ref: string,
+  state: DeployState | null,
   container: LiveContainer,
   desired: DesiredDeploymentConfig,
 ): string[] {
   const drift: string[] = [];
-  const state = readDeployState(deployDir);
   if (
     !state ||
     state.imageSource !== "registry" ||
@@ -1238,14 +1276,14 @@ function existingContainerError(drift: string[]): UpError {
 }
 
 function alreadyRunningOutput(
-  tag: string,
+  deploymentIdentity: string,
   host: string,
   dashboardPort: number,
   bootLines: string[],
 ): UpResult {
   const lines = [...bootLines];
   lines.push(
-    `The Librarian server is already running and healthy at ${tag}.`,
+    `The Librarian server is already running and healthy from ${deploymentIdentity}.`,
     "",
     `  MCP URL:     http://${host}:${MCP_PUBLISHED_PORT}/mcp`,
     `  Dashboard:   http://${host}:${dashboardPort}`,
@@ -1543,16 +1581,27 @@ async function closeTheLoop(
     masterKey: string;
     /** True when this run freshly MINTED the master key (vs reused an existing one). */
     mintedKey: boolean;
+    /** Selected image strategy + human-readable immutable identity. */
+    deploymentIdentity: string;
     options: UpOptions;
     deps: UpDeps;
   },
 ): Promise<void> {
-  const { host, dashboardPort, agentToken, masterKey, mintedKey, options, deps } = ctx;
+  const {
+    host,
+    dashboardPort,
+    agentToken,
+    masterKey,
+    mintedKey,
+    deploymentIdentity,
+    options,
+    deps,
+  } = ctx;
   const mcpUrl = `http://${host}:${MCP_PUBLISHED_PORT}/mcp`;
   const dashboardUrl = `http://${host}:${dashboardPort}`;
 
   lines.push(
-    "The Librarian server is up and healthy.",
+    `The Librarian server is up and healthy from ${deploymentIdentity}.`,
     "",
     `  MCP URL:     ${mcpUrl}`,
     `  Dashboard:   ${dashboardUrl}`,

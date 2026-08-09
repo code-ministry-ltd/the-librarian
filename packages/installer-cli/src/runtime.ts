@@ -258,8 +258,8 @@ async function runServerCommand(rest: string[], options: RuntimeOptions): Promis
 }
 
 /**
- * `librarian server up [flags]` (S2, localhost path). Parses the flags, builds
- * a prompter (for the loop-closer env offer), and runs the orchestrated flow.
+ * `librarian server up [flags]`. Parses the flags, builds a prompter (for the
+ * loop-closer env offer), and runs the selected published-image or source flow.
  * A failure surfaces as one clean stderr line via the top-level catch — no
  * stack trace, and the master key (carried only on the success stdout) never
  * reaches an error path.
@@ -389,13 +389,11 @@ async function runServerAdminCommand(
 }
 
 /**
- * `librarian server update [--ref <tag|main>] [--yes]` (S5). Re-pins the deploy
- * dir to the resolved ref, rebuilds the image, recreates the container
- * (PRESERVING the data volume), waits for health (rolling back on failure), and
- * applies pending data-dir migrations. Idempotent: already at the ref + healthy
- * → a clean no-op. The agent token is reused from the running container (clients
- * keep working) and never reaches an error path or a file. A failure surfaces as
- * one clean stderr line via the top-level catch (already secret-redacted).
+ * `librarian server update [--ref <tag|main>] [--yes]`. Pulls and verifies an
+ * exact stable release, or prepares/builds an explicit development ref, before
+ * replacing the container while preserving storage and credentials. A failed
+ * replacement recovers the previous executable where possible and reports the
+ * exact recovery outcome. Idempotent: the exact healthy target is a clean no-op.
  */
 async function runServerUpdateCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
   const { flags } = parseArgs(rest);

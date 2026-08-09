@@ -41,6 +41,10 @@ describe("librarian server (no subcommand) — the command surface", () => {
     ]) {
       expect(r.stdout).toContain(sub);
     }
+    expect(r.stdout).toMatch(/pull.*exact release/i);
+    expect(r.stdout).toMatch(/source.*build/i);
+    expect(r.stdout).not.toContain("Self-host the Librarian server (build + run");
+    expect(r.stdout).not.toContain("Re-pin to a release, rebuild");
   });
 
   it("--help on the group also prints the surface", async () => {

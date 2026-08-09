@@ -4,9 +4,8 @@
 // latest-release fetcher (so tests never touch a real daemon/network):
 //   - container running? (`docker inspect --format {{.State.Status}}`)
 //   - health (`docker inspect --format {{.State.Health.Status}}`)
-//   - the DEPLOYED version — the ref recorded in deploy-state.json, falling back
-//     to `git -C <dir> describe --tags` when no state file exists (e.g. a clone
-//     made before deploy-state existed)
+//   - the DEPLOYED provenance — published tag + short digest, source ref, or a
+//     legacy ref from old state / `git describe`
 //   - the LATEST release (`fetchLatestVersion` — the same fetch `librarian
 //     status` uses for the harnesses)
 //   - an `up-to-date | update-available` badge via `isBehind(deployed, latest)`
@@ -21,6 +20,7 @@ import { librarianDir } from "../paths.js";
 import { isBehind } from "../semver.js";
 import { fetchLatestVersion } from "../status.js";
 import { readDeployState } from "./deploy-state.js";
+import { shortImageDigest } from "./deployment-image.js";
 import { run, which } from "./docker.js";
 import { dockerPreflight } from "./preflight.js";
 import { CONTAINER_NAME } from "./up.js";
@@ -39,7 +39,7 @@ export interface ServerStatusResult {
   output: string;
 }
 
-/** The deploy dir `status` reads its recorded ref / git-describe fallback from. */
+/** The deploy dir `status` reads its recorded provenance / git fallback from. */
 function resolveDeployDir(options: ServerStatusOptions): string {
   return options.dir ?? path.join(librarianDir(options.home), "server");
 }
@@ -55,19 +55,40 @@ async function inspectField(format: string): Promise<string | null> {
 }
 
 /**
- * Resolve the deployed version: the deploy-state ref first (authoritative — it's
- * exactly what `up` checked out + built), else `git -C <dir> describe --tags`.
- * Returns `null` (→ "unknown") when neither is available.
+ * Resolve deployed provenance from state without Git. Old state and a no-state
+ * `git describe` fallback remain explicitly labelled legacy because neither
+ * records an immutable published digest nor explicit source strategy.
  */
-async function resolveDeployed(deployDir: string): Promise<string | null> {
+interface DeployedIdentity {
+  /** Raw version/ref used for the update badge. */
+  ref: string;
+  /** Human-readable provenance rendered to the operator. */
+  label: string;
+  /** Whether comparing this identity with the latest stable release is meaningful. */
+  releaseComparable: boolean;
+}
+
+async function resolveDeployed(deployDir: string): Promise<DeployedIdentity | null> {
   const state = readDeployState(deployDir);
-  if (state?.ref) return state.ref;
+  if (state?.imageSource === "registry") {
+    return {
+      ref: state.ref,
+      label: `published ${state.ref} (${shortImageDigest(state.imageDigest)})`,
+      releaseComparable: true,
+    };
+  }
+  if (state?.imageSource === "source") {
+    return { ref: state.ref, label: `source ${state.ref}`, releaseComparable: false };
+  }
+  if (state?.ref) {
+    return { ref: state.ref, label: `legacy ${state.ref}`, releaseComparable: false };
+  }
 
   if ((await which("git")) === null) return null;
   const described = await run("git", ["-C", deployDir, "describe", "--tags"]);
   if (described.code === 0) {
     const tag = described.stdout.trim();
-    if (tag) return tag;
+    if (tag) return { ref: tag, label: `legacy ${tag}`, releaseComparable: false };
   }
   return null;
 }
@@ -98,7 +119,7 @@ interface RenderInput {
   statusField: string | null;
   running: boolean;
   health: string | null;
-  deployed: string | null;
+  deployed: DeployedIdentity | null;
   latest: string | null;
 }
 
@@ -107,9 +128,9 @@ interface RenderInput {
  * unknown — an offline run never lies about an available update (mirrors the
  * harness `status` table's `update?` column).
  */
-function badge(deployed: string | null, latest: string | null): string {
-  if (!deployed || !latest) return "?";
-  return isBehind(deployed, latest) ? "update-available" : "up-to-date";
+function badge(deployed: DeployedIdentity | null, latest: string | null): string {
+  if (!deployed?.releaseComparable || !latest) return "?";
+  return isBehind(deployed.ref, latest) ? "update-available" : "up-to-date";
 }
 
 function render(input: RenderInput): string {
@@ -122,7 +143,7 @@ function render(input: RenderInput): string {
     "",
     `  Running:    ${runningLabel}`,
     `  Health:     ${runningLabel === "not running" ? "—" : healthLabel}`,
-    `  Deployed:   ${deployed ?? "unknown"}`,
+    `  Deployed:   ${deployed?.label ?? "unknown"}`,
     `  Latest:     ${latest ?? "unknown"}`,
     `  Update:     ${badge(deployed, latest)}`,
   ];

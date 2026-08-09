@@ -3,8 +3,9 @@
 // T3). The server settings + admin tRPC are T1/T2; this is the scheduler that
 // actually performs the update on the host.
 //
-// THE ARCHITECTURAL CONSTRAINT (spec §2). `server update` is host-level: it
-// rebuilds the image and `docker rm`s + recreates the container. A process INSIDE
+// THE ARCHITECTURAL CONSTRAINT (spec §2). `server update` is host-level: it pulls
+// an exact stable image (or builds an explicit source ref), then recreates the
+// container. A process INSIDE
 // the container cannot recreate its own container (no docker-socket access, by
 // design). So the act of updating MUST run on the host. This module installs a
 // host scheduler (a systemd timer; a cron fallback where systemd is absent) that
@@ -27,10 +28,10 @@
 // FAIL-SOFT (AGENTS.md + spec §3 SC4/SC7). The `--run` wrapper NEVER throws out of
 // the timer: any failure (server unreachable, a non-zero update) is logged on one
 // line and the wrapper exits 0. Server unreachable → SKIP (conservative: never
-// auto-update a server in an unknown state). A successful update stamps
-// `last_run_at`; a FAILED update does NOT stamp it (so the next fire retries) and
-// relies on `server update`'s own health-check rollback to leave the prior
-// container running.
+// auto-update a server in an unknown state). A successful due check (replacement
+// or exact-target no-op) stamps `last_run_at`; a FAILED update does NOT stamp it
+// (so the next fire retries) and
+// relies on `server update` to report its exact executable-recovery outcome.
 //
 // Everything privileged routes through the injectable `docker.ts` runner (the
 // same seam boot.ts uses), so tests assert the exact systemctl/crontab/docker
@@ -179,11 +180,13 @@ export function generateServiceUnit(input: ServiceUnitInput): string {
     // deploy-state — every fire failed with "No deploy-state found" while
     // `autoupdate status` looked healthy. The ENABLING user is the one context
     // where everything resolves: their `~/.librarian/server` is the deploy dir,
-    // they own the git clone (root git would refuse the dubious-ownership
-    // check), and they have docker access by construction (they ran `server up`).
+    // they own the deploy state and have docker access by construction (they ran
+    // `server up`). A source-ref deployment additionally uses their managed Git
+    // checkout; a stable published deployment does not require Git.
     `User=${user}`,
     // NoNewPrivileges: forbid this oneshot from gaining ANY new privileges via
-    // setuid/setgid/capabilities on the binaries it execs (docker/git) — an
+    // setuid/setgid/capabilities on the binaries it execs (Docker, and Git only
+    // for an explicit source ref) — an
     // auto-executing unit should grant no more than it needs.
     "NoNewPrivileges=true",
     // The wrapper reads the auto-update settings from the running container and,
@@ -511,8 +514,8 @@ export async function enableAutoUpdate(options: EnableOptions = {}): Promise<Aut
     const sudoUser = process.env.SUDO_USER;
     throw new AutoUpdateError(
       `No deploy-state found at ${deployDir} — the auto-update timer must run as the user ` +
-        "who ran `librarian server up` (it reads that user's deploy dir and git clone, with " +
-        "their docker access).\n" +
+        "who ran `librarian server up` (it reads that user's deploy state and uses their " +
+        "Docker access; explicit source refs also require their managed Git checkout).\n" +
         "Re-run `librarian server autoupdate enable` as that user" +
         (sudoUser
           ? ` — you appear to be under sudo, so likely as \`${sudoUser}\` without the leading sudo ` +
@@ -823,10 +826,10 @@ async function isTimerInstalled(): Promise<boolean> {
  *
  *   - Server UNREACHABLE → SKIP (never auto-update a server in an unknown state).
  *   - NOT (enabled && due) → SKIP (the no-op the disabled/not-due case wants).
- *   - enabled && due → run `server update`. On SUCCESS, stamp `last_run_at`
- *     (so the next due-check advances). On FAILURE (the update's own health-check
- *     rollback left the prior container running), log + do NOT stamp (so the next
- *     fire retries).
+ *   - enabled && due → run `server update`. On successful replacement OR an
+ *     exact-target no-op, stamp `last_run_at` (so the next due-check advances).
+ *     On FAILURE (the update's recovery outcome is carried by the typed update
+ *     error), log + do NOT stamp (so the next fire retries).
  *
  * The due-check is computed HOST-SIDE from the config the server returned (so the
  * single source of truth — the core helper's logic — is mirrored here without a
@@ -873,14 +876,16 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
           ? { healthIntervalMs: options.healthIntervalMs }
           : {}),
       });
-      // Stamp last_run_at ONLY on success. The server was recreated, so write the
-      // stamp through the (now-fresh) container's internal tRPC. A failed stamp is
-      // logged but not fatal — the update itself succeeded.
+      // Stamp last_run_at only after a successful replacement or exact-target
+      // check. Write through the running container's internal tRPC; a failed
+      // stamp is logged but not fatal because the lifecycle check itself passed.
       const stamped = await stampRunInServer();
       const stampNote = stamped
         ? ""
         : " (note: could not stamp last_run_at — will re-check next fire)";
-      const line = `autoupdate: updated successfully${stampNote}.`;
+      const line = result.changed
+        ? `autoupdate: updated successfully${stampNote}.`
+        : `autoupdate: checked; already up to date${stampNote}.`;
       log(line);
       // The inner update's own output (carries an at-most-once fresh token note).
       return { output: `${line}\n${redactSecrets(result.output)}` };
@@ -908,7 +913,7 @@ export async function runAutoUpdate(options: RunOptions = {}): Promise<AutoUpdat
           "upgrade the CLI and re-run `librarian server autoupdate enable` as the user who ran " +
           "`server up`."
         : "";
-      const line = `autoupdate: update failed — deployment state was not advanced and last_run_at was NOT stamped (will retry next fire). Inspect \`librarian server status\`; recovery outcome: ${firstLine(detail)}${migrationHint}`;
+      const line = `autoupdate: update did not complete — last_run_at was NOT stamped (will retry next fire). Inspect \`librarian server status\`; recovery outcome: ${firstLine(detail)}${migrationHint}`;
       log(line);
       return { output: line };
     }

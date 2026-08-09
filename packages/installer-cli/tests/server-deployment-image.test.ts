@@ -6,6 +6,7 @@ import {
   resetPublicGithubFetch,
   resetReleaseProvenanceResolver,
   selectDeploymentTarget,
+  shortImageDigest,
   setPublicGithubFetch,
   setReleaseProvenanceResolver,
 } from "../src/server/deployment-image.js";
@@ -78,6 +79,10 @@ function registryRunner(inspect = inspectRecord()): FakeRunner {
 describe("server deployment image — canonical registry identity", () => {
   it("uses the one published GHCR image name", () => {
     expect(CANONICAL_IMAGE_NAME).toBe("ghcr.io/code-ministry-ltd/the-librarian");
+  });
+
+  it("formats the conventional first 12 digest hex characters", () => {
+    expect(shortImageDigest(IMAGE_DIGEST)).toBe("abababababab");
   });
 });
 
