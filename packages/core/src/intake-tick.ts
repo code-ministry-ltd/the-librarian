@@ -31,8 +31,7 @@ import type { LibrarianStore } from "./store/librarian-store.js";
 export type IntakeTickSkipReason = "paused" | "disabled" | "incomplete_config" | "no_token";
 
 export type IntakeTickResult =
-  | { ran: true; summary: SweepSummary }
-  | { ran: false; reason: IntakeTickSkipReason };
+  { ran: true; summary: SweepSummary } | { ran: false; reason: IntakeTickSkipReason };
 
 export interface IntakeTickOptions {
   store: LibrarianStore;

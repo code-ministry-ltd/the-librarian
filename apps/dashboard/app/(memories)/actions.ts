@@ -108,8 +108,7 @@ export async function rejectProposalAction(id: string): Promise<ActionResult> {
 }
 
 export type DistillResult =
-  | { ok: true; current: string; candidate: string; diff: string }
-  | { ok: false; error: string };
+  { ok: true; current: string; candidate: string; diff: string } | { ok: false; error: string };
 
 // "Reject & make an example" step 1 (proposal-review rework F4): ask the
 // curator to distill the rejected submission into the examples document. PURE
@@ -209,8 +208,7 @@ export async function resolveFlagAction(
 }
 
 export type BulkUpdateResult =
-  | { ok: true; updated: number; transaction_id: string }
-  | { ok: false; error: string };
+  { ok: true; updated: number; transaction_id: string } | { ok: false; error: string };
 
 // D1.1 — re-home flow: bulk-update memories' agent_id in one tRPC round-trip.
 // Whitelisted server-side to agent_id (memories are project-less now).
@@ -275,8 +273,7 @@ export async function recallAction(
 }
 
 export type SearchReferencesResult =
-  | { ok: true; references: ReferenceHit[]; searched: number }
-  | { ok: false; error: string };
+  { ok: true; references: ReferenceHit[]; searched: number } | { ok: false; error: string };
 
 // The References retrieval tester. Calls vault.searchReferences — the same store
 // method the search_references MCP tool runs — so the operator sees exactly what

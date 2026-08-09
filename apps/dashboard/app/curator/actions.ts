@@ -26,26 +26,21 @@ export type RunNowResult = { ok: true; result: GroomingTickResult } | { ok: fals
 // Intake run-now widens the tick result with a router-applied `disabled` skip.
 type IntakeRunResult = IntakeTickResult | { ran: false; reason: "disabled" };
 export type RunIntakeNowResult =
-  | { ok: true; result: IntakeRunResult }
-  | { ok: false; error: string };
+  { ok: true; result: IntakeRunResult } | { ok: false; error: string };
 export type RunChronicleNowResult =
-  | { ok: true; result: ChronicleTickResult }
-  | { ok: false; error: string };
+  { ok: true; result: ChronicleTickResult } | { ok: false; error: string };
 
 export type SaveConfigResult = { ok: true } | { ok: false; error: string };
 
 export type LoadOperationsResult =
-  | { ok: true; operations: IntakeOperation[] }
-  | { ok: false; error: string };
+  { ok: true; operations: IntakeOperation[] } | { ok: false; error: string };
 
 // Provider mutations return the fresh provider list / consumer config so the
 // client can update without an extra round-trip; the page also revalidates.
 export type ProviderListResult =
-  | { ok: true; providers: LlmProvider[] }
-  | { ok: false; error: string };
+  { ok: true; providers: LlmProvider[] } | { ok: false; error: string };
 export type ConsumerConfigResult =
-  | { ok: true; config: ConsumerConfig }
-  | { ok: false; error: string };
+  { ok: true; config: ConsumerConfig } | { ok: false; error: string };
 export type ModelsResult = { models: string[] };
 export type TestConnectionResult = { ok: boolean; error?: string };
 
@@ -329,8 +324,7 @@ export type AddendumState = {
   version: string | null;
 };
 export type AddendumStateResult =
-  | { ok: true; addendum: AddendumState }
-  | { ok: false; error: string };
+  { ok: true; addendum: AddendumState } | { ok: false; error: string };
 
 // Commit a new addendum for a job — it applies immediately (rethink D4): the
 // job's next run reads the new text. Works whether or not the job is enabled:

@@ -14,15 +14,15 @@
   },
   "dependencies": {
     "@astrojs/starlight": "0.41.1",
-    "@fontsource/fraunces": "^5.2.9",
-    "@fontsource/ibm-plex-mono": "^5.2.7",
-    "@fontsource/newsreader": "^5.2.10",
-    "astro": "7.0.3",
+    "@fontsource/fraunces": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/newsreader": "^5.3.0",
+    "astro": "7.1.0",
     "sharp": "^0.35.3",
     "starlight-links-validator": "^0.25.2"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "^1.49.1"
+    "@playwright/test": "^1.62.1"
   }
 }

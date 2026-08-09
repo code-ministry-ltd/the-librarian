@@ -99,8 +99,7 @@ export const intakeRouter = router({
   // can also fire the C3 post-intake grooming trigger (runIntakeTick's default),
   // so an admin run-now may, like a scheduled tick, arm a groom if the threshold/
   // debounce allow — intentional and consistent with the scheduled path.
-  runNow: adminProcedure.mutation(
-    ({ ctx }): Promise<IntakeTickResult> =>
-      runIntakeTick({ store: ctx.store, allowDisabled: true }),
+  runNow: adminProcedure.mutation(({ ctx }): Promise<IntakeTickResult> =>
+    runIntakeTick({ store: ctx.store, allowDisabled: true }),
   ),
 });

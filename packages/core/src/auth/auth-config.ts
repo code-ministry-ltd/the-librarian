@@ -186,8 +186,7 @@ export interface EnableAuthInput {
 }
 
 export type EnableAuthResult =
-  | { ok: true }
-  | { ok: false; error: "bad_admin_token" | "incomplete" };
+  { ok: true } | { ok: false; error: "bad_admin_token" | "incomplete" };
 
 /**
  * Flip enforcement on — the one mutation that must be admin-gated even before

@@ -45,8 +45,7 @@ import { validateShelfSet } from "./vault-router.js";
 export type GroomingTickSkipReason = "paused" | "disabled" | "incomplete_config" | "no_token";
 
 export type GroomingTickResult =
-  | { ran: true; summary: RunDueCurationSummary }
-  | { ran: false; reason: GroomingTickSkipReason };
+  { ran: true; summary: RunDueCurationSummary } | { ran: false; reason: GroomingTickSkipReason };
 
 export interface GroomingTickOptions {
   store: LibrarianStore;

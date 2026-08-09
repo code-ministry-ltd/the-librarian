@@ -39,8 +39,7 @@ export interface ChronicleTickSummary {
 }
 
 export type ChronicleTickResult =
-  | ChronicleTickSummary
-  | { ran: false; reason: ChronicleTickSkipReason };
+  ChronicleTickSummary | { ran: false; reason: ChronicleTickSkipReason };
 
 export interface ChronicleTickOptions {
   store: LibrarianStore;
