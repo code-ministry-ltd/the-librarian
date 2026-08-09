@@ -4,6 +4,7 @@
 // of T5.2's "flip pnpm test to Vitest exclusively" cleanup.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import net from "node:net";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "./helpers.js";
@@ -99,6 +100,32 @@ describe("healthcheck script", () => {
     expect(text).toMatch(/PASS\s{2}MCP tool surface/);
     expect(text).not.toMatch(/FAIL\s{2}MCP tool surface/);
   });
+
+  it("isolates its local admin listener from an occupied configured port", async () => {
+    const blocker = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(0, "127.0.0.1", resolve);
+    });
+    const address = blocker.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Expected the blocker to bind a TCP port");
+    }
+
+    try {
+      const result = await runHealthcheck([], {
+        LIBRARIAN_TRPC_PORT: String(address.port),
+      });
+      expect(
+        result.code,
+        `healthcheck reused an occupied admin port:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+      ).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        blocker.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  }, 60_000);
 
   it("--help describes its purpose without running checks", async () => {
     const result = await runHealthcheck(["--help"]);
