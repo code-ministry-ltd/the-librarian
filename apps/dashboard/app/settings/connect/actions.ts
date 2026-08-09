@@ -10,8 +10,7 @@ import { serverTRPC } from "@/lib/trpc-server";
 // stored client-side beyond the one-time reveal — same contract as agent tokens.
 
 export type CreateCaptureTokenResult =
-  | { ok: true; id: string; token: string }
-  | { ok: false; error: string };
+  { ok: true; id: string; token: string } | { ok: false; error: string };
 export type RevokeCaptureTokenResult = { ok: true } | { ok: false; error: string };
 
 function message(error: unknown): string {

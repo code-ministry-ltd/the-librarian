@@ -40,8 +40,7 @@ export interface GroomingTriggerInputs {
 }
 
 export type GroomingTriggerDecision =
-  | { trigger: true }
-  | { trigger: false; reason: "below_threshold" | "debounced" };
+  { trigger: true } | { trigger: false; reason: "below_threshold" | "debounced" };
 
 /**
  * The pure threshold + debounce arithmetic. Triggers iff the applied-op count has
@@ -81,8 +80,7 @@ export interface MaybeTriggerGroomingOptions {
 }
 
 export type MaybeTriggerGroomingResult =
-  | { triggered: true }
-  | { triggered: false; reason: "below_threshold" | "debounced" | "error" };
+  { triggered: true } | { triggered: false; reason: "below_threshold" | "debounced" | "error" };
 
 /**
  * Fail-soft post-intake hook: read the config + the last-groom time + the applied-op

@@ -53,8 +53,7 @@ export interface RateLimitOptions {
 }
 
 export type RateLimitResult =
-  | { allowed: true }
-  | { allowed: false; reason: "burst" | "daily"; retryAfterSeconds: number };
+  { allowed: true } | { allowed: false; reason: "burst" | "daily"; retryAfterSeconds: number };
 
 function utcDate(now: number): string {
   return new Date(now).toISOString().slice(0, 10);

@@ -8,8 +8,7 @@ import { serverTRPC } from "@/lib/trpc-server";
 // (on create) and never stored client-side beyond the one-time reveal.
 
 export type CreateTokenResult =
-  | { ok: true; id: string; token: string }
-  | { ok: false; error: string };
+  { ok: true; id: string; token: string } | { ok: false; error: string };
 export type RevokeTokenResult = { ok: true } | { ok: false; error: string };
 
 function message(error: unknown): string {

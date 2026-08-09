@@ -39,8 +39,7 @@ export interface ValidationContext {
 }
 
 export type OperationOutcome =
-  | { decision: "accept"; targetRequiresApproval: boolean }
-  | { decision: "reject"; reason: string };
+  { decision: "accept"; targetRequiresApproval: boolean } | { decision: "reject"; reason: string };
 
 export interface ValidatedOperation {
   operation: GroomingOperation;

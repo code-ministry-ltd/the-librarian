@@ -12,8 +12,7 @@ import { serverTRPC } from "@/lib/trpc-server";
 export type VaultActionResult = { ok: true } | { ok: false; error: string };
 export type SaveVaultFileResult = { ok: true; hash: string } | { ok: false; error: string };
 export type RenameVaultFileResult =
-  | { ok: true; path: string; changedLinks: string[] }
-  | { ok: false; error: string };
+  { ok: true; path: string; changedLinks: string[] } | { ok: false; error: string };
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -87,8 +86,7 @@ export type VaultFileCommit = {
   path: string;
 };
 export type FileHistoryResult =
-  | { ok: true; commits: VaultFileCommit[] }
-  | { ok: false; error: string };
+  { ok: true; commits: VaultFileCommit[] } | { ok: false; error: string };
 export type FileDiffResult = { ok: true; diff: string } | { ok: false; error: string };
 
 /** The file's commit list, newest first (follows renames). */

@@ -8,8 +8,7 @@ function message(error: unknown): string {
 }
 
 export type BackupNowResult =
-  | { ok: true; commit: string | null; repo: string }
-  | { ok: false; error: string };
+  { ok: true; commit: string | null; repo: string } | { ok: false; error: string };
 
 export async function backupNowAction(): Promise<BackupNowResult> {
   try {

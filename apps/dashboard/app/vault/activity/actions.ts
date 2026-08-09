@@ -38,8 +38,7 @@ export interface CommitDiffFileShape {
 }
 
 export type CommitDiffResult =
-  | { ok: true; hash: string; files: CommitDiffFileShape[] }
-  | { ok: false; error: string };
+  { ok: true; hash: string; files: CommitDiffFileShape[] } | { ok: false; error: string };
 
 export async function commitDiffAction(input: { hash: string }): Promise<CommitDiffResult> {
   try {
