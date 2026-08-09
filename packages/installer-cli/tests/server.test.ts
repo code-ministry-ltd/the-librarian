@@ -1,10 +1,15 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
 import {
   resetRunner as resetDockerRunner,
   setRunner as setDockerRunner,
+  which as whichServerBinary,
 } from "../src/server/docker.js";
+import { SERVER_SUBCOMMANDS } from "../src/server/index.js";
 import { dockerPreflight, PreflightError, sourcePreflight } from "../src/server/preflight.js";
 import { FakeRunner } from "./helpers.js";
 
@@ -54,6 +59,28 @@ describe("librarian server (no subcommand) — the command surface", () => {
     expect(r.stdout).toContain("admin");
   });
 
+  it.each(SERVER_SUBCOMMANDS)("%s --help prints command help without dispatching", async (sub) => {
+    const runner = new FakeRunner().withFallback({ code: 1, stderr: "must not run" });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", sub, "--help"]);
+
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain(`Usage: librarian server ${sub}`);
+    expect(runner.calls).toEqual([]);
+  });
+
+  it.each(["up", "down", "update"])("%s -h cannot mutate server state", async (sub) => {
+    const runner = new FakeRunner().withFallback({ code: 1, stderr: "must not run" });
+    setDockerRunner(runner);
+
+    const r = await runCli(["server", sub, "-h"]);
+
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain(`Usage: librarian server ${sub}`);
+    expect(runner.calls).toEqual([]);
+  });
+
   it("an unknown subcommand errors and shows the surface", async () => {
     const r = await runCli(["server", "frobnicate"]);
     expect(r.exitCode).toBe(1);
@@ -63,6 +90,27 @@ describe("librarian server (no subcommand) — the command surface", () => {
 });
 
 describe("server Docker preflight — teaching errors via the injected runner", () => {
+  it.skipIf(process.platform === "win32")(
+    "the real runner finds Docker directly when PATH has no which utility",
+    async () => {
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-path-test-"));
+      const docker = path.join(binDir, "docker");
+      const previousPath = process.env.PATH;
+      try {
+        fs.writeFileSync(docker, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+        process.env.PATH = binDir;
+        resetDockerRunner();
+
+        await expect(whichServerBinary("docker")).resolves.toBe(docker);
+        await expect(whichServerBinary("which")).resolves.toBeNull();
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        fs.rmSync(binDir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("docker missing: names docker and how to install it (never a stack trace)", async () => {
     setDockerRunner(new FakeRunner()); // nothing on PATH
     await expect(dockerPreflight()).rejects.toBeInstanceOf(PreflightError);

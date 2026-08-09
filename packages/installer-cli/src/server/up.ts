@@ -72,6 +72,11 @@ import {
 import { run, stream, which, type RunResult } from "./docker.js";
 import { dockerPreflight, sourcePreflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
+import {
+  CANONICAL_SOURCE_REPOSITORY,
+  isCanonicalSourceRemote,
+  redactGitDiagnostics,
+} from "./source-repository.js";
 import { acquireUpdateLock, updateLockPath } from "./update-lock.js";
 
 // Re-exported from its shared home so existing importers (`update.ts`) keep
@@ -79,7 +84,7 @@ import { acquireUpdateLock, updateLockPath } from "./update-lock.js";
 export { redactSecrets } from "./redact.js";
 
 /** The repository the deploy dir clones (same repo the latest-tag fetch targets). */
-export const REPO_URL = "https://github.com/code-ministry-ltd/the-librarian";
+export const REPO_URL = CANONICAL_SOURCE_REPOSITORY;
 
 /** The container name every `server` command operates on (single instance per host). */
 export const CONTAINER_NAME = "the-librarian";
@@ -1395,27 +1400,20 @@ async function prepareDeployDir(dir: string, tag: string): Promise<void> {
 
   // It's a git repo — confirm it's OUR clone before touching it.
   const originResult = await run("git", ["-C", dir, "remote", "get-url", "origin"]);
-  const origin = originResult.stdout.trim();
-  if (!sameRepo(origin, REPO_URL)) {
+  failIfNonZero(
+    "git",
+    ["-C", dir, "remote", "get-url", "origin"],
+    originResult,
+    redactGitDiagnostics,
+  );
+  if (!isCanonicalSourceRemote(originResult.stdout)) {
     throw new UpError(
-      `Deploy dir ${dir} is a git repo with a different remote (${origin || "none"}). ` +
+      `Deploy dir ${dir} is a git repo with a different remote. ` +
         "Refusing to touch a clone I didn't create — choose another path with `--dir <path>`.",
     );
   }
   await git(["-C", dir, "fetch", "--tags", "origin"]);
   await checkoutRef(dir, tag);
-}
-
-/** True iff `origin` points at the same repo as `REPO_URL` (scheme/.git tolerant). */
-function sameRepo(origin: string, repo: string): boolean {
-  const norm = (u: string): string =>
-    u
-      .trim()
-      .replace(/\.git$/, "")
-      .replace(/\/$/, "")
-      .replace(/^git@github\.com:/, "https://github.com/")
-      .toLowerCase();
-  return norm(origin) === norm(repo);
 }
 
 /**
@@ -1695,7 +1693,7 @@ function isYes(answer: string): boolean {
 /** Run a `git …` command from anywhere; a non-zero exit is a teaching error. */
 async function git(args: string[]): Promise<void> {
   const result = await run("git", args);
-  failIfNonZero("git", args, result);
+  failIfNonZero("git", args, result, redactGitDiagnostics);
 }
 
 /**
@@ -1716,18 +1714,23 @@ export async function checkoutRef(dir: string, ref: string): Promise<void> {
     "--end-of-options",
     `${ref}^{commit}`,
   ]);
-  failIfNonZero("git", ["-C", dir, "rev-parse", ref], resolved);
+  failIfNonZero("git", ["-C", dir, "rev-parse", ref], resolved, redactGitDiagnostics);
   await git(["-C", dir, "checkout", resolved.stdout.trim()]);
 }
 
-function failIfNonZero(cmd: string, args: string[], result: RunResult): void {
+function failIfNonZero(
+  cmd: string,
+  args: string[],
+  result: RunResult,
+  redact: (text: string) => string = redactSecrets,
+): void {
   if (result.code === 0) return;
   // Redact in case a failed docker/git step echoed a secret-shaped value. Post
   // ADR 0008 P4 the secrets ride in the 0600 deploy env-file (via `--env-file`),
   // NOT inline on argv — so an argv-echoing `build`/`run` failure no longer
   // carries them. We still redact defensively (e.g. a daemon that prints the
   // expanded env, or an older code path) so no 64-hex secret reaches the message.
-  const detail = redactSecrets(result.stderr.trim() || result.stdout.trim());
+  const detail = redact(result.stderr.trim() || result.stdout.trim());
   throw new UpError(
     `\`${cmd} ${args[0]}\` failed (exit ${result.code ?? "signal"})` +
       (detail ? `:\n${detail}` : ".") +

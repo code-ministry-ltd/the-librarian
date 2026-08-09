@@ -29,6 +29,8 @@
 //     exercises, and neither ever spawns a real `docker`.
 
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import type { RunOptions, RunResult, Runner } from "../exec.js";
 
 export type { RunOptions, RunResult, Runner } from "../exec.js";
@@ -85,20 +87,41 @@ const realRunner: Runner = {
   },
 
   async which(cmd) {
-    const probe = process.platform === "win32" ? "where" : "which";
-    try {
-      const { stdout, code } = await realRunner.run(probe, [cmd]);
-      if (code !== 0) return null;
-      const first = stdout
-        .split("\n")
-        .map((l) => l.trim())
-        .find((l) => l.length > 0);
-      return first ?? null;
-    } catch {
-      return null;
-    }
+    return resolveExecutable(cmd);
   },
 };
+
+/** Resolve an executable without depending on a host `which`/`where` utility. */
+async function resolveExecutable(cmd: string): Promise<string | null> {
+  const isWindows = process.platform === "win32";
+  const hasSeparator = cmd.includes("/") || (isWindows && cmd.includes("\\"));
+  const directories = hasSeparator ? [""] : (process.env.PATH ?? "").split(path.delimiter);
+  const extensions = isWindows
+    ? commandExtensions(cmd, process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+    : [""];
+
+  for (const directory of directories) {
+    const base = hasSeparator ? cmd : path.resolve(directory || ".", cmd);
+    for (const extension of extensions) {
+      const candidate = `${base}${extension}`;
+      try {
+        await fs.promises.access(candidate, isWindows ? fs.constants.F_OK : fs.constants.X_OK);
+        if ((await fs.promises.stat(candidate)).isFile()) return path.resolve(candidate);
+      } catch {
+        // Not an executable file; continue searching PATH.
+      }
+    }
+  }
+  return null;
+}
+
+function commandExtensions(cmd: string, pathExt: string): string[] {
+  const extensions = pathExt
+    .split(";")
+    .filter(Boolean)
+    .map((extension) => extension.toLowerCase());
+  return extensions.some((extension) => cmd.toLowerCase().endsWith(extension)) ? [""] : extensions;
+}
 
 // --- the real, process-spawning streamer ----------------------------------
 

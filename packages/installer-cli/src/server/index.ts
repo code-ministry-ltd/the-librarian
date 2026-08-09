@@ -42,6 +42,29 @@ export function serverUsage(): string {
   ].join("\n");
 }
 
+/** Help for one server subcommand; evaluated before any lifecycle dispatch. */
+export function serverSubcommandUsage(subcommand: ServerSubcommand): string {
+  const usage: Record<ServerSubcommand, readonly string[]> = {
+    up: [
+      "Usage: librarian server up [--ref <release|source-ref>] [--dir <path>]",
+      "       [--host <address>] [--dashboard-port <port>]",
+      "       [--data-volume <name> | --data-dir <path>] [--enable-boot] [--yes]",
+    ],
+    update: ["Usage: librarian server update [--ref <release|source-ref>] [--dir <path>] [--yes]"],
+    down: ["Usage: librarian server down"],
+    status: ["Usage: librarian server status [--dir <path>]"],
+    logs: ["Usage: librarian server logs [-f|--follow] [--service mcp|dashboard|all]"],
+    "enable-boot": ["Usage: librarian server enable-boot"],
+    "disable-boot": ["Usage: librarian server disable-boot"],
+    autoupdate: [
+      "Usage: librarian server autoupdate <enable|disable|uninstall|status> [--dir <path>]",
+      "       [--cadence daily|weekly]",
+    ],
+    admin: ["Usage: librarian server admin <backup|restore|auth|rebuild> [args…]"],
+  };
+  return usage[subcommand].join("\n");
+}
+
 /** True iff `name` is one of the known `server` subcommands. */
 export function isServerSubcommand(name: string): name is ServerSubcommand {
   return (SERVER_SUBCOMMANDS as readonly string[]).includes(name);
