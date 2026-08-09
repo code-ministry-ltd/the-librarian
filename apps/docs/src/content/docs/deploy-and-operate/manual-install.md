@@ -4,23 +4,27 @@ description: Run The Librarian by hand with Docker — single container, Compose
 ---
 
 The [one-command self-host](/deploy-and-operate/self-host/) path covers most people.
-This page is for operators who want to drive Docker themselves: a hand-run single
-container, the two-container Compose stack, or Fly.io.
+This page is for operators who want to drive Docker themselves: the published
+all-in-one image, image-only Compose, the source-build Compose stack, or Fly.io.
 
 ## Single container (manual)
 
-One image runs both services (the MCP server and the dashboard) under a small
-supervisor. This is what `librarian server up` automates; run it by hand when you
-want full control of the invocation:
+One public image runs both services (the MCP server and the dashboard) under a
+small supervisor. Pull `latest` for a quick first run; for a durable deployment,
+replace it with a release tag such as `v1.20.1` and keep that tag in your
+configuration:
 
 ```sh
-docker build -f docker/all-in-one.Dockerfile -t the-librarian .
+docker pull ghcr.io/code-ministry-ltd/the-librarian:latest
+umask 077
+printf 'LIBRARIAN_AGENT_TOKEN=%s\nLIBRARIAN_SECRET_KEY=%s\n' \
+  "$(openssl rand -base64 48)" "$(openssl rand -hex 32)" > librarian.env
 docker run -d --name the-librarian \
-  -p 3042:3000 -p 3838:3838 \
+  --restart unless-stopped \
+  -p 127.0.0.1:3042:3000 -p 127.0.0.1:3838:3838 \
   -v librarian_data:/data \
-  -e LIBRARIAN_AGENT_TOKEN="$(openssl rand -base64 48)" \
-  -e LIBRARIAN_SECRET_KEY="$(openssl rand -hex 32)" \
-  the-librarian
+  --env-file librarian.env \
+  ghcr.io/code-ministry-ltd/the-librarian:latest
 ```
 
 Key points:
@@ -31,6 +35,9 @@ Key points:
 - `/data` is your vault and settings — **back it up** (see
   [Backups & restore](/guides/backups-restore/)). It must be writable by the image's
   user (UID 1000); on platforms that mount volumes root-owned, `chown` it.
+- Keep `librarian.env` mode `0600`, back it up securely, and read its agent token
+  when connecting clients. Docker stores container environment values in its own
+  metadata too, so restrict access to the Docker daemon.
 - **There is no admin token.** The admin API runs only on an internal listener inside
   the container; the published port carries only the agent surface, gated by
   `LIBRARIAN_AGENT_TOKEN`. (More on this model in
@@ -44,6 +51,53 @@ Key points:
   not set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly reachable host.
 - The image crash-fasts if either service dies, so your orchestrator restarts the
   pair.
+
+## Image-only Compose (recommended manual path)
+
+This path needs Docker Compose but no source checkout or local image build. Download
+the deployment files, protect the env file, and replace both credential placeholders:
+
+```sh
+mkdir the-librarian && cd the-librarian
+curl -fsSLO https://raw.githubusercontent.com/code-ministry-ltd/the-librarian/main/docker/docker-compose.image.yml
+curl -fsSLO https://raw.githubusercontent.com/code-ministry-ltd/the-librarian/main/docker/all-in-one.env.example
+cp all-in-one.env.example .env
+chmod 0600 .env
+```
+
+Generate an agent token with `openssl rand -base64 48` and a master key with
+`openssl rand -hex 32`, then put their outputs in `.env`. Keep `latest` for the
+first run or set `LIBRARIAN_VERSION=vX.Y.Z` to pin a release. Render the
+configuration without printing its interpolated credentials, then start it:
+
+```sh
+docker compose --env-file .env -f docker-compose.image.yml config --quiet
+docker compose --env-file .env -f docker-compose.image.yml up -d
+
+curl http://127.0.0.1:3838/healthz
+curl http://127.0.0.1:3042/api/health
+```
+
+Both ports bind to loopback by default. If clients connect over a private network,
+set the two `*_PUBLISHED_HOST` values in `.env`; if the dashboard is reachable
+beyond loopback, terminate TLS in front of it and treat network access as admin
+access. The default named volume is `librarian_data`. For a bind mount, set
+`LIBRARIAN_DATA_SOURCE` to an absolute host path and set `LIBRARIAN_DATA_UID` /
+`LIBRARIAN_DATA_GID` to its owner.
+
+Use exact version tags for controlled upgrades and rollbacks:
+
+```sh
+# Edit LIBRARIAN_VERSION in .env, then:
+docker compose --env-file .env -f docker-compose.image.yml pull
+docker compose --env-file .env -f docker-compose.image.yml up -d
+```
+
+To roll back, put the previous `vX.Y.Z` in `.env` and run the same two commands.
+The data volume is preserved. Run bundled admin commands directly in the container,
+for example `docker compose --env-file .env -f docker-compose.image.yml exec
+the-librarian the-librarian backup`. Do not use `docker compose down -v` unless
+you intend to delete the vault.
 
 ### Fly.io
 
@@ -103,14 +157,16 @@ docker run -d --name the-librarian \
   -e LIBRARIAN_ALLOWED_ORIGINS=https://memory.example.com,chrome-extension://<extension-id> \
   -e LIBRARIAN_AGENT_TOKEN=<long-random-agent-token> \
   -e LIBRARIAN_SECRET_KEY=<64-hex-master-key> \
-  the-librarian
+  ghcr.io/code-ministry-ltd/the-librarian:vX.Y.Z
 ```
 
 Terminate HTTPS at the reverse proxy and forward the public origin to container port
-3000. Do not publish container port 3838. For Compose, put the four values above in
-`.env`; the dashboard receives the single-port flag and public URL. Remove the
-`mcp-server` service's `ports:` mapping (or keep its default loopback-only binding
-during migration), then expose only dashboard port 3839 through TLS.
+3000. Do not publish container port 3838. For image-only Compose, put the four
+values above in `.env` and remove the MCP port mapping from
+`docker-compose.image.yml`, then expose only dashboard port 3042 through TLS. For
+the source-build stack below, remove the `mcp-server` service's `ports:` mapping
+(or keep its default loopback-only binding during migration) and expose only
+dashboard port 3839.
 
 ## Two-container Compose stack (advanced)
 
@@ -179,7 +235,7 @@ Treat dashboard network access as admin access, and keep the published host on a
 private network. If you front the dashboard with a reverse proxy on another hostname,
 add that exact origin to `LIBRARIAN_ALLOWED_ORIGINS`.
 
-## Day-to-day operations
+## Source-build Compose operations
 
 ```sh
 # View logs

@@ -3,7 +3,8 @@
 **Merging to `main` IS the release.** There is no separate release PR, no
 `release/vX` branch, and no hand-run `git tag` / `gh release` for this repo.
 Every PR bumps the version and writes its CHANGELOG entry; the merge cuts the
-tag + GitHub release automatically. This file is the per-repo bump-size rule;
+tag, container image and GitHub release automatically, followed by public npm
+packages when `NPM_TOKEN` is configured. This file is the per-repo bump-size rule;
 the cross-family runbook (which repos, version files, coordinated bumps) lives
 in [`docs/release-runbook.md`](./release-runbook.md).
 
@@ -27,13 +28,17 @@ in [`docs/release-runbook.md`](./release-runbook.md).
    [X.Y.Z]: https://github.com/code-ministry-ltd/the-librarian/compare/v<prev>...vX.Y.Z
    ```
 
-3. **Merge to `main`.** `.github/workflows/release.yml` reads the version, and
-   if `vX.Y.Z` isn't tagged yet, creates the annotated tag + the GitHub release
-   (notes taken from your CHANGELOG section). It is idempotent: a merge that
-   didn't bump the version is a clean no-op.
+3. **Merge to `main`.** `.github/workflows/release.yml` reads the version, creates
+   the annotated tag, publishes `ghcr.io/code-ministry-ltd/the-librarian:vX.Y.Z`,
+   pulls and smokes that exact image, moves `latest` to its verified digest, then
+   creates the GitHub release and publishes npm packages. A release asset records
+   the immutable image digest. The workflow is recoverable: rerunning the tagged
+   commit verifies existing artefacts rather than overwriting them; a later merge
+   that did not bump the version is a clean no-op.
 
 That's the whole contributor job — the `package.json` bump and the CHANGELOG
-entry. The workflow does the rest.
+entry. The workflow does the rest. The GHCR package must be made public once when
+it is first created; visibility then applies to subsequent versions.
 
 ## Enforcement
 
@@ -69,10 +74,14 @@ Don't fight the conflict; let it make you choose a fresh version.
 
 ## After the release
 
-The Docker image rebuilds via CI, and deployment is automatic on merge. The
-dashboard version badge reads the running `package.json` and compares it to the
-latest GitHub release of `code-ministry-ltd/the-librarian`, refreshing on its 1-hour
-cache (restart the server for an immediate update).
+Verify that the GitHub release's `docker-image-digest.txt` matches both the
+`vX.Y.Z` and `latest` manifests, then prove a logged-out client can pull the
+versioned image. On the first image release, an organisation owner may need to
+change the new package's visibility to public before the anonymous pull succeeds.
+
+The dashboard version badge reads the running `package.json` and compares it to
+the latest GitHub release of `code-ministry-ltd/the-librarian`, refreshing on its
+1-hour cache (restart the server for an immediate update).
 
 ## Coordinating with the plugin repos
 

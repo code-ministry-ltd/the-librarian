@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.20.1] — 2026-08-09
+
+### Added
+
+- **The all-in-one server and dashboard image is now published to GHCR.** Every
+  release has an immutable `ghcr.io/code-ministry-ltd/the-librarian:vX.Y.Z`
+  tag, with `latest` promoted only after the published image passes both health
+  probes.
+- **An image-only Compose deployment needs no source checkout or local build.**
+  It includes a protected env-file template, loopback-only ports by default,
+  persistent named-volume or bind-mount storage, and version-pinned upgrade and
+  rollback instructions.
+
+### Changed
+
+- **A release is not complete until its container image survives a registry
+  round trip.** The release workflow now builds the versioned image once, pulls
+  and smoke-tests it, verifies its source/version labels, records its immutable
+  digest on the GitHub release, and only then publishes npm packages. Interrupted
+  releases can be safely rerun without overwriting the versioned image.
+
 ## [1.20.0] — 2026-08-06
 
 ### Added
@@ -4334,6 +4355,7 @@ another.
   Code, Hermes) plus copyable setup packages under `integrations/` for the
   rest. See [Harness integrations](./README.md#harness-integrations).
 
+[1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.20.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
 [1.17.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.3...v1.17.4

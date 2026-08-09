@@ -60,6 +60,13 @@ the docs site.
 > and hides container health. Install Docker CE. See the
 > [self-host guide](apps/docs/src/content/docs/deploy-and-operate/self-host.md).
 
+Prefer to operate Docker yourself? The same all-in-one server and dashboard is
+published at `ghcr.io/code-ministry-ltd/the-librarian`. Pull `:latest` for a
+quick first run, or pin a `:vX.Y.Z` release for reproducible upgrades and
+rollbacks. An image-only Compose file and protected env-file template are in
+[`docker/`](./docker); see [Manual deployment](apps/docs/src/content/docs/deploy-and-operate/manual-install.md)
+for the two-command lifecycle.
+
 ## Install on any harness
 
 Once your server is running, the `librarian` CLI wires The Librarian into your

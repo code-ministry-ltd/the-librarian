@@ -5,10 +5,11 @@ How releases work for this repo. Pragmatic. Trunk-based. No release branches.
 **The model: merging to `main` IS the release.** Every PR bumps the root
 `package.json` and files a dated `## [X.Y.Z]` CHANGELOG entry in the **same
 PR** — there is no `[Unreleased]` section and no separate "cut a release" PR.
-On merge, `.github/workflows/release.yml` tags `vX.Y.Z` and publishes the
-GitHub release from the CHANGELOG section — automatically. A `release-guard`
-CI job blocks any PR that forgets the bump or leaves an `[Unreleased]`
-section. You never hand-run `git tag` / `gh release`.
+On merge, `.github/workflows/release.yml` tags `vX.Y.Z`, publishes and verifies
+the all-in-one image, then publishes the GitHub release from the CHANGELOG
+section — automatically. A `release-guard` CI job blocks any PR that forgets
+the bump or leaves an `[Unreleased]` section. You never hand-run `git tag` /
+`gh release`.
 
 The bump-size rule and full per-PR mechanics are in
 [`docs/release.md`](./release.md); this runbook covers what ships where.
@@ -26,7 +27,7 @@ One version — the root `package.json` — covers the whole tree:
 
 | Surface | Lives at | How it ships / how users update |
 |---|---|---|
-| Server + dashboard | `packages/*`, `apps/dashboard` | Docker image rebuilds via CI; `docker compose … up -d --build` (or the host's auto-deploy) |
+| Server + dashboard | `packages/*`, `apps/dashboard` | Public all-in-one image at `ghcr.io/code-ministry-ltd/the-librarian:vX.Y.Z`; operators pull a pinned release or use `latest` |
 | Claude Code | `integrations/claude` + root `.claude-plugin/marketplace.json` | `/plugin update the-librarian` (marketplace points at the subdir; plain MCP config needs no update at all) |
 | Codex | `integrations/codex` | README config block — nothing to ship |
 | OpenCode | `integrations/opencode` | README config block — nothing to ship |
@@ -86,26 +87,30 @@ In your feature PR:
 3. **Open the PR, get CI green** (including the Hermes pytest job when
    `integrations/hermes/**` or the mirrored tool sources change), **merge.**
 
-On merge, `release.yml` reads the version, and if `vX.Y.Z` isn't tagged yet,
-creates the annotated tag and the GitHub release (notes = your CHANGELOG
-section). It is idempotent: a merge whose version is already tagged is a
-clean no-op.
+On merge, `release.yml` reads the version and classifies the commit. A new
+release creates the annotated tag, builds the all-in-one image once, pulls and
+smokes the versioned image, records its manifest digest, promotes `latest` by
+that digest, creates the GitHub release (notes = your CHANGELOG section), then
+publishes public npm packages when `NPM_TOKEN` is configured. A rerun of the
+same tagged commit verifies and completes any missing later steps without
+overwriting the versioned image. A later commit whose version is already tagged
+is a clean no-op.
 
 ### Surface-specific notes
 
-- **Server / dashboard** — the Docker image rebuilds via CI; deploy is
-  automatic on merge. The dashboard version badge compares the running
-  `package.json` to the latest GitHub release, refreshing on its 1-hour
-  cache (restart the server for an immediate update).
+- **Server / dashboard** — GHCR receives immutable `vX.Y.Z` and mutable `latest`
+  tags for the all-in-one image. The GitHub release carries
+  `docker-image-digest.txt`; verify it against both tags. The dashboard version
+  badge compares the running `package.json` to the latest GitHub release,
+  refreshing on its 1-hour cache (restart the server for an immediate update).
 - **Claude marketplace** — installs pull this repo; the manifest's `source`
   points at `./integrations/claude`. A marketplace-visible change should bump
   `plugins[].version` in `.claude-plugin/marketplace.json` in the same PR.
-- **Pi (npm)** — `integrations/pi` (`@the-librarian/pi-extension`) publishes
-  from the workspace by hand today (`npm publish` in `integrations/pi`;
-  there is no npm step in `release.yml`). Sanity-check the tarball with
-  `npm pack --dry-run` before a risky change to what ships; the `files`
-  field in its `package.json` is the gate. npm won't let you republish the
-  same version — never bump just to "force" a republish.
+- **Pi (npm)** — `integrations/pi` (`@the-librarian/pi-extension`) is published
+  after the verified image and GitHub release when `NPM_TOKEN` is configured.
+  Sanity-check the tarball with `npm pack --dry-run` before a risky change to
+  what ships; the `files` field in its `package.json` is the gate. npm won't let
+  you republish the same version — never bump just to "force" a republish.
 - **Hermes** — nothing publishes; the adapter installs by copy. Make sure
   `integrations/hermes` pytest is green in CI (`.github/workflows/hermes-tests.yml`).
 - **Breaking MCP changes** — name the change explicitly in the CHANGELOG
@@ -118,5 +123,7 @@ clean no-op.
 - [ ] Add `## [X.Y.Z] — YYYY-MM-DD` at the top of `CHANGELOG.md` + its `[X.Y.Z]:` compare-link (no `[Unreleased]`)
 - [ ] Touched `integrations/claude` or `integrations/pi`? Bump their version fields in the same PR
 - [ ] `node scripts/check-release.mjs` passes locally (also enforced by the **release-guard** CI job)
-- [ ] CI green → merge. `release.yml` tags + publishes the GitHub release automatically
+- [ ] CI green → merge. `release.yml` tags, verifies the image, then publishes the GitHub release automatically
+- [ ] Verify the release digest receipt matches `vX.Y.Z` and `latest`
+- [ ] On the first image release, make the GHCR package public if required; verify a logged-out pull
 - [ ] Verify the GitHub release appeared (and, for a Pi publish, `npm view <pkg> version` reports the new version)
