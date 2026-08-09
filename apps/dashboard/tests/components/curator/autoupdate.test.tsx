@@ -10,7 +10,7 @@
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import { AutoUpdateConfigForm } from "@/components/curator/autoupdate-config-form";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -34,7 +34,7 @@ type OnSave = React.ComponentProps<typeof AutoUpdateConfigForm>["onSave"];
 
 function setup(
   over: Partial<React.ComponentProps<typeof AutoUpdateConfigForm>> = {},
-  onSave: ReturnType<typeof vi.fn> = vi.fn<OnSave>(async () => ({ ok: true as const })),
+  onSave: Mock<OnSave> = vi.fn(async () => ({ ok: true as const })),
 ) {
   const props: React.ComponentProps<typeof AutoUpdateConfigForm> = {
     enabled: false,

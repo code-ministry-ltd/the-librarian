@@ -6,8 +6,8 @@ packages:
 
 catalog:
   typescript: ^5.7.2
-  vite: ^5.4.21
-  vitest: ^2.1.8
+  vite: ^8.2.1
+  vitest: ^4.1.10
 
 # pnpm 11 reads dependency-resolution settings here; keep these selectors in
 # sync with package.json#pnpm.overrides while Docker and CI remain on pnpm 9.
