@@ -31,7 +31,6 @@ afterEach(() => {
 function adminReady(): FakeRunner {
   return new FakeRunner()
     .withWhich("docker")
-    .withWhich("git")
     .onRun("docker", ["info"], { code: 0 })
     .onRun("docker", ["inspect", "--format", "{{.State.Status}}", "the-librarian"], {
       stdout: "running\n",

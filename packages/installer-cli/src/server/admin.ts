@@ -25,7 +25,7 @@
 // exact argv without a real daemon or container.
 
 import { run, runInteractive } from "./docker.js";
-import { preflight } from "./preflight.js";
+import { dockerPreflight } from "./preflight.js";
 import { redactSecrets } from "./redact.js";
 import { CONTAINER_NAME } from "./up.js";
 
@@ -117,7 +117,7 @@ export async function runAdmin(
     throw new AdminError(unknownVerbMessage(verb));
   }
 
-  await preflight(options.platform ? { platform: options.platform } : {});
+  await dockerPreflight(options.platform ? { platform: options.platform } : {});
   await assertContainerRunning();
 
   // A prompt is only needed when the run is interactive AND the operator hasn't

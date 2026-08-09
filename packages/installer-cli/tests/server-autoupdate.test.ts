@@ -595,7 +595,6 @@ describe("autoupdate uninstall — removes the timer/cron entirely", () => {
 describe("autoupdate status — timer-installed + server enabled/cadence/last-run + up-to-date", () => {
   it("reports timer installed + the server's config + reuses `server status`", async () => {
     const runner = systemdReady()
-      .withWhich("git") // `server status`' preflight needs git on PATH
       // The timer-installed probe: list-unit-files lists it.
       .onRun("systemctl", ["list-unit-files", AUTOUPDATE_TIMER_NAME], {
         code: 0,

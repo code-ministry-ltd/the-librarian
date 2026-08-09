@@ -16,7 +16,7 @@
 // exact argv without a real daemon.
 
 import { run } from "./docker.js";
-import { preflight } from "./preflight.js";
+import { dockerPreflight } from "./preflight.js";
 import { CONTAINER_NAME } from "./up.js";
 
 export interface DownOptions {
@@ -48,7 +48,7 @@ function isNotRunning(stderr: string): boolean {
  * no-op; any other non-zero exit is a teaching `DownError`.
  */
 export async function runDown(options: DownOptions = {}): Promise<DownResult> {
-  await preflight(options.platform ? { platform: options.platform } : {});
+  await dockerPreflight(options.platform ? { platform: options.platform } : {});
 
   // The single, data-safe command. No `rm`, no `-v`, no `volume`, no `-f`.
   const result = await run("docker", ["stop", CONTAINER_NAME]);

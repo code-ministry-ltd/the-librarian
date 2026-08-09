@@ -237,6 +237,8 @@ describe("server update — upgrade path argv sequence (SC 5)", () => {
         dashboardPort: 3000,
         ref: LATEST_TAG,
         imageTag: `the-librarian:${LATEST_TAG}`,
+        imageSource: "source",
+        imageRef: `the-librarian:${LATEST_TAG}`,
       });
     });
   });
@@ -495,7 +497,39 @@ describe("server update — --ref reflected in checkout + build tag", () => {
       ).toBe(true);
       const runArgs = dockerRunArgs(runner);
       expect(runArgs?.[runArgs.length - 1]).toBe("the-librarian:main");
-      expect(readDeployState(dir)?.ref).toBe("main");
+      expect(readDeployState(dir)).toMatchObject({
+        ref: "main",
+        imageTag: "the-librarian:main",
+        imageSource: "source",
+        imageRef: "the-librarian:main",
+      });
+    });
+  });
+
+  it("preserves explicit source provenance while advancing the local image ref", async () => {
+    await withTempHome(async (home) => {
+      const dir = seedDeployState(home);
+      writeDeployState(dir, {
+        containerName: "the-librarian",
+        host: "127.0.0.1",
+        dataVolume: "librarian_data",
+        ref: OLD_REF,
+        imageTag: `the-librarian:${OLD_REF}`,
+        imageSource: "source",
+        imageRef: `the-librarian:${OLD_REF}`,
+      });
+      const runner = upgradeRunner();
+      setDockerRunner(runner);
+      stubSeams();
+
+      const r = await runCli(["server", "update"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(readDeployState(dir)).toMatchObject({
+        ref: LATEST_TAG,
+        imageTag: `the-librarian:${LATEST_TAG}`,
+        imageSource: "source",
+        imageRef: `the-librarian:${LATEST_TAG}`,
+      });
     });
   });
 });

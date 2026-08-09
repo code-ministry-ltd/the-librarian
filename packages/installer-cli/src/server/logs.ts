@@ -30,7 +30,7 @@
 //     live-per-line) differs.
 
 import { run, stream } from "./docker.js";
-import { preflight } from "./preflight.js";
+import { dockerPreflight } from "./preflight.js";
 import { CONTAINER_NAME } from "./up.js";
 
 /** The services `--service` can target. `all` (default) is unfiltered. */
@@ -174,7 +174,7 @@ function makeLineFilter(
  */
 export async function runLogs(options: LogsOptions = {}): Promise<LogsResult> {
   const service = resolveService(options.service);
-  await preflight(options.platform ? { platform: options.platform } : {});
+  await dockerPreflight(options.platform ? { platform: options.platform } : {});
 
   if (options.follow) {
     // Live tail: stream line-by-line, never buffer to close.

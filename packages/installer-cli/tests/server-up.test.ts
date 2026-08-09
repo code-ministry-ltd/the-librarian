@@ -361,7 +361,7 @@ describe("server up — a failed docker step REDACTS secret-bearing output (S-2)
         host: "127.0.0.1",
         dataVolume: "librarian_data",
         dashboardPort: 3042,
-        tag: LATEST_TAG,
+        imageRef: `the-librarian:${LATEST_TAG}`,
         envFile: deployEnvOf(home),
       });
       runner.onRun("docker", runArgs, {
@@ -663,6 +663,8 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
         dashboardPort: 3042,
         ref: LATEST_TAG,
         imageTag: `the-librarian:${LATEST_TAG}`,
+        imageSource: "source",
+        imageRef: `the-librarian:${LATEST_TAG}`,
       });
 
       // The state file carries NO secret: not the agent token, not the master key.
@@ -694,6 +696,8 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
         dashboardPort: 3042,
         ref: "main",
         imageTag: "the-librarian:main",
+        imageSource: "source",
+        imageRef: "the-librarian:main",
       });
     });
   });
@@ -1159,7 +1163,7 @@ describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", (
       host: "127.0.0.1",
       dataVolume: "librarian_data",
       dashboardPort: 3042,
-      tag: "v1.0.0",
+      imageRef: "the-librarian:v1.0.0",
       envFile: "/tmp/deploy.env",
     });
     // Secrets + the no-auth flag are NOT on argv (they live in the env-file).
@@ -1177,7 +1181,7 @@ describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", (
       host: "100.1.2.3",
       dataVolume: "librarian_data",
       dashboardPort: 3042,
-      tag: "v1.0.0",
+      imageRef: "the-librarian:v1.0.0",
       envFile: "/tmp/deploy.env",
     });
     expect(args).toContain("100.1.2.3:3042:3000");
@@ -1191,7 +1195,7 @@ describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", (
       host: "127.0.0.1",
       dataVolume: "librarian_data",
       dashboardPort: 3500,
-      tag: "v1.0.0",
+      imageRef: "the-librarian:v1.0.0",
       envFile: "/tmp/deploy.env",
     });
     // Only the published (host) side moves; the container always listens on 3000.

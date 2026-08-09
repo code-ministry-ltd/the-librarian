@@ -5,7 +5,7 @@ import {
   resetRunner as resetDockerRunner,
   setRunner as setDockerRunner,
 } from "../src/server/docker.js";
-import { PreflightError, preflight } from "../src/server/preflight.js";
+import { dockerPreflight, PreflightError, sourcePreflight } from "../src/server/preflight.js";
 import { FakeRunner } from "./helpers.js";
 
 afterEach(() => {
@@ -58,11 +58,11 @@ describe("librarian server (no subcommand) — the command surface", () => {
   });
 });
 
-describe("server preflight — teaching errors via the injected runner", () => {
+describe("server Docker preflight — teaching errors via the injected runner", () => {
   it("docker missing: names docker and how to install it (never a stack trace)", async () => {
     setDockerRunner(new FakeRunner()); // nothing on PATH
-    await expect(preflight()).rejects.toBeInstanceOf(PreflightError);
-    const message = await preflight().catch((e: Error) => e.message);
+    await expect(dockerPreflight()).rejects.toBeInstanceOf(PreflightError);
+    const message = await dockerPreflight().catch((e: Error) => e.message);
     expect(message).toMatch(/docker/i);
     expect(message).toMatch(/install/i);
     // Actionable, not a bare "invalid"/"error".
@@ -77,7 +77,7 @@ describe("server preflight — teaching errors via the injected runner", () => {
         .withWhich("git")
         .onRun("docker", ["info"], { code: 1, stderr: "Cannot connect to the Docker daemon" }),
     );
-    const message = await preflight({ platform: "linux" }).catch((e: Error) => e.message);
+    const message = await dockerPreflight({ platform: "linux" }).catch((e: Error) => e.message);
     expect(message).toMatch(/daemon/i);
     expect(message).toMatch(/running/i);
     // Linux hint does NOT mention Docker Desktop.
@@ -88,34 +88,41 @@ describe("server preflight — teaching errors via the injected runner", () => {
     setDockerRunner(
       new FakeRunner().withWhich("docker").withWhich("git").onRun("docker", ["info"], { code: 1 }),
     );
-    const message = await preflight({ platform: "darwin" }).catch((e: Error) => e.message);
+    const message = await dockerPreflight({ platform: "darwin" }).catch((e: Error) => e.message);
     expect(message).toMatch(/Docker Desktop/);
   });
 
-  it("git missing (docker fine): names git and how to install it", async () => {
+  it("docker present and daemon reachable resolves without requiring git", async () => {
     setDockerRunner(
       new FakeRunner()
         .withWhich("docker") // docker present, daemon ok (info exits 0 by default)
         .onRun("docker", ["info"], { code: 0 }),
       // git deliberately NOT marked present
     );
-    const message = await preflight({ platform: "linux" }).catch((e: Error) => e.message);
+    await expect(dockerPreflight({ platform: "linux" })).resolves.toBeUndefined();
+  });
+
+  it("never invokes a real binary — every probe goes through the injected runner", async () => {
+    const runner = new FakeRunner().withWhich("docker");
+    setDockerRunner(runner);
+    await dockerPreflight({ platform: "linux" });
+    // The only `run` recorded is the daemon probe; `which` is recorded too.
+    expect(runner.calls).toContainEqual(expect.objectContaining({ cmd: "docker", args: ["info"] }));
+  });
+});
+
+describe("server source preflight — Docker plus Git", () => {
+  it("git missing (docker fine): names git and how to install it", async () => {
+    setDockerRunner(new FakeRunner().withWhich("docker").onRun("docker", ["info"], { code: 0 }));
+    const message = await sourcePreflight({ platform: "linux" }).catch((e: Error) => e.message);
     expect(message).toMatch(/git/i);
     expect(message).toMatch(/install/i);
   });
 
-  it("all tools present + daemon reachable: resolves (no throw)", async () => {
+  it("all source tools present + daemon reachable: resolves (no throw)", async () => {
     setDockerRunner(
       new FakeRunner().withWhich("docker").withWhich("git").onRun("docker", ["info"], { code: 0 }),
     );
-    await expect(preflight({ platform: "linux" })).resolves.toBeUndefined();
-  });
-
-  it("never invokes a real binary — every probe goes through the injected runner", async () => {
-    const runner = new FakeRunner().withWhich("docker").withWhich("git");
-    setDockerRunner(runner);
-    await preflight({ platform: "linux" });
-    // The only `run` recorded is the daemon probe; `which` is recorded too.
-    expect(runner.calls).toContainEqual(expect.objectContaining({ cmd: "docker", args: ["info"] }));
+    await expect(sourcePreflight({ platform: "linux" })).resolves.toBeUndefined();
   });
 });
