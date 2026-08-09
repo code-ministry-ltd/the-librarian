@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
+import { isMissingImageError } from "../../../scripts/classify-image-inspect-failure.mjs";
 
 const workflow = fs.readFileSync(
   new URL("../../../.github/workflows/release.yml", import.meta.url),
@@ -49,12 +50,25 @@ describe("release workflow — published all-in-one image", () => {
     const publish = job("publish-docker", "github-release");
     expect(publish).toContain("docker buildx imagetools inspect");
     expect(publish).toContain("for attempt in 1 2 3");
-    expect(publish).toContain("manifest unknown|no such manifest|name unknown|404 Not Found");
-    expect(publish).toContain('grep -Fqx "ERROR: $VERSION_REF: not found"');
+    expect(publish).toContain("classify-image-inspect-failure.mjs");
     expect(publish).toContain("Registry lookup was indeterminate");
     expect(publish).toContain("if: steps.image.outputs.exists == 'false'");
     expect(publish).toContain('docker pull "$VERSION_REF"');
     expect(publish).toContain("node scripts/smoke-docker-image.mjs");
+  });
+
+  it("fails closed when a registry infrastructure error happens to contain not found", () => {
+    const versionRef = "ghcr.io/code-ministry-ltd/the-librarian:v1.20.1";
+
+    expect(isMissingImageError("manifest unknown", versionRef)).toBe(true);
+    expect(isMissingImageError("no such manifest: v1.20.1", versionRef)).toBe(true);
+    expect(isMissingImageError(`ERROR: ${versionRef}: not found`, versionRef)).toBe(true);
+
+    expect(isMissingImageError("token endpoint returned 404 Not Found", versionRef)).toBe(false);
+    expect(isMissingImageError("network route not found", versionRef)).toBe(false);
+    expect(isMissingImageError(`ERROR: ${versionRef}: not found\nrequest failed`, versionRef)).toBe(
+      false,
+    );
   });
 
   it("records the verified digest before promoting latest by digest", () => {

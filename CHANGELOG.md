@@ -36,7 +36,7 @@ changes from this point forward are catalogued here.
   server-side configuration error cannot produce a truthy auth object and make
   an existence-based session check fail open. Next.js 15.5.21 closes its current
   Server Action SSRF/denial-of-service advisories; workspace resolutions pin
-  patched `js-yaml`, `nanoid`, `postcss`, `svgo`, and `tar` releases.
+  patched `js-yaml`, `nanoid`, `postcss`, `sharp`, `svgo`, and `tar` releases.
 
 ## [1.20.0] — 2026-08-06
 

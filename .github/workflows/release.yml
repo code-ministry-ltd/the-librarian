@@ -138,8 +138,7 @@ jobs:
             # Only an explicit registry not-found response permits the first
             # write. Auth, network and rate-limit failures are indeterminate and
             # must fail closed so a version tag can never be overwritten.
-            if grep -Eiq 'manifest unknown|no such manifest|name unknown|404 Not Found' "$STATUS_FILE" \
-              || grep -Fqx "ERROR: $VERSION_REF: not found" "$STATUS_FILE"; then
+            if node scripts/classify-image-inspect-failure.mjs "$STATUS_FILE" "$VERSION_REF"; then
               echo "exists=false" >> "$GITHUB_OUTPUT"
               echo "$VERSION_REF does not exist — it will be built once."
               exit 0
