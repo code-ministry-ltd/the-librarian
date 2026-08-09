@@ -12,6 +12,12 @@ const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const REQUIRED_PLATFORM = "linux/amd64";
 const GITHUB_API = "https://api.github.com/repos/code-ministry-ltd/the-librarian";
 
+/** Conventional display form: the first 12 hexadecimal characters of a sha256 digest. */
+export function shortImageDigest(imageDigest: string): string {
+  const match = /@sha256:([0-9a-f]{64})$/.exec(imageDigest);
+  return match?.[1]?.slice(0, 12) ?? imageDigest;
+}
+
 /** A pulled release image whose provenance and immutable identity were verified. */
 export interface PreparedRegistryImage {
   imageSource: "registry";

@@ -9,6 +9,7 @@ import { type DeployState, readDeployState } from "./deploy-state.js";
 import {
   prepareRegistryImage,
   selectDeploymentTarget,
+  shortImageDigest,
   type DeploymentTarget,
   type PreparedRegistryImage,
 } from "./deployment-image.js";
@@ -48,6 +49,8 @@ export class UpdateError extends Error {
 
 export interface UpdateResult {
   output: string;
+  /** True only when a replacement completed; false for an exact healthy no-op. */
+  changed: boolean;
 }
 
 interface LiveContainer {
@@ -165,8 +168,13 @@ async function performUpdate(
     ? await isExactHealthySourceTarget(state, targetRef, current, deployDir, sourceResolution)
     : isExactHealthyRegistryTarget(state, targetRef, current, deployDir);
   if (exactTarget) {
+    const identity =
+      target.imageSource === "registry" && state.imageSource === "registry"
+        ? `published ${targetRef} (${shortImageDigest(state.imageDigest)})`
+        : `source ${targetRef}`;
     return {
-      output: `Already up to date (${targetRef}) — the exact deployment is healthy.\nNothing to do.`,
+      output: `Already up to date (${identity}) — the exact deployment is healthy.\nNothing to do.`,
+      changed: false,
     };
   }
 
@@ -314,6 +322,7 @@ async function performUpdate(
     output: [renderSuccess(prepared, tokenIsFresh ? agentToken : null), successCleanupWarning]
       .filter(Boolean)
       .join("\n"),
+    changed: true,
   };
 }
 
@@ -924,7 +933,7 @@ function recoveryFailure(
 function renderSuccess(prepared: PreparedTarget, freshToken: string | null): string {
   const identity =
     prepared.imageSource === "registry"
-      ? `published ${prepared.ref} (${prepared.imageDigest!.slice(-12)})`
+      ? `published ${prepared.ref} (${shortImageDigest(prepared.imageDigest!)})`
       : `source ${prepared.ref}`;
   const lines = [
     `Updated The Librarian server to ${identity} — the container is healthy.`,

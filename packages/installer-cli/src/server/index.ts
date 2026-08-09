@@ -1,14 +1,7 @@
 // The `librarian server` command group — self-host the Librarian from the CLI.
 //
-// S1 lays the foundation the later slices build on: the command SURFACE (the
-// help table from spec §4), the `docker.ts` seam, and server preflights. The
-// individual subcommands (up / update / down / status / logs / enable-boot /
-// disable-boot / admin) are implemented in their own slices; here they resolve
-// to a clear "arrives in a later slice" notice so the surface is honest about
-// what exists today.
-//
-// `server` with NO subcommand prints the surface; `librarian --help` reveals
-// this group alongside the harness commands (wired in `runtime.ts`).
+// `server` with no subcommand prints the lifecycle surface; `librarian --help`
+// reveals this group alongside the harness commands (wired in `runtime.ts`).
 
 /** The `server` subcommands, in the order they appear in the surface (§4). */
 export const SERVER_SUBCOMMANDS = [
@@ -30,12 +23,13 @@ export function serverUsage(): string {
   return [
     "Usage: librarian server <subcommand> [flags]",
     "",
-    "Self-host the Librarian server (build + run the all-in-one container),",
+    "Self-host the Librarian server from an exact published release,",
+    "or use --ref <development-ref>; source refs build locally,",
     "then hand its MCP URL + agent token to `librarian install` on clients.",
     "",
     "Subcommands:",
-    "  up            Build + run the server; print the MCP URL + agent token",
-    "  update        Re-pin to a release, rebuild, recreate (data volume kept)",
+    "  up            Pull an exact release (or build a source ref) and start it",
+    "  update        Prepare, verify and replace; recover the old image on failure",
     "  down          Stop the container (the data volume is preserved)",
     "  status        Running? healthy? deployed version vs latest release",
     "  logs          Tail the container logs ([-f] [--service mcp|dashboard|all])",

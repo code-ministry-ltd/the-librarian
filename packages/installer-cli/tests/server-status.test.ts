@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resetRunner } from "../src/exec.js";
 import { runCli } from "../src/runtime.js";
 import { writeDeployState } from "../src/server/deploy-state.js";
+import { CANONICAL_IMAGE_NAME } from "../src/server/deployment-image.js";
 import {
   resetRunner as resetDockerRunner,
   setRunner as setDockerRunner,
@@ -29,15 +30,41 @@ afterEach(() => {
 });
 
 const DEPLOYED = "v1.4.2";
+const DEPLOYED_DIGEST = `${CANONICAL_IMAGE_NAME}@sha256:${"42".repeat(32)}`;
 
 /** Seed a deploy-state recording the deployed ref `v1.4.2`. */
-function seedDeployState(home: string): void {
+function seedDeployState(home: string, ref = DEPLOYED): void {
+  writeDeployState(path.join(home, ".librarian", "server"), {
+    containerName: "the-librarian",
+    host: "127.0.0.1",
+    dataVolume: "librarian_data",
+    ref,
+    imageTag: `the-librarian:${ref}`,
+  });
+}
+
+function seedRegistryDeployState(home: string): void {
   writeDeployState(path.join(home, ".librarian", "server"), {
     containerName: "the-librarian",
     host: "127.0.0.1",
     dataVolume: "librarian_data",
     ref: DEPLOYED,
-    imageTag: `the-librarian:${DEPLOYED}`,
+    imageTag: `${CANONICAL_IMAGE_NAME}:${DEPLOYED}`,
+    imageSource: "registry",
+    imageRef: `${CANONICAL_IMAGE_NAME}:${DEPLOYED}`,
+    imageDigest: DEPLOYED_DIGEST,
+  });
+}
+
+function seedSourceDeployState(home: string): void {
+  writeDeployState(path.join(home, ".librarian", "server"), {
+    containerName: "the-librarian",
+    host: "127.0.0.1",
+    dataVolume: "librarian_data",
+    ref: "main",
+    imageTag: "the-librarian:source-deadbeef",
+    imageSource: "source",
+    imageRef: "the-librarian:source-deadbeef",
   });
 }
 
@@ -60,7 +87,7 @@ function runningHealthy(): FakeRunner {
 describe("server status — running + healthy, deployed vs latest badge", () => {
   it("a NEWER latest → update-available", async () => {
     await withTempHome(async (home) => {
-      seedDeployState(home);
+      seedRegistryDeployState(home);
       setDockerRunner(runningHealthy());
       setLatestFetcher(async () => "1.5.0"); // newer than deployed 1.4.2
 
@@ -77,7 +104,7 @@ describe("server status — running + healthy, deployed vs latest badge", () => 
 
   it("an EQUAL latest → up-to-date", async () => {
     await withTempHome(async (home) => {
-      seedDeployState(home);
+      seedRegistryDeployState(home);
       setDockerRunner(runningHealthy());
       setLatestFetcher(async () => "1.4.2"); // equal to deployed
 
@@ -132,6 +159,36 @@ describe("server status — container absent → not running", () => {
 });
 
 describe("server status — deployed version from deploy-state, else git describe", () => {
+  it("renders registry provenance from state without probing Git", async () => {
+    await withTempHome(async (home) => {
+      seedRegistryDeployState(home);
+      const runner = runningHealthy();
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.4.2");
+
+      const r = await runCli(["server", "status"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/Deployed:\s+published v1\.4\.2 \(424242424242\)/);
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+    });
+  });
+
+  it("renders source provenance from state without probing Git", async () => {
+    await withTempHome(async (home) => {
+      seedSourceDeployState(home);
+      const runner = runningHealthy();
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0");
+
+      const r = await runCli(["server", "status"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/Deployed:\s+source main/);
+      expect(r.stdout).toMatch(/Update:\s+\?/);
+      expect(r.stdout).not.toMatch(/up-to-date|update-available/);
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
+    });
+  });
+
   it("reads the deployed ref from deploy-state.json", async () => {
     await withTempHome(async (home) => {
       seedDeployState(home);
@@ -140,7 +197,24 @@ describe("server status — deployed version from deploy-state, else git describ
 
       const r = await runCli(["server", "status"], { home });
       expect(r.exitCode).toBe(0);
-      expect(r.stdout).toContain(DEPLOYED);
+      expect(r.stdout).toMatch(/Deployed:\s+legacy v1\.4\.2/);
+      expect(r.stdout).toMatch(/Update:\s+\?/);
+      expect(r.stdout).not.toMatch(/up-to-date|update-available/);
+    });
+  });
+
+  it("renders a legacy main state as non-comparable without probing Git", async () => {
+    await withTempHome(async (home) => {
+      seedDeployState(home, "main");
+      const runner = runningHealthy();
+      setDockerRunner(runner);
+      setLatestFetcher(async () => "1.5.0");
+
+      const r = await runCli(["server", "status"], { home });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(/Deployed:\s+legacy main/);
+      expect(r.stdout).toMatch(/Update:\s+\?/);
+      expect(runner.calls.some((call) => call.cmd === "git")).toBe(false);
     });
   });
 
@@ -158,7 +232,9 @@ describe("server status — deployed version from deploy-state, else git describ
       const r = await runCli(["server", "status"], { home });
       expect(r.exitCode).toBe(0);
       // The git-describe value is surfaced as the deployed version.
-      expect(r.stdout).toContain("v1.3.9");
+      expect(r.stdout).toMatch(/Deployed:\s+legacy v1\.3\.9/);
+      expect(r.stdout).toMatch(/Update:\s+\?/);
+      expect(r.stdout).not.toMatch(/up-to-date|update-available/);
       expect(runner.ran("git", ["-C", deployDir, "describe", "--tags"])).toBe(true);
     });
   });
