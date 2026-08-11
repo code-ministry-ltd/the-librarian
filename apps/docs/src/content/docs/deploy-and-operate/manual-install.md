@@ -229,7 +229,8 @@ stop the stack, `chown -R 1000:1000` the volume's data directory, and start agai
 - **Dashboard:** `http://<host>:3042/` (single-container default; the Compose
   stack above publishes it on `:3839` instead)
 - **MCP endpoint (`/mcp`):** `http://<host>:3838/mcp` — agents POST JSON-RPC here with an
-  `Authorization: Bearer <token>` header.
+  `Authorization: Bearer <token>` header. The server offers no standalone server-push SSE
+  stream, so authenticated GET probes receive `405 Method Not Allowed`.
 - **Healthcheck (`/healthz`):** `http://<host>:3838/healthz`
 - **Primer (`/primer.md`):** `http://<host>:3838/primer.md` — the agent briefing, served **without
   authentication** by design so tools like OpenCode can load it from a URL. It is the

@@ -167,8 +167,10 @@ in the docs site.
 
 ## MCP tools — the 7-verb agent surface
 
-Agents talk to the Librarian over `/mcp` with a bearer token. The surface is
-exactly seven tools — contract-tested, with zero internal tools:
+Agents talk to the Librarian over `/mcp` with a bearer token. The endpoint
+accepts JSON-RPC over POST; because it offers no standalone server-push SSE
+stream, authenticated GET probes receive `405 Method Not Allowed`. The surface
+is exactly seven tools — contract-tested, with zero internal tools:
 
 ### Memory
 
