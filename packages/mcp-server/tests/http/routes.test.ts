@@ -111,6 +111,50 @@ describe("HTTP routes (post-T7.1)", () => {
     }
   });
 
+  it("returns 405 for authenticated standalone stream probes while preserving auth and POST", async () => {
+    const dataDir = makeTempDir();
+    const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
+    const authorization = `Bearer ${server.agentToken}`;
+    try {
+      const unauthenticated = await fetch(`${server.url}/mcp`);
+      expect(unauthenticated.status).toBe(401);
+
+      const hostileOrigin = await fetch(`${server.url}/mcp`, {
+        headers: {
+          accept: "text/event-stream",
+          authorization,
+          origin: "https://evil.example",
+        },
+      });
+      expect(hostileOrigin.status).toBe(403);
+
+      for (const method of ["GET", "HEAD", "DELETE"] as const) {
+        const response = await fetch(`${server.url}/mcp`, {
+          method,
+          headers: { accept: "text/event-stream", authorization },
+        });
+        expect(response.status, `${method} /mcp should reject the unsupported method`).toBe(405);
+        expect(response.headers.get("allow"), `${method} /mcp should advertise POST`).toBe("POST");
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        if (method === "GET") {
+          expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+          expect(await response.json()).toEqual({ error: "Method not allowed" });
+        }
+      }
+
+      const post = await postJson(
+        `${server.url}/mcp`,
+        { jsonrpc: "2.0", id: 1, method: "tools/list" },
+        { authorization },
+      );
+      expect(post.response.status).toBe(200);
+      expect(post.json).toMatchObject({ jsonrpc: "2.0", id: 1 });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("flags a memory over /mcp end-to-end and no longer exposes verify_memory", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir, agentToken: "agent-token" });
