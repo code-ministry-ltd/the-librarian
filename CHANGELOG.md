@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.21.2] — 2026-08-11
+
+### Fixed
+
+- **Claude Code can connect over Streamable HTTP.** Authenticated `GET /mcp`
+  probes now return `405 Method Not Allowed` with `Allow: POST`, rather than a
+  misleading HTTP 200 JSON response, to signal that the optional standalone
+  SSE stream is not offered. POST JSON-RPC and the seven-tool MCP surface are
+  unchanged ([#459](https://github.com/code-ministry-ltd/the-librarian/issues/459)).
+
 ## [1.21.1] — 2026-08-09
 
 ### Changed
@@ -4423,6 +4433,7 @@ another.
 
 [1.21.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.1...v1.21.0
 [1.21.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.0...v1.21.1
+[1.21.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.1...v1.21.2
 [1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.20.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5
