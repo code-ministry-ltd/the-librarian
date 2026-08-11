@@ -658,14 +658,9 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   if (refuseMissingProxyBearer(ctx)) return;
   const authed = await ctx.provider.authenticate(req, "public", "agent");
   if (!authed.ok) return sendAuthRefusal(ctx, authed);
-  if (req.method === "GET") {
-    return sendJson(res, {
-      status: "ok",
-      transport: "json-rpc-http",
-      message: "POST JSON-RPC MCP messages to this endpoint.",
-    });
+  if (req.method !== "POST") {
+    return sendJson(res, { error: "Method not allowed" }, 405, { allow: "POST" });
   }
-  if (req.method !== "POST") return sendJson(res, { error: "Method not allowed" }, 405);
   const payload = await readJson(req, maxBodyBytes);
   const response = await handleMcpPayload(
     store,

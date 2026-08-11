@@ -120,11 +120,16 @@ describe("capture-scope isolation end-to-end", () => {
             : { jsonrpc: "2.0", id: 1, method: "tools/list" },
         ),
       });
+    const getMcp = (token: string) =>
+      fetch(`${server.url}/mcp`, {
+        headers: { accept: "text/event-stream", authorization: `Bearer ${token}` },
+      });
     try {
       // /mcp: agent reaches the 7 verbs; a capture token is FORBIDDEN (403), not
       // merely unauthorized — the wall's first direction.
       expect((await post("/mcp", agentTok.token)).status).toBe(200);
       expect((await post("/mcp", captureTok.token)).status).toBe(403);
+      expect((await getMcp(captureTok.token)).status).toBe(403);
 
       // /ingest: capture token accepted (202 queued — the row is written pending;
       // the real write path is a later task); an agent token is FORBIDDEN (403);

@@ -262,10 +262,13 @@ describe("spec 061 T4 — substitute auth provider is the live identity source (
       expect(protectedCalls).toBe(0);
 
       const credentialed = await fetch(`${publicBase}/mcp`, {
+        method: "POST",
         headers: {
           authorization: "Bearer provider-owned-credential",
+          "content-type": "application/json",
           "x-librarian-require-auth": "single-port",
         },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
       });
       expect(credentialed.status).toBe(200);
       expect(protectedCalls).toBe(1);
