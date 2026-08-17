@@ -60,4 +60,19 @@ describe("image-only Docker Compose deployment", () => {
       "docker compose --env-file docker/all-in-one.env.example -f docker/docker-compose.image.yml config --quiet",
     );
   });
+
+  it("exposes opt-in operator DNS with no hard-coded tailnet default", () => {
+    // Unset vars render no `dns:` key at all (Compose drops empty list items),
+    // so a default deployment keeps Docker's resolv.conf untouched. The
+    // Tailscale resolver must never be baked in as a default — it adds latency
+    // and is meaningless off a tailnet host.
+    expect(compose).toContain("- ${LIBRARIAN_DNS:-}");
+    expect(compose).toContain("- ${LIBRARIAN_DNS_FALLBACK:-}");
+    expect(compose).not.toContain("100.100.100.100");
+    // The tailnet guidance ships commented out (opt-in) in the env example,
+    // and puts the Tailscale resolver first (c-ares never falls back after an
+    // NXDOMAIN).
+    expect(envExample).toContain("# LIBRARIAN_DNS=100.100.100.100");
+    expect(envExample).toContain("# LIBRARIAN_DNS_FALLBACK=8.8.8.8");
+  });
 });

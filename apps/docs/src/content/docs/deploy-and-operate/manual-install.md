@@ -55,6 +55,12 @@ Key points:
   what the secret key wants — not the base64 value used for tokens.
 - Put the published port behind **TLS** on any host reachable beyond loopback, and do
   not set `LIBRARIAN_ALLOW_NO_AUTH=true` on a publicly reachable host.
+- If the curator's LLM provider is only reachable on a tailnet (for example a
+  Tailscale-Serve hostname), add `--dns 100.100.100.100` to the `docker run`
+  command — Docker's default nameservers cannot resolve tailnet-only names.
+  The [Image-only Compose](#image-only-compose-recommended-manual-path) section
+  below covers the why (first-resolver-wins, and IP-based access failing on
+  Tailscale Serve).
 - The image crash-fasts if either service dies, so your orchestrator restarts the
   pair.
 
@@ -90,6 +96,21 @@ beyond loopback, terminate TLS in front of it and treat network access as admin
 access. The default named volume is `librarian_data`. For a bind mount, set
 `LIBRARIAN_DATA_SOURCE` to an absolute host path and set `LIBRARIAN_DATA_UID` /
 `LIBRARIAN_DATA_GID` to its owner.
+
+If the curator's LLM provider is only reachable on a tailnet (for example a
+Tailscale-Serve hostname), give the container the Tailscale resolver in `.env`:
+
+```sh
+LIBRARIAN_DNS=100.100.100.100
+LIBRARIAN_DNS_FALLBACK=8.8.8.8  # optional second nameserver
+```
+
+Both values are opt-in — leave them unset for Docker's default DNS. Two gotchas
+apply to that order: the container's resolver (c-ares) never consults a later
+nameserver after an NXDOMAIN, so the Tailscale resolver must come **first**; and
+reaching the provider by IP fails, because Tailscale Serve TLS needs the
+hostname (SNI), not the address. Tailscale MagicDNS forwards public lookups, so
+the single resolver is usually enough.
 
 Use exact version tags for controlled upgrades and rollbacks:
 
@@ -210,6 +231,10 @@ published hosts:
 LIBRARIAN_MCP_PUBLISHED_HOST=100.x.y.z
 LIBRARIAN_DASHBOARD_PUBLISHED_HOST=100.x.y.z
 ```
+
+If the curator's LLM provider is also reachable only on the tailnet, set the
+Tailscale resolver in `.env` too (first-resolver-wins — see the Image-only
+Compose section above): `LIBRARIAN_DNS=100.100.100.100`.
 
 Build and start, then verify:
 

@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.22.0] — 2026-08-17
+
+### Added
+
+- **Opt-in operator DNS for the Docker deployments** (`LIBRARIAN_DNS` /
+  `LIBRARIAN_DNS_FALLBACK`, in both Compose stacks and the env examples):
+  containers can now resolve tailnet-only hostnames — e.g. a Tailscale-Serve
+  LLM provider for the curator — which previously failed with `ENOTFOUND`
+  because the bridge container only saw public resolvers. Unset, deployments
+  keep Docker's default DNS exactly as before. The manual-deployment docs
+  cover the two gotchas: the container's resolver (c-ares) never consults a
+  later nameserver after an NXDOMAIN, so the Tailscale resolver must come
+  first; and IP-based access fails because Tailscale Serve TLS needs the
+  hostname (SNI).
+
 ## [1.21.2] — 2026-08-11
 
 ### Fixed
@@ -4434,6 +4449,7 @@ another.
 [1.21.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.1...v1.21.0
 [1.21.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.0...v1.21.1
 [1.21.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.1...v1.21.2
+[1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0
 [1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.5...v1.20.0
 [1.17.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.17.4...v1.17.5

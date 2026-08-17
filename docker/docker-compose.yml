@@ -38,6 +38,16 @@ services:
       # host. The boundary is the isolated docker network, not a bearer token.
       LIBRARIAN_TRPC_HOST: "0.0.0.0"
       LIBRARIAN_TRPC_PORT: "3840"
+    # Opt-in operator DNS (both unset = Docker's default resolv.conf, no change).
+    # The mcp-server reaches the curator's LLM provider over this DNS; set the
+    # Tailscale resolver FIRST when that provider is only reachable on a tailnet
+    # — c-ares never consults a later nameserver after an NXDOMAIN, and
+    # IP-based access fails (Tailscale Serve TLS needs the hostname SNI).
+    # Tailscale MagicDNS also forwards public lookups, so the one server usually
+    # suffices; LIBRARIAN_DNS_FALLBACK is an optional second nameserver.
+    dns:
+      - ${LIBRARIAN_DNS:-}
+      - ${LIBRARIAN_DNS_FALLBACK:-}
     ports:
       # Only the public agent port (/mcp + /healthz + /primer.md) is published.
       # The tRPC port (3840) is intentionally NOT here — see LIBRARIAN_TRPC_* above.
@@ -84,6 +94,11 @@ services:
       NODE_ENV: "production"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+    # Same opt-in operator DNS as mcp-server (see that service's dns: block);
+    # both are unset by default, leaving Docker's default resolv.conf in place.
+    dns:
+      - ${LIBRARIAN_DNS:-}
+      - ${LIBRARIAN_DNS_FALLBACK:-}
     ports:
       - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:3839:3000"
     networks:
