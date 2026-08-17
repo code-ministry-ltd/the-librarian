@@ -21,6 +21,15 @@ services:
       LIBRARIAN_DATA_DIR: /data
       LIBRARIAN_HOST: 0.0.0.0
       LIBRARIAN_PORT: "3838"
+    # Opt-in operator DNS (both unset = Docker's default resolv.conf, no change).
+    # Set the Tailscale resolver FIRST when the curator's LLM provider is only
+    # reachable on a tailnet: c-ares never consults a later nameserver after an
+    # NXDOMAIN, and IP-based access fails (Tailscale Serve TLS needs the hostname).
+    # Tailscale MagicDNS also forwards public lookups, so the one server usually
+    # suffices; LIBRARIAN_DNS_FALLBACK is an optional second nameserver.
+    dns:
+      - ${LIBRARIAN_DNS:-}
+      - ${LIBRARIAN_DNS_FALLBACK:-}
     ports:
       - "${LIBRARIAN_DASHBOARD_PUBLISHED_HOST:-127.0.0.1}:${LIBRARIAN_DASHBOARD_PORT:-3042}:3000"
       - "${LIBRARIAN_MCP_PUBLISHED_HOST:-127.0.0.1}:${LIBRARIAN_MCP_PORT:-3838}:3838"
