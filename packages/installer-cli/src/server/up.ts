@@ -50,9 +50,18 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
+import type { FlagValue } from "../parse-args.js";
 import { readEnvFile, writeEnvFile } from "../env.js";
 import { librarianDir } from "../paths.js";
 import type { Prompter } from "../prompt.js";
+import {
+  dnsFlagsSpecified,
+  nameserverTuple,
+  parseDnsFlag,
+  parseLiveDns,
+  resolveDnsConfig,
+  sameNameservers,
+} from "./dns.js";
 import { fetchLatestVersion } from "../status.js";
 import { enableBoot } from "./boot.js";
 import {
@@ -319,6 +328,16 @@ export interface UpOptions {
    */
   dashboardPort?: string | undefined;
   /**
+   * Raw `--dns` / `--no-dns` flag. Opt-in container nameserver (IPv4). Parsed by
+   * {@link parseDnsFlag}. Absent → Docker's default resolv.conf.
+   */
+  dns?: FlagValue | undefined;
+  /**
+   * Raw `--dns-fallback` / `--no-dns-fallback` flag. Optional second nameserver;
+   * requires a primary.
+   */
+  dnsFallback?: FlagValue | undefined;
+  /**
    * Bind-mount a host directory at `/data` instead of a Docker named volume — so
    * the vault lives at a path you choose (back it up, put it on a specific disk,
    * copy it to another host). The container runs as the directory's owner
@@ -412,6 +431,11 @@ export interface RunArgsInput {
    * inline on argv (ADR 0008 P4).
    */
   envFile: string;
+  /**
+   * Container nameservers, primary first (`docker create --dns`, repeated).
+   * Absent/empty → Docker's default resolv.conf (no `--dns` on argv).
+   */
+  dnsServers?: string[] | undefined;
 }
 
 /**
@@ -441,6 +465,7 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     restartPolicy = "unless-stopped",
     imageRef,
     envFile,
+    dnsServers,
   } = input;
   const args = [
     "run",
@@ -461,6 +486,11 @@ export function buildRunArgs(input: RunArgsInput): string[] {
     "--env-file",
     envFile,
   ];
+  // Opt-in operator DNS (primary first). Unset → Docker's default resolv.conf.
+  // c-ares never consults a later nameserver after NXDOMAIN, so order matters.
+  if (dnsServers) {
+    for (const nameserver of dnsServers) args.push("--dns", nameserver);
+  }
   // For a bind-mount, run as the directory's owner so the vault stays owned by —
   // and writable by — the operator, not the image's default user.
   if (runAsUser) args.push("--user", runAsUser);
@@ -628,6 +658,11 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   // value or an MCP-port collision) — BEFORE any clone/build/run, so a typo'd
   // port fails fast and leaves nothing behind.
   const dashboardPort = resolveDashboardPort(options.dashboardPort);
+  const dnsOption = parseDnsFlag(options.dns, "--dns");
+  const dnsFallbackOption = parseDnsFlag(options.dnsFallback, "--dns-fallback");
+  const dnsConfig = resolveDnsConfig({ dns: dnsOption, dnsFallback: dnsFallbackOption });
+  const dnsServers = nameserverTuple(dnsConfig);
+  const dnsRequested = dnsFlagsSpecified(dnsOption, dnsFallbackOption);
 
   const dataVolume = options.dataVolume ?? DEFAULT_DATA_VOLUME;
   const deployDir = options.dir ?? path.join(librarianDir(deps.home), "server");
@@ -727,6 +762,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
           dataDir,
           dashboardPort,
           bootstrapClaimSecret,
+          dnsServers: dnsRequested ? dnsServers : undefined,
         },
       );
       if (drift.length > 0) throw existingContainerError(drift);
@@ -805,6 +841,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
           imageSource: "registry",
           imageRef: registryImage.imageRef,
           imageDigest: registryImage.imageDigest,
+          ...dnsConfig,
         }
       : {
           containerName: CONTAINER_NAME,
@@ -816,6 +853,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
           imageTag: `${CONTAINER_NAME}:${tag}`,
           imageSource: "source",
           imageRef: `${CONTAINER_NAME}:${tag}`,
+          ...dnsConfig,
         };
 
     log("[4/5] Starting the container…");
@@ -827,6 +865,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
       runAsUser,
       imageRef: runImageRef,
       envFile,
+      dnsServers,
     });
     let candidateId: string | null = null;
     let healthRollbackComplete = false;
@@ -1080,6 +1119,8 @@ interface DesiredDeploymentConfig {
   dataDir?: string | undefined;
   dashboardPort: number;
   bootstrapClaimSecret?: string | undefined;
+  /** When set (including `[]`), live HostConfig.Dns must match exactly. */
+  dnsServers?: string[] | undefined;
 }
 
 interface LiveContainer {
@@ -1088,6 +1129,7 @@ interface LiveContainer {
   HostConfig?: {
     RestartPolicy?: { Name?: unknown };
     PortBindings?: unknown;
+    Dns?: unknown;
   };
   Mounts?: unknown;
 }
@@ -1179,6 +1221,12 @@ function registryDeploymentDrift(
     state.dashboardPort !== desired.dashboardPort
   ) {
     drift.push("persisted deployment state");
+  }
+  if (
+    desired.dnsServers !== undefined &&
+    !sameNameservers(parseLiveDns(container.HostConfig?.Dns), desired.dnsServers)
+  ) {
+    drift.push("container DNS");
   }
 
   const digest = state?.imageSource === "registry" ? state.imageDigest : undefined;

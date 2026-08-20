@@ -88,6 +88,27 @@ describe("deploy-state — round-trip under a fake home", () => {
     });
   });
 
+  it("round-trips optional DNS nameservers when present and omits them otherwise", async () => {
+    await withTempHome(async (home) => {
+      const dir = path.join(home, ".librarian", "server");
+      const withDns: DeployState = {
+        ...SAMPLE,
+        dns: "100.100.100.100",
+        dnsFallback: "8.8.8.8",
+      };
+      writeDeployState(dir, withDns);
+      expect(readDeployState(dir)).toEqual(withDns);
+      writeDeployState(dir, SAMPLE);
+      const parsed = JSON.parse(fs.readFileSync(deployStatePath(dir), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect("dns" in parsed).toBe(false);
+      expect("dnsFallback" in parsed).toBe(false);
+      expect(readDeployState(dir)?.dns).toBeUndefined();
+    });
+  });
+
   it("round-trips a digest-pinned registry deployment", async () => {
     await withTempHome(async (home) => {
       const dir = path.join(home, ".librarian", "server");
