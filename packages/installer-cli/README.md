@@ -101,9 +101,14 @@ writable by — you, not a container user. The directory is created if it doesn'
 exist, and `server update` reuses it automatically. (`--data-dir` and
 `--data-volume` are mutually exclusive.)
 
+If the curator's LLM is only reachable on a tailnet, pass `--dns 100.100.100.100`
+on `server up` or `server update` (the latter works even when the image is
+already current). The nameserver is recorded in deploy-state so later updates
+keep it. Compose stacks use `LIBRARIAN_DNS` instead.
+
 Other server commands: `server update` pulls and verifies before stopping the old
-container, preserving storage, ports, credentials, restart policy, and deploy
-state. A failed replacement restores and health-checks the previous executable;
+container, preserving storage, ports, credentials, restart policy, operator DNS
+(`--dns`), and deploy state. A failed replacement restores and health-checks the previous executable;
 if migration began, persistent data changes are explicitly **not** claimed as
 rolled back. `server status` labels deployments as published (with a short
 digest), source, or legacy. `server down` / `logs` and `server enable-boot`
