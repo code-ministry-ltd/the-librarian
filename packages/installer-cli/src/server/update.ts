@@ -3,7 +3,18 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { FlagValue } from "../parse-args.js";
 import { librarianDir } from "../paths.js";
+import {
+  dnsAllowsNoOp,
+  dnsConfigFromServers,
+  dnsFlagsSpecified,
+  dnsServersForReplacement,
+  nameserverTuple,
+  parseDnsFlag,
+  parseLiveDns,
+  resolveDnsConfig,
+} from "./dns.js";
 import { fetchLatestVersion } from "../status.js";
 import { type DeployState, readDeployState } from "./deploy-state.js";
 import {
@@ -39,6 +50,10 @@ export interface UpdateOptions {
   healthAttempts?: number | undefined;
   healthIntervalMs?: number | undefined;
   logTailLines?: number | undefined;
+  /** Raw `--dns` / `--no-dns`. Parsed by {@link parseDnsFlag}. */
+  dns?: FlagValue | undefined;
+  /** Raw `--dns-fallback` / `--no-dns-fallback`. */
+  dnsFallback?: FlagValue | undefined;
 }
 
 export class UpdateError extends Error {
@@ -62,6 +77,7 @@ interface LiveContainer {
   HostConfig?: {
     RestartPolicy?: { Name?: unknown };
     PortBindings?: unknown;
+    Dns?: unknown;
   };
   Mounts?: unknown;
 }
@@ -78,6 +94,8 @@ interface PreservedConfig {
   restartPolicy: string;
   env: Map<string, string>;
   healthy: boolean;
+  /** Live `HostConfig.Dns` (empty = Docker default). Used for recovery and adopt-on-recreate. */
+  dnsServers: string[];
 }
 
 interface PreparedTarget {
@@ -161,6 +179,20 @@ async function performUpdate(
   const sourceResolution =
     target.imageSource === "source" ? await resolveSourceTarget(deployDir, targetRef) : undefined;
   const current = await inspectCurrentContainer(state);
+  const dnsOption = parseDnsFlag(options.dns, "--dns");
+  const dnsFallbackOption = parseDnsFlag(options.dnsFallback, "--dns-fallback");
+  const flagsSpecified = dnsFlagsSpecified(dnsOption, dnsFallbackOption);
+  const resolvedDns = resolveDnsConfig({
+    dns: dnsOption,
+    dnsFallback: dnsFallbackOption,
+    stored: { dns: state.dns, dnsFallback: state.dnsFallback },
+  });
+  const replacementDns = dnsServersForReplacement({
+    flagsSpecified,
+    resolved: resolvedDns,
+    live: current.dnsServers,
+  });
+  const storedDns = nameserverTuple({ dns: state.dns, dnsFallback: state.dnsFallback });
 
   // Registry no-op is before a pull. Source no-op compares the fetched commit's
   // deterministic tag and its current immutable image ID, so `main` advancing
@@ -168,7 +200,15 @@ async function performUpdate(
   const exactTarget = sourceResolution
     ? await isExactHealthySourceTarget(state, targetRef, current, deployDir, sourceResolution)
     : isExactHealthyRegistryTarget(state, targetRef, current, deployDir);
-  if (exactTarget) {
+  if (
+    exactTarget &&
+    dnsAllowsNoOp({
+      flagsSpecified,
+      stored: storedDns,
+      live: current.dnsServers,
+      desired: replacementDns,
+    })
+  ) {
     const identity =
       target.imageSource === "registry" && state.imageSource === "registry"
         ? `published ${targetRef} (${shortImageDigest(state.imageDigest)})`
@@ -228,6 +268,7 @@ async function performUpdate(
           imageSource: "registry",
           imageRef: prepared.imageRef,
           imageDigest: prepared.imageDigest!,
+          ...dnsConfigFromServers(replacementDns),
         }
       : {
           containerName: state.containerName,
@@ -239,6 +280,7 @@ async function performUpdate(
           imageTag: prepared.imageRef,
           imageSource: "source",
           imageRef: prepared.imageRef,
+          ...dnsConfigFromServers(replacementDns),
         };
 
   let oldRemoved = false;
@@ -252,7 +294,7 @@ async function performUpdate(
 
     candidateId = await createContainer(
       prepared.runImageRef,
-      current,
+      { ...current, dnsServers: replacementDns },
       stagedEnv,
       prepared.cwd,
       redact,
@@ -431,6 +473,7 @@ async function inspectCurrentContainer(state: DeployState): Promise<PreservedCon
     restartPolicy,
     env: envMap(live.Config?.Env),
     healthy: live.State?.Status === "running" && live.State?.Health?.Status === "healthy",
+    dnsServers: parseLiveDns(live.HostConfig?.Dns),
   };
 }
 
@@ -749,6 +792,7 @@ async function createContainer(
     restartPolicy: config.restartPolicy,
     imageRef,
     envFile,
+    dnsServers: config.dnsServers,
   });
   args.splice(1, 0, "--cidfile", cidFile);
   fs.rmSync(cidFile, { force: true });
@@ -898,6 +942,7 @@ function recoveryFailure(
     restartPolicy: previous.restartPolicy,
     imageRef: previous.immutableImageId,
     envFile,
+    dnsServers: previous.dnsServers,
   });
   const manualCidFile = `${envFile}.manual-recovery.cid`;
   create.splice(1, 0, "--cidfile", manualCidFile);

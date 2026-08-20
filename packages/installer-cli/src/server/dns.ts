@@ -114,6 +114,26 @@ export function dnsServersForReplacement(input: {
   return input.live;
 }
 
+/**
+ * Same-version no-op may skip DNS when the operator has neither flags nor stored
+ * DNS (a live hand-patch must not force a recreate). Flags or stored DNS must
+ * match both live and state before we no-op.
+ */
+export function dnsAllowsNoOp(input: {
+  flagsSpecified: boolean;
+  stored: string[];
+  live: string[];
+  desired: string[];
+}): boolean {
+  if (input.flagsSpecified) {
+    return (
+      sameNameservers(input.desired, input.live) && sameNameservers(input.desired, input.stored)
+    );
+  }
+  if (input.stored.length > 0) return sameNameservers(input.stored, input.live);
+  return true;
+}
+
 function validateNameserver(value: string, flag: "--dns" | "--dns-fallback"): string {
   const kind = isIP(value);
   if (kind === 4) return value;
