@@ -1029,6 +1029,43 @@ describe("server up — writes the NON-SECRET deploy-state (S4/S5 prerequisite)"
       });
     }
   });
+
+  it("--dns: records the nameserver, emits --dns on create, and teaches on a hostname", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(
+        ["server", "up", "--dns", "100.100.100.100", "--dns-fallback", "8.8.8.8"],
+        { home, prompter },
+      );
+      expect(r.exitCode).toBe(0);
+      const args = dockerRunArgs(runner);
+      const first = args?.indexOf("--dns") ?? -1;
+      expect(args?.[first + 1]).toBe("100.100.100.100");
+      expect(args?.[first + 3]).toBe("8.8.8.8");
+      expect(readDeployState(path.join(home, ".librarian", "server"))).toMatchObject({
+        dns: "100.100.100.100",
+        dnsFallback: "8.8.8.8",
+      });
+    });
+
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+      const r = await runCli(["server", "up", "--dns", "marvin.example.ts.net"], {
+        home,
+        prompter,
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/Invalid --dns 'marvin\.example\.ts\.net'/);
+      expect(runner.calls.some((c) => c.cmd === "docker" && c.args[0] === "create")).toBe(false);
+    });
+  });
 });
 
 describe("server up — beyond-localhost binding (S3)", () => {
@@ -1509,6 +1546,33 @@ describe("buildRunArgs — the S3/P4 seam (secrets via --env-file, off argv)", (
     expect(args).toContain("127.0.0.1:3500:3000");
     // The MCP publish is unaffected.
     expect(args).toContain("127.0.0.1:3838:3838");
+  });
+
+  it("emits --dns entries primary-first when nameservers are set, and omits them otherwise", () => {
+    const withDns = buildRunArgs({
+      host: "127.0.0.1",
+      dataVolume: "librarian_data",
+      dashboardPort: 3042,
+      imageRef: "the-librarian:v1.0.0",
+      envFile: "/tmp/deploy.env",
+      dnsServers: ["100.100.100.100", "8.8.8.8"],
+    });
+    const first = withDns.indexOf("--dns");
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(withDns[first + 1]).toBe("100.100.100.100");
+    expect(withDns[first + 2]).toBe("--dns");
+    expect(withDns[first + 3]).toBe("8.8.8.8");
+    // Nameservers stay off the image position (last) and off the env-file secrets.
+    expect(withDns[withDns.length - 1]).toBe("the-librarian:v1.0.0");
+
+    const without = buildRunArgs({
+      host: "127.0.0.1",
+      dataVolume: "librarian_data",
+      dashboardPort: 3042,
+      imageRef: "the-librarian:v1.0.0",
+      envFile: "/tmp/deploy.env",
+    });
+    expect(without).not.toContain("--dns");
   });
 });
 

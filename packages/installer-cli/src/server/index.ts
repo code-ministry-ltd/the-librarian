@@ -48,6 +48,7 @@ export function serverSubcommandUsage(subcommand: ServerSubcommand): string {
     up: [
       "Usage: librarian server up [--ref <release|source-ref>] [--dir <path>]",
       "       [--host <address>] [--dashboard-port <port>]",
+      "       [--dns <ipv4>] [--dns-fallback <ipv4>]",
       "       [--data-volume <name> | --data-dir <path>] [--enable-boot] [--yes]",
     ],
     update: ["Usage: librarian server update [--ref <release|source-ref>] [--dir <path>] [--yes]"],

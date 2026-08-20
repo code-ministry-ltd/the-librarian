@@ -49,6 +49,18 @@ interface DeployStateBase {
    * to `3042`. Like `dataDir`, it is back-compatible (old states still validate).
    */
   dashboardPort?: number | undefined;
+  /**
+   * Primary container nameserver (`docker create --dns`). Optional — absent on
+   * deploys that use Docker's default resolv.conf and on states written before
+   * this field existed. Non-secret (an IP address).
+   */
+  dns?: string | undefined;
+  /**
+   * Optional second nameserver. Only meaningful when `dns` is set; c-ares never
+   * consults it after an NXDOMAIN from the primary, so the Tailscale resolver
+   * must be `dns`, not this field.
+   */
+  dnsFallback?: string | undefined;
 }
 
 /** State written before explicit image provenance existed; interpreted as source. */
@@ -86,6 +98,8 @@ const PERSISTED_STATE_KEYS = new Set<string>([
   ...REQUIRED_STATE_KEYS,
   "dataDir",
   "dashboardPort",
+  "dns",
+  "dnsFallback",
   "imageSource",
   "imageRef",
   "imageDigest",
@@ -172,6 +186,8 @@ export function writeDeployState(dir: string, state: DeployState): void {
   // Persist the published dashboard port when set, so `update` reuses it (a state
   // written before this field stays byte-compatible until the next write).
   if (state.dashboardPort !== undefined) safe.dashboardPort = state.dashboardPort;
+  if (state.dns) safe.dns = state.dns;
+  if (state.dnsFallback) safe.dnsFallback = state.dnsFallback;
   if (state.imageSource !== undefined) safe.imageSource = state.imageSource;
   if (state.imageRef !== undefined) safe.imageRef = state.imageRef;
   if (state.imageDigest !== undefined) safe.imageDigest = state.imageDigest;
@@ -230,6 +246,12 @@ export function readDeployState(dir: string): DeployState | null {
   // recreating on a corrupt port.
   if (typeof obj.dashboardPort === "number" && Number.isInteger(obj.dashboardPort)) {
     result.dashboardPort = obj.dashboardPort;
+  }
+  // Optional, back-compatible: present only when the operator set `--dns`.
+  // Garbage (non-string) is ignored so an old/corrupt file still parses.
+  if (typeof obj.dns === "string" && obj.dns.length > 0) result.dns = obj.dns;
+  if (typeof obj.dnsFallback === "string" && obj.dnsFallback.length > 0) {
+    result.dnsFallback = obj.dnsFallback;
   }
   return validImageMetadata(result) ? result : null;
 }
