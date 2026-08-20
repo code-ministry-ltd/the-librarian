@@ -133,6 +133,35 @@ A server first brought up before 3042 became the default keeps publishing on
 from under you. Run `up --dashboard-port 3042` (or any port) to opt into a change.
 :::
 
+## Reaching a tailnet-only LLM (`--dns`)
+
+The container's default resolv.conf is Docker's public resolvers. A curator LLM
+provider that exists only on your Tailscale tailnet (a Tailscale-Serve hostname)
+fails with `ENOTFOUND` from inside the container while the same URL works on the
+host. Pointing the curator at the `100.x` IP is not a workaround: Serve TLS needs
+the hostname (SNI).
+
+Give the container the Tailscale resolver:
+
+```sh
+librarian server up --dns 100.100.100.100
+# existing deploy — works even when you are already on the latest image:
+librarian server update --dns 100.100.100.100
+```
+
+`--dns-fallback 8.8.8.8` is optional. The container's resolver (c-ares) never
+consults a later nameserver after an NXDOMAIN, so the Tailscale resolver must
+come **first**; MagicDNS already forwards public lookups, so the single resolver
+usually suffices. `--no-dns` returns to Docker's default. Unset, nothing
+changes — there is no Tailscale default, because that resolver adds latency on
+hosts that are not on a tailnet.
+
+The choice is recorded in deploy-state, so later `update` / auto-update reuse it.
+A same-version `update` with no DNS flags does **not** no-op past a *new* `--dns`
+the way it no-ops an unchanged image; that is how an already-current server picks
+this up. Compose stacks use `LIBRARIAN_DNS` instead — see
+[Manual deployment](/deploy-and-operate/manual-install/).
+
 ## Scripted first-owner bootstrap
 
 The normal first run is still the dashboard's **Settings → Auth** wizard. For an
@@ -214,10 +243,13 @@ burn flag refuses claims until the operator removes it.
 - **`server update`** re-pins forward: resolve the latest stable release, pull and
   verify its exact image while the current server keeps serving, then recreate the
   container by immutable digest. Storage, host/ports, credentials, restart policy,
-  bootstrap-claim secret, and legacy dashboard-port choices are preserved. Pending
+  bootstrap-claim secret, operator DNS (`--dns`), and legacy dashboard-port choices
+  are preserved. Pending
   data migrations run only after the replacement is healthy. Once the target
   release is resolved, an already-current, healthy deployment is a no-op before
-  pulling it again; an exact `--ref vX.Y.Z` also avoids resolving the latest release.
+  pulling it again, **unless** you pass `--dns` / `--no-dns` that differs from
+  what is stored and running; an exact `--ref vX.Y.Z` also avoids resolving the
+  latest release.
 - **`server down`** stops the container with `docker stop` only. It never removes the
   container or the volume; a later `up`/`update` recalls the same memories.
 - **`server status`** reports whether it's running, its health, the deployed and

@@ -58,7 +58,9 @@ Key points:
 - If the curator's LLM provider is only reachable on a tailnet (for example a
   Tailscale-Serve hostname), add `--dns 100.100.100.100` to the `docker run`
   command — Docker's default nameservers cannot resolve tailnet-only names.
-  The [Image-only Compose](#image-only-compose-recommended-manual-path) section
+  CLI-managed deploys (`librarian server up` / `update`) take `--dns 100.100.100.100`
+  instead; that choice is stored so `server update` does not drop it. The
+  [Image-only Compose](#image-only-compose-recommended-manual-path) section
   below covers the why (first-resolver-wins, and IP-based access failing on
   Tailscale Serve).
 - The image crash-fasts if either service dies, so your orchestrator restarts the
@@ -234,7 +236,8 @@ LIBRARIAN_DASHBOARD_PUBLISHED_HOST=100.x.y.z
 
 If the curator's LLM provider is also reachable only on the tailnet, set the
 Tailscale resolver in `.env` too (first-resolver-wins — see the Image-only
-Compose section above): `LIBRARIAN_DNS=100.100.100.100`.
+Compose section above): `LIBRARIAN_DNS=100.100.100.100`. (CLI-managed
+all-in-one deploys use `librarian server update --dns 100.100.100.100` instead.)
 
 Build and start, then verify:
 
