@@ -51,7 +51,10 @@ export function serverSubcommandUsage(subcommand: ServerSubcommand): string {
       "       [--dns <ipv4>] [--dns-fallback <ipv4>]",
       "       [--data-volume <name> | --data-dir <path>] [--enable-boot] [--yes]",
     ],
-    update: ["Usage: librarian server update [--ref <release|source-ref>] [--dir <path>] [--yes]"],
+    update: [
+      "Usage: librarian server update [--ref <release|source-ref>] [--dir <path>] [--yes]",
+      "       [--dns <ipv4>] [--dns-fallback <ipv4>]",
+    ],
     down: ["Usage: librarian server down"],
     status: ["Usage: librarian server status [--dir <path>]"],
     logs: ["Usage: librarian server logs [-f|--follow] [--service mcp|dashboard|all]"],

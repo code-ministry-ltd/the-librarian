@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DnsConfigError,
+  dnsAllowsNoOp,
   dnsConfigFromServers,
   dnsFlagsSpecified,
   dnsServersForReplacement,
@@ -115,5 +116,27 @@ describe("replacement nameservers", () => {
     expect(parseLiveDns(["100.100.100.100", "8.8.8.8"])).toEqual(["100.100.100.100", "8.8.8.8"]);
     expect(parseLiveDns(null)).toEqual([]);
     expect(parseLiveDns(["", 1, "1.1.1.1"])).toEqual(["1.1.1.1"]);
+  });
+
+  it("same-version no-op ignores a live hand-patch when nothing is stored or flagged", () => {
+    expect(
+      dnsAllowsNoOp({
+        flagsSpecified: false,
+        stored: [],
+        live: ["100.100.100.100"],
+        desired: ["100.100.100.100"],
+      }),
+    ).toBe(true);
+  });
+
+  it("same-version --dns still recreates when state has not recorded the nameserver", () => {
+    expect(
+      dnsAllowsNoOp({
+        flagsSpecified: true,
+        stored: [],
+        live: [],
+        desired: ["100.100.100.100"],
+      }),
+    ).toBe(false);
   });
 });

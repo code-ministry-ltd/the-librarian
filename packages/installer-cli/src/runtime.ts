@@ -406,6 +406,8 @@ async function runServerUpdateCommand(rest: string[], options: RuntimeOptions): 
     ref: flagString(flags.ref),
     dir: flagString(flags.dir),
     yes: flagBool(flags.yes),
+    dns: flags.dns,
+    dnsFallback: flags["dns-fallback"],
     home: options.home,
   });
   return ok(result.output);

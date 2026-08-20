@@ -72,6 +72,7 @@ interface LiveOptions {
   user?: string;
   restartPolicy?: string;
   env?: string[];
+  dns?: string[];
 }
 
 interface StreamCall {
@@ -219,6 +220,7 @@ function liveJson(options: LiveOptions = {}): string {
         "3000/tcp": [{ HostIp: host, HostPort: String(dashboardPort) }],
         "3838/tcp": [{ HostIp: host, HostPort: "3838" }],
       },
+      ...(options.dns && options.dns.length > 0 ? { Dns: options.dns } : {}),
     },
     Mounts: dataDir
       ? [{ Type: "bind", Source: dataDir, Destination: "/data" }]
@@ -278,6 +280,7 @@ function replacementArgs(home: string, imageRef: string, options: LiveOptions = 
     restartPolicy: options.restartPolicy ?? "unless-stopped",
     imageRef,
     envFile: stagedEnv(home),
+    dnsServers: options.dns,
   });
   args.splice(1, 0, "--cidfile", `${stagedEnv(home)}.cid`);
   return args;
@@ -875,6 +878,111 @@ describe("server update — exact no-op and preserved configuration", () => {
       expect(second.stdout).toMatch(/already up to date/i);
       expect(streamCalls).toEqual([]);
       expect(callIndex(runner, "stop")).toBe(-1);
+    });
+  });
+});
+
+describe("server update — opt-in operator DNS", () => {
+  it("recreates a healthy latest deploy when --dns is new (does not no-op)", async () => {
+    await withTempHome(async (home) => {
+      seedRegistry(home, NEW_REF, NEW_DIGEST);
+      const live = liveJson({ configuredImage: NEW_DIGEST, dashboardPort: 3042 });
+      const dns = ["100.100.100.100"];
+      const runner = scriptSuccessfulReplacement(baseRunner(live), home, NEW_DIGEST, {
+        dashboardPort: 3042,
+        dns,
+      });
+      setDockerRunner(runner);
+
+      const result = await runCli(["server", "update", "--dns", "100.100.100.100"], { home });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toMatch(/already up to date/i);
+      expect(callIndex(runner, "stop")).toBeGreaterThan(0);
+      expect(readDeployState(deployDir(home))).toMatchObject({ dns: "100.100.100.100" });
+    });
+  });
+
+  it("reuses stored DNS on a later update with no DNS flags", async () => {
+    await withTempHome(async (home) => {
+      seedRegistry(home);
+      const dir = deployDir(home);
+      writeDeployState(dir, { ...readDeployState(dir)!, dns: "100.100.100.100" });
+      const live = liveJson({
+        configuredImage: OLD_DIGEST,
+        dashboardPort: 3042,
+        dns: ["100.100.100.100"],
+      });
+      const runner = scriptSuccessfulReplacement(baseRunner(live), home, NEW_DIGEST, {
+        dashboardPort: 3042,
+        dns: ["100.100.100.100"],
+      });
+      setDockerRunner(runner);
+
+      const result = await runCli(["server", "update"], { home });
+      expect(result.exitCode).toBe(0);
+      expect(readDeployState(dir)).toMatchObject({
+        imageDigest: NEW_DIGEST,
+        dns: "100.100.100.100",
+      });
+    });
+  });
+
+  it("a same-version update without DNS flags leaves a live hand-patch in place", async () => {
+    await withTempHome(async (home) => {
+      seedRegistry(home, NEW_REF, NEW_DIGEST);
+      const runner = baseRunner(
+        liveJson({
+          configuredImage: NEW_DIGEST,
+          dashboardPort: 3042,
+          dns: ["100.100.100.100"],
+        }),
+      );
+      setDockerRunner(runner);
+
+      const result = await runCli(["server", "update"], { home });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(/already up to date/i);
+      expect(callIndex(runner, "stop")).toBe(-1);
+      expect(readDeployState(deployDir(home))?.dns).toBeUndefined();
+    });
+  });
+
+  it("a version bump with no flags adopts live HostConfig.Dns into deploy-state", async () => {
+    await withTempHome(async (home) => {
+      seedRegistry(home);
+      const dns = ["100.100.100.100"];
+      const live = liveJson({ configuredImage: OLD_DIGEST, dashboardPort: 3042, dns });
+      const runner = scriptSuccessfulReplacement(baseRunner(live), home, NEW_DIGEST, {
+        dashboardPort: 3042,
+        dns,
+      });
+      setDockerRunner(runner);
+
+      const result = await runCli(["server", "update"], { home });
+      expect(result.exitCode).toBe(0);
+      expect(readDeployState(deployDir(home))).toMatchObject({ dns: "100.100.100.100" });
+    });
+  });
+
+  it("--no-dns on an already-current deploy recreates without --dns", async () => {
+    await withTempHome(async (home) => {
+      seedRegistry(home, NEW_REF, NEW_DIGEST);
+      const dir = deployDir(home);
+      writeDeployState(dir, { ...readDeployState(dir)!, dns: "100.100.100.100" });
+      const live = liveJson({
+        configuredImage: NEW_DIGEST,
+        dashboardPort: 3042,
+        dns: ["100.100.100.100"],
+      });
+      const runner = scriptSuccessfulReplacement(baseRunner(live), home, NEW_DIGEST, {
+        dashboardPort: 3042,
+      });
+      setDockerRunner(runner);
+
+      const result = await runCli(["server", "update", "--no-dns"], { home });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toMatch(/already up to date/i);
+      expect(readDeployState(dir)?.dns).toBeUndefined();
     });
   });
 });
