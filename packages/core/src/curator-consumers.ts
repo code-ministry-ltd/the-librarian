@@ -58,7 +58,10 @@ export type LlmConsumer = ConfigurableJobConsumer | "chat";
 const CHAT_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
 const CHRONICLE_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+// 5 min default (was 60 s): slow self-hosted models (e.g. a 9B with 27–31K
+// prompt tokens: ~10 s prefill + thousands of output tokens at ~40–60 t/s)
+// routinely run 1–4 min, so the old default aborted healthy long calls.
+const DEFAULT_TIMEOUT_MS = 300_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 600_000;
 

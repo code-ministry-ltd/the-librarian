@@ -11,7 +11,8 @@
 import { z } from "zod";
 import type { SettingMeta } from "./store/settings-store.js";
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+// 5 min default (was 60 s) — slow self-hosted models run 1–4 min per call.
+const DEFAULT_TIMEOUT_MS = 300_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 600_000;
 
@@ -19,7 +20,7 @@ export interface LlmConnection {
   provider: string;
   endpoint: string;
   model: string;
-  /** Per-request timeout in ms. Default 60s; range [1s, 10min]. */
+  /** Per-request timeout in ms. Default 5 min; range [1s, 10min]. */
   timeoutMs: number;
 }
 
