@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.1] — 2026-08-22
+
+### Fixed
+
+- **Curator LLM requests no longer abort at 60 s on slow self-hosted models:**
+  with `curator.<consumer>.timeout_ms` unset, the fallback was 60 s, but a small
+  local model serving 27–31K prompt tokens runs 1–4 min per call (~10 s prefill
+  + thousands of output tokens at ~40–60 t/s) — every long call died at exactly
+  the 60 s mark while the same model served multi-minute requests from other
+  clients. The unset default is now 5 min in all three read paths (per-consumer
+  settings, the legacy `curator.llm` keyspace helper, and the client's
+  `complete()` fallback). Explicitly configured timeouts are unchanged
+  (bounds [1 s, 10 min]).
+  ([#464](https://github.com/code-ministry-ltd/the-librarian/pull/464))
+
 ## [1.23.0] — 2026-08-20
 
 ### Added

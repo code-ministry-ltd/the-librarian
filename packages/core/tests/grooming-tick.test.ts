@@ -116,7 +116,7 @@ describe("runGroomingTick — operational", () => {
     expect(buildClient).toHaveBeenCalledTimes(1);
     // The grooming connection + decrypted token flow into the builder.
     expect(buildClient).toHaveBeenCalledWith(
-      { endpoint: "https://api.example.com/v1", model: "gpt-x", timeoutMs: 60_000 },
+      { endpoint: "https://api.example.com/v1", model: "gpt-x", timeoutMs: 300_000 },
       "dummy-decrypted-token",
     );
     if (result.ran) expect(result.summary.ran).toBeGreaterThanOrEqual(1);

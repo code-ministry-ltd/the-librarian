@@ -20,7 +20,8 @@ export interface LlmClientConfig {
   model: string;
   /**
    * Default request timeout in ms applied when `complete()` is called without
-   * an explicit `timeoutMs`. Falls back to 60s when unset. Operator-configurable
+   * an explicit `timeoutMs`. Falls back to 5 min (300_000) when unset.
+   * Operator-configurable
    * on the curator path so a slow self-hosted model doesn't time out mid-batch.
    */
   timeoutMs?: number;
@@ -41,7 +42,7 @@ export interface LlmCompletionRequest {
   temperature?: number;
   /** Cap on completion tokens; omitted when undefined. */
   maxTokens?: number;
-  /** Overall request timeout in ms. Default 60_000. */
+  /** Overall request timeout in ms. Default 300_000 (5 min). */
   timeoutMs?: number;
 }
 
@@ -84,7 +85,8 @@ export interface LlmClientDeps {
   fetch?: FetchFn;
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+// 5 min default (was 60 s) — slow self-hosted models run 1–4 min per call.
+const DEFAULT_TIMEOUT_MS = 300_000;
 
 export function createGroomingLlmClient(
   config: LlmClientConfig,

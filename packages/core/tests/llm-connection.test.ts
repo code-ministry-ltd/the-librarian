@@ -75,7 +75,7 @@ describe("llm-connection helper", () => {
       expect(got.provider).toBe("");
       expect(got.endpoint).toBe("");
       expect(got.model).toBe("");
-      expect(got.timeoutMs).toBe(60_000); // default
+      expect(got.timeoutMs).toBe(300_000); // default
       expect(got.hasToken).toBe(false);
       expect(got.isComplete).toBe(false);
     });
@@ -84,7 +84,7 @@ describe("llm-connection helper", () => {
       const { store } = s!;
       const keys = llmConnectionKeys("test.llm");
       store.setSetting(keys.timeoutMs, "not-a-number");
-      expect(readLlmConnection(store, keys).timeoutMs).toBe(60_000);
+      expect(readLlmConnection(store, keys).timeoutMs).toBe(300_000);
     });
 
     it("never returns the token plaintext — only hasToken", () => {

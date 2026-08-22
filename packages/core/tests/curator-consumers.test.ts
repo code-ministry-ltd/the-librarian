@@ -70,7 +70,7 @@ describe("per-consumer LLM resolution", () => {
           providerExists: false,
           endpoint: "",
           model: "",
-          timeoutMs: 60_000,
+          timeoutMs: 300_000,
           hasToken: false,
           isOperational: false,
         });
@@ -81,11 +81,11 @@ describe("per-consumer LLM resolution", () => {
       const { store } = s!;
       // A hand-edited vault value must never reach a tick as 0/negative/huge.
       store.setSetting("curator.intake.timeout_ms", "0");
-      expect(readConsumerConfig(store, "intake").timeoutMs).toBe(60_000);
+      expect(readConsumerConfig(store, "intake").timeoutMs).toBe(300_000);
       store.setSetting("curator.intake.timeout_ms", "999999999");
-      expect(readConsumerConfig(store, "intake").timeoutMs).toBe(60_000);
+      expect(readConsumerConfig(store, "intake").timeoutMs).toBe(300_000);
       store.setSetting("curator.intake.timeout_ms", "not-a-number");
-      expect(readConsumerConfig(store, "intake").timeoutMs).toBe(60_000);
+      expect(readConsumerConfig(store, "intake").timeoutMs).toBe(300_000);
     });
 
     it("round-trips the unified per-consumer enabled flag (spec 043 D-E)", () => {
