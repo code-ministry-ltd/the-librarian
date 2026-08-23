@@ -4478,6 +4478,7 @@ another.
 [1.21.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.1...v1.21.0
 [1.21.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.0...v1.21.1
 [1.21.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.1...v1.21.2
+[1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0
 [1.20.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.20.0...v1.20.1
