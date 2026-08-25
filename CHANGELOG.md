@@ -9,6 +9,13 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.3] — 2026-08-25
+
+### Added
+
+- **Documentation link:** the README now links directly to the public
+  documentation site beneath the video tutorial link.
+
 ## [1.23.2] — 2026-08-25
 
 ### Added
@@ -4486,6 +4493,7 @@ another.
 [1.21.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.0...v1.21.1
 [1.21.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.1...v1.21.2
 [1.23.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.1...v1.23.2
+[1.23.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.2...v1.23.3
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0
