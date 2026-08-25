@@ -9,6 +9,8 @@
 [![Website](https://img.shields.io/badge/website-codeministry.net-3f9c8e)](https://codeministry.net/the-librarian/)
 
 > **[Project site →](https://codeministry.net/the-librarian/)** — what The Librarian is, how it works, and why you'd want it.
+>
+> **[Video tutorials →](https://www.youtube.com/playlist?list=PLcHLM3oXht6o)** — short demonstrations of The Librarian in use.
 
 **The Librarian is a living, markdown-native knowledge graph for AI agents — with
 a resident curator that tends it.** It is a markdown+git vault of three note
