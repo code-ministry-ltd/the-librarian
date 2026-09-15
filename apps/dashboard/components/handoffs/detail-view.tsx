@@ -1,16 +1,20 @@
 "use client";
 
-// Handoff detail view — read-only by design (claim is an MCP-only agent op,
-// see sessions-rethink §6.7). Renders the handoff's markdown document as a
-// proper editorial transcript (the 5 required schema headings — Start &
-// intent / Journey / Current state / What's left / Open questions — typeset
-// as h2s instead of literal `## ...`) and pins the provenance + status in a
-// right-rail.
+// Handoff detail view. Claim is an MCP-only agent op (sessions-rethink
+// §6.7) — there is no claim button here. The one dashboard write path is
+// the permanent delete (metadata-rail button → shared confirm dialog →
+// handoffs.purge); on success it returns to the list. Renders the
+// handoff's markdown document as a proper editorial transcript (the 5
+// required schema headings — Start & intent / Journey / Current state /
+// What's left / Open questions — typeset as h2s instead of literal
+// `## ...`) and pins the provenance + status in a right-rail.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MemoryOrb } from "@/components/brand/memory-orb";
+import { HandoffDeleteDialog } from "@/components/handoffs/delete-dialog";
+import { Button } from "@/components/ui-v2/button";
 import { Pill } from "@/components/ui-v2/pill";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { MarkdownContent } from "@/components/vault/markdown-content";
@@ -18,6 +22,7 @@ import { trpc } from "@/lib/trpc-client";
 
 export function HandoffDetailView({ handoffId }: { handoffId: string }) {
   const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Esc returns to the list. The shortcut only fires when nothing is focused
   // (mirrors the global "no field-stealing" rule on keyboard-host).
@@ -142,8 +147,21 @@ export function HandoffDetailView({ handoffId }: { handoffId: string }) {
           {handoff.tags.length > 0 ? (
             <MetaRow label="Tags" value={handoff.tags.join(", ")} />
           ) : null}
+          <Button
+            variant="outline"
+            className="border-destructive/50 text-destructive hover:bg-destructive/10"
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete handoff
+          </Button>
         </aside>
       </div>
+      <HandoffDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        handoff={{ id: handoff.handoff_id, title: handoff.title }}
+        onDeleted={() => router.push("/handoffs")}
+      />
     </div>
   );
 }

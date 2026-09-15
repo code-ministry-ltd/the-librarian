@@ -25,8 +25,10 @@ vi.mock("@/app/handoffs/actions", () => ({
   deleteHandoffAction: (...args: unknown[]) => deleteHandoffAction(...args),
 }));
 
-// The detail view uses next/navigation's useRouter for the Esc-back shortcut.
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+// The detail view uses next/navigation's useRouter for the Esc-back shortcut
+// and the post-delete return trip.
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
 
 const { HandoffsListView } = await import("@/components/handoffs/list-view");
 const { HandoffDetailView } = await import("@/components/handoffs/detail-view");
@@ -137,6 +139,11 @@ describe("HandoffsListView", () => {
 });
 
 describe("HandoffDetailView", () => {
+  beforeEach(() => {
+    deleteHandoffAction.mockReset().mockResolvedValue({ ok: true });
+    pushMock.mockReset();
+  });
+
   it("renders the document markdown and metadata sidebar", () => {
     byIdMock.mockReturnValue({
       data: {
@@ -152,6 +159,51 @@ describe("HandoffDetailView", () => {
     // Status surfaces twice — as a Pill in the page header and in the
     // sidebar Status row. Both should read "unclaimed".
     expect(screen.getAllByText("unclaimed")).toHaveLength(2);
+  });
+
+  it("deletes once and returns to the list on success", async () => {
+    byIdMock.mockReturnValue({
+      data: {
+        ...sampleHandoff,
+        document_md: "# Handoff: test\n\n## Start & intent\nstart here.",
+      },
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    render(<HandoffDetailView handoffId="hdo_abc" />);
+
+    await user.click(screen.getByRole("button", { name: "Delete handoff" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Continue the migration");
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteHandoffAction).toHaveBeenCalledTimes(1));
+    expect(deleteHandoffAction).toHaveBeenCalledWith("hdo_abc");
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/handoffs"));
+  });
+
+  it("keeps the detail page and the error visible when the delete fails", async () => {
+    deleteHandoffAction.mockResolvedValueOnce({ ok: false, error: "Handoff not found: hdo_abc" });
+    byIdMock.mockReturnValue({
+      data: {
+        ...sampleHandoff,
+        document_md: "# Handoff: test\n\n## Start & intent\nstart here.",
+      },
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    render(<HandoffDetailView handoffId="hdo_abc" />);
+
+    await user.click(screen.getByRole("button", { name: "Delete handoff" }));
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Handoff not found: hdo_abc");
+    // No navigation on failure — the detail page (and the dialog) stay put.
+    // Title appears twice: the page h1 and the dialog description.
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getAllByText("Continue the migration")).toHaveLength(2);
   });
 
   it("renders not-found when the query has no data", () => {

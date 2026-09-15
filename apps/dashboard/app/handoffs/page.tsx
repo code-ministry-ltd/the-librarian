@@ -8,8 +8,9 @@ export default function HandoffsPage() {
       <header className="flex flex-col gap-1.5">
         <h1 className="font-display text-xl text-foreground">Handoffs</h1>
         <p className="text-sm text-foreground/60">
-          Cross-harness narrative handoffs. Read-only here — claim them from a coding agent with{" "}
-          <code className="font-mono text-foreground/80">/takeover</code>.
+          Cross-harness narrative handoffs. Claim them from a coding agent with{" "}
+          <code className="font-mono text-foreground/80">/takeover</code>, or delete the ones you no
+          longer need.
         </p>
       </header>
       <HandoffsListView />
