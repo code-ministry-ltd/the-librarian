@@ -132,6 +132,15 @@ describe("MCP tool descriptions carry their protocols (rethink T12)", () => {
     }
   });
 
+  it("store_handoff: creation is explicit-request-only (no spontaneous handoffs)", () => {
+    expect(description("store_handoff")).toMatch(
+      /only call it when the user has explicitly asked/i,
+    );
+    expect(description("store_handoff")).toMatch(/never spontaneously/i);
+    // The old spontaneous-use trigger is gone.
+    expect(description("store_handoff")).not.toContain("Call it when pausing");
+  });
+
   it("list_handoffs + claim_handoff: the takeover protocol, claim races → 409", () => {
     expect(description("list_handoffs")).toContain("claim_handoff");
     expect(description("claim_handoff")).toContain("list_handoffs");

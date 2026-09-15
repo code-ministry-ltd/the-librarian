@@ -104,8 +104,9 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       label: "Store handoff",
       description:
         "Hand work off: persist a handoff document so another agent — on any " +
-        "harness — can resume your work later. Call it when pausing mid-task or " +
-        "ending a session that isn't finished. The document must carry exactly " +
+        "harness — can resume your work later. Only call it when the user has " +
+        "explicitly asked for a handoff — never spontaneously, even when pausing " +
+        "mid-task or ending a session. The document must carry exactly " +
         "these five sections — Start & intent, Journey, Current state, What's " +
         "left, Open questions — or it is rejected. The other side picks it up " +
         "with `list_handoffs` then `claim_handoff`.",

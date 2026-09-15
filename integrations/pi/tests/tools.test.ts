@@ -197,6 +197,13 @@ describe("librarianToolSpecs (schema shape)", () => {
     }
   });
 
+  it("store_handoff description: explicit-request-only creation (mirrors the server)", () => {
+    const spec = librarianToolSpecs().find((s) => s.name === "store_handoff")!;
+    expect(spec.description).toMatch(/only call it when the user has explicitly asked/i);
+    expect(spec.description).toMatch(/never spontaneously/i);
+    expect(spec.description).not.toContain("Call it when pausing");
+  });
+
   it("keeps every description within the 1KB teaching-surface budget (§5.1)", () => {
     for (const spec of librarianToolSpecs()) {
       expect(Buffer.byteLength(spec.description, "utf8")).toBeLessThanOrEqual(1024);
