@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.5] — 2026-09-15
+
+### Changed
+
+- **Handoffs are only created on explicit request:** agents were spontaneously
+  creating handoffs at session end. The `store_handoff` verb's teaching
+  surface (MCP server, Pi proxy, Hermes provider) and the shipped default
+  primer now state that a handoff is created only when the user has
+  explicitly asked for one; the old "call it when pausing / ending a
+  session" wording that invited spontaneous handoffs is gone.
+
+### Added
+
+- **Delete handoffs in the dashboard:** handoffs previously left the
+  dashboard list only by being claimed. The handoffs table now ends each
+  row with a delete button and the handoff detail view has a **Delete
+  handoff** button — both open a confirmation dialog and permanently
+  delete the handoff (hard delete; recoverable only from the vault's git
+  history, not from the app). Claimed handoffs can be deleted too. Backed
+  by a new admin-only `handoffs.purge` tRPC mutation.
+
 ## [1.23.4] — 2026-09-15
 
 ### Security
@@ -4509,6 +4530,7 @@ another.
 [1.23.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.1...v1.23.2
 [1.23.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.2...v1.23.3
 [1.23.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.3...v1.23.4
+[1.23.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.4...v1.23.5
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0
