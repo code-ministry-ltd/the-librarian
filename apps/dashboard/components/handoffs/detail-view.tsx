@@ -25,17 +25,20 @@ export function HandoffDetailView({ handoffId }: { handoffId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Esc returns to the list. The shortcut only fires when nothing is focused
-  // (mirrors the global "no field-stealing" rule on keyboard-host).
+  // (mirrors the global "no field-stealing" rule on keyboard-host), and never
+  // while a dialog is open — Radix closes the dialog on Escape, and this
+  // handler must not also navigate away from an "I meant cancel" keystroke.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      if (deleteOpen) return;
       const target = event.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
       router.push("/handoffs");
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router]);
+  }, [router, deleteOpen]);
 
   const result = trpc.handoffs.byId.useQuery({ handoff_id: handoffId });
 

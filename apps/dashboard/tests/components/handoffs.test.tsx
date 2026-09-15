@@ -206,6 +206,28 @@ describe("HandoffDetailView", () => {
     expect(screen.getAllByText("Continue the migration")).toHaveLength(2);
   });
 
+  it("Escape closes the dialog without navigating while it is open", async () => {
+    byIdMock.mockReturnValue({
+      data: {
+        ...sampleHandoff,
+        document_md: "# Handoff: test\n\n## Start & intent\nstart here.",
+      },
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    render(<HandoffDetailView handoffId="hdo_abc" />);
+
+    await user.click(screen.getByRole("button", { name: "Delete handoff" }));
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+
+    // The dialog closes and the user stays on the detail page — Esc meant
+    // "cancel", not "leave".
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(pushMock).not.toHaveBeenCalledWith("/handoffs");
+    expect(deleteHandoffAction).not.toHaveBeenCalled();
+  });
+
   it("renders not-found when the query has no data", () => {
     byIdMock.mockReturnValue({ data: undefined, isLoading: false });
     render(<HandoffDetailView handoffId="hdo_ghost" />);
