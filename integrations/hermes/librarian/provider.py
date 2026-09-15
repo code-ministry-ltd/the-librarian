@@ -261,8 +261,9 @@ def tool_schemas() -> list[dict[str, Any]]:
             "name": "store_handoff",
             "description": (
                 "Persist a handoff document so another agent (or harness) can resume "
-                "your work later. Use it when you're pausing mid-task or ending a "
-                "session that isn't finished. The document must follow the "
+                "your work later. Only call it when the user has explicitly asked "
+                "for a handoff — never spontaneously, even when pausing mid-task or "
+                "ending a session. The document must follow the "
                 "five-section template — Start & intent, Journey, Current state, "
                 "What's left, Open questions — or it is rejected."
             ),

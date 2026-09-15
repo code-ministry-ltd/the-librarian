@@ -99,6 +99,9 @@ def test_descriptions_carry_their_protocols_within_budget() -> None:
     assert "flag_memory" in by_name["recall"]["description"]
     for heading in ("Start & intent", "Journey", "Current state", "What's left", "Open questions"):
         assert heading in by_name["store_handoff"]["description"]
+    # Creation is explicit-request-only (mirrors the server teaching surface).
+    assert "explicitly asked" in by_name["store_handoff"]["description"]
+    assert "spontaneously" in by_name["store_handoff"]["description"]
     assert "claim_handoff" in by_name["list_handoffs"]["description"]
 
 
