@@ -9,6 +9,20 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.4] — 2026-09-15
+
+### Security
+
+- **Dependency audit:** bump `next` to 15.5.24+ (dashboard) and `astro` to
+  7.2.8 (docs) — both had critical remote-code-execution advisories in
+  their image-optimization paths — and `sharp` to 0.35.4 (libheif
+  fixes). Range-scoped overrides (in both `package.json#pnpm.overrides`
+  and `pnpm-workspace.yaml`, per the existing pattern) advance `js-yaml`
+  to 3.15.2 / 4.3.2 (merge-key CPU-exhaustion advisory), `svgo` to 4.1.0
+  (removeScripts bypasses), `sharp` to 0.35.4, and pin
+  `@xmldom/xmldom` to 0.9.12 (a batch of well-formedness-validation
+  bypasses). `pnpm audit --prod --audit-level=high` is clean again.
+
 ## [1.23.3] — 2026-08-25
 
 ### Added
@@ -4494,6 +4508,7 @@ another.
 [1.21.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.1...v1.21.2
 [1.23.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.1...v1.23.2
 [1.23.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.2...v1.23.3
+[1.23.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.3...v1.23.4
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0

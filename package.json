@@ -1,6 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "1.23.3",
+  "version": "1.23.4",
   "description": "A portable, agent-agnostic memory system for AI agents.",
   "private": true,
   "type": "module",
@@ -8,19 +8,20 @@
   "pnpm": {
     "overrides": {
       "typescript": "^6.0.3",
-      "js-yaml@>=3.0.0 <3.15.1": "3.15.1",
-      "js-yaml@>=4.0.0 <4.3.1": "4.3.1",
       "nanoid@>=3.0.0 <3.3.17": "3.3.17",
       "nanoid@>=5.0.0 <5.1.16": "5.1.16",
       "postcss@<=8.5.25": "8.5.26",
-      "sharp@<0.35.0": "0.35.3",
-      "svgo@>=4.0.0 <4.0.2": "4.0.2",
       "tar@<=7.5.21": "7.5.22",
       "form-data@>=4.0.0 <4.0.6": "4.0.6",
       "undici@>=8.0.0 <8.9.0": "8.9.0",
       "ws@>=8.0.0 <8.21.3": "8.21.3",
       "@babel/core@<7.29.7": "7.29.7",
-      "protobufjs@<7.6.5": "7.6.5"
+      "protobufjs@<7.6.5": "7.6.5",
+      "js-yaml@>=3.0.0 <3.15.2": "3.15.2",
+      "js-yaml@>=4.0.0 <4.3.2": "4.3.2",
+      "svgo@>=4.0.0 <4.1.0": "4.1.0",
+      "sharp@<0.35.4": "0.35.4",
+      "@xmldom/xmldom@<0.9.12": "0.9.12"
     }
   },
   "scripts": {

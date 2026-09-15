@@ -37,7 +37,7 @@ describe("dependency security policy", () => {
 
     const expectedFloors = {
       "postcss@<=8.5.25": "8.5.26",
-      "sharp@<0.35.0": "0.35.3",
+      "sharp@<0.35.4": "0.35.4",
       "tar@<=7.5.21": "7.5.22",
     };
     const packageOverrides = rootPackage.pnpm?.overrides;
