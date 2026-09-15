@@ -57,7 +57,10 @@ describe("the shipped default primer", () => {
     expect(firstParagraph).toMatch(/recall before answering/i);
     expect(firstParagraph).toMatch(/remember durable facts, preferences, and decisions/i);
     // (b) handoff protocol: store_handoff + the 5 sections; takeover chain.
+    // Creation is explicit-request-only — the restraint that stops agents
+    // from spontaneously handing off at session end.
     expect(DEFAULT_PRIMER).toContain("store_handoff");
+    expect(DEFAULT_PRIMER).toMatch(/only when the user has explicitly asked/i);
     for (const heading of [
       "Start & intent",
       "Journey",
