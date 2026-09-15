@@ -1,13 +1,16 @@
 // Dashboard handoff component tests (sessions-rethink §6.7).
 //
-// The dashboard surface is read-only — no claim button (claim is an MCP-only
-// agent operation). We mock the tRPC client so the tests stay pure.
+// Claim is an MCP-only agent operation (no claim button); permanent delete
+// is the dashboard's one write path (server action → handoffs.purge). We
+// mock the tRPC client and the server action so the tests stay pure.
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const listMock = vi.fn();
 const byIdMock = vi.fn();
+const deleteHandoffAction = vi.fn().mockResolvedValue({ ok: true });
 
 vi.mock("@/lib/trpc-client", () => ({
   trpc: {
@@ -16,6 +19,10 @@ vi.mock("@/lib/trpc-client", () => ({
       byId: { useQuery: (...args: unknown[]) => byIdMock(...args) },
     },
   },
+}));
+
+vi.mock("@/app/handoffs/actions", () => ({
+  deleteHandoffAction: (...args: unknown[]) => deleteHandoffAction(...args),
 }));
 
 // The detail view uses next/navigation's useRouter for the Esc-back shortcut.
@@ -39,6 +46,10 @@ const sampleHandoff = {
 };
 
 describe("HandoffsListView", () => {
+  beforeEach(() => {
+    deleteHandoffAction.mockReset().mockResolvedValue({ ok: true });
+  });
+
   it("renders empty-state when no rows arrive", () => {
     listMock.mockReturnValue({ data: [], isLoading: false });
     render(<HandoffsListView />);
@@ -56,6 +67,72 @@ describe("HandoffsListView", () => {
       "/handoffs/hdo_abc",
     );
     expect(screen.getByText("Another").closest("a")).toHaveAttribute("href", "/handoffs/hdo_xyz");
+  });
+
+  it("ends every row with a delete button named after the handoff", () => {
+    listMock.mockReturnValue({
+      data: [sampleHandoff, { ...sampleHandoff, handoff_id: "hdo_xyz", title: "Another" }],
+      isLoading: false,
+    });
+    render(<HandoffsListView />);
+    expect(
+      screen.getByRole("button", { name: 'Delete handoff "Continue the migration"' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: 'Delete handoff "Another"' })).toBeInTheDocument();
+  });
+
+  it("confirming the dialog deletes once and refetches the list", async () => {
+    const refetch = vi.fn();
+    listMock.mockReturnValue({ data: [sampleHandoff], isLoading: false, refetch });
+    const user = userEvent.setup();
+    render(<HandoffsListView />);
+
+    await user.click(
+      screen.getByRole("button", { name: 'Delete handoff "Continue the migration"' }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Continue the migration");
+    expect(dialog).toHaveTextContent(/permanently/i);
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteHandoffAction).toHaveBeenCalledTimes(1));
+    expect(deleteHandoffAction).toHaveBeenCalledWith("hdo_abc");
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("canceling the dialog never calls the delete action", async () => {
+    listMock.mockReturnValue({ data: [sampleHandoff], isLoading: false, refetch: vi.fn() });
+    const user = userEvent.setup();
+    render(<HandoffsListView />);
+
+    await user.click(
+      screen.getByRole("button", { name: 'Delete handoff "Continue the migration"' }),
+    );
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(deleteHandoffAction).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a failed delete inline and keeps the row", async () => {
+    deleteHandoffAction.mockResolvedValueOnce({ ok: false, error: "Handoff not found: hdo_abc" });
+    listMock.mockReturnValue({ data: [sampleHandoff], isLoading: false, refetch: vi.fn() });
+    const user = userEvent.setup();
+    render(<HandoffsListView />);
+
+    await user.click(
+      screen.getByRole("button", { name: 'Delete handoff "Continue the migration"' }),
+    );
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Handoff not found: hdo_abc");
+    // The dialog stays open and the row is still there — nothing was deleted.
+    // (The row's button is aria-hidden while the dialog locks focus, so assert
+    // via the title text: row link + dialog description = two matches.)
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getAllByText("Continue the migration")).toHaveLength(2);
   });
 });
 

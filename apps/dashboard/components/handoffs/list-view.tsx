@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { HandoffDeleteDialog } from "@/components/handoffs/delete-dialog";
 import { Pill } from "@/components/ui-v2/pill";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import {
@@ -19,6 +20,7 @@ const PAGE_LIMIT = 50;
 export function HandoffsListView() {
   const [includeClaimed, setIncludeClaimed] = useState(false);
   const [projectKey, setProjectKey] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   const result = trpc.handoffs.list.useQuery({
     limit: PAGE_LIMIT,
@@ -74,6 +76,9 @@ export function HandoffsListView() {
               <TableHead>From</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -103,11 +108,54 @@ export function HandoffsListView() {
                     <Pill variant="accent">unclaimed</Pill>
                   )}
                 </TableCell>
+                <TableCell className="text-right">
+                  <button
+                    type="button"
+                    aria-label={`Delete handoff "${row.title}"`}
+                    title="Delete handoff"
+                    onClick={() => setPendingDelete({ id: row.handoff_id, title: row.title })}
+                    className="text-foreground/55 transition-colors hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ink-accent pointer-coarse:min-h-11"
+                  >
+                    <TrashIcon />
+                  </button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
+      {pendingDelete ? (
+        <HandoffDeleteDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setPendingDelete(null);
+          }}
+          handoff={pendingDelete}
+          onDeleted={() => {
+            void result.refetch();
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 14 14"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2 4h10" />
+      <path d="M5.5 4V2.5h3V4" />
+      <path d="M3.5 4l.7 8h5.6l.7-8" />
+      <path d="M6 6.5v3.5M8 6.5v3.5" />
+    </svg>
   );
 }
