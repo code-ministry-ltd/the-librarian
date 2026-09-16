@@ -91,7 +91,9 @@ On merge, `release.yml` reads the version and classifies the commit. A new
 release creates the annotated tag, builds the all-in-one image once, pulls and
 smokes the versioned image, records its manifest digest, promotes `latest` by
 that digest, creates the GitHub release (notes = your CHANGELOG section), then
-publishes public npm packages when `NPM_TOKEN` is configured. A rerun of the
+publishes public npm packages via trusted publishing — the runner's GitHub
+OIDC identity is validated against the "Automated access" grant for this repo
+on npmjs.com (no `NPM_TOKEN`). A rerun of the
 same tagged commit verifies and completes any missing later steps without
 overwriting the versioned image. A later commit whose version is already tagged
 is a clean no-op.
@@ -111,7 +113,10 @@ is a clean no-op.
   points at `./integrations/claude`. A marketplace-visible change should bump
   `plugins[].version` in `.claude-plugin/marketplace.json` in the same PR.
 - **Pi (npm)** — `integrations/pi` (`@the-librarian/pi-extension`) is published
-  after the verified image and GitHub release when `NPM_TOKEN` is configured.
+  after the verified image and GitHub release via the npm trusted-publisher
+  grant (no token). If a publish 404s with "not in this registry", the grant
+  on npmjs.com is missing or belongs to a different npm account than the one
+  that owns the `@the-librarian` packages.
   Sanity-check the tarball with `npm pack --dry-run` before a risky change to
   what ships; the `files` field in its `package.json` is the gate. npm won't let
   you republish the same version — never bump just to "force" a republish.

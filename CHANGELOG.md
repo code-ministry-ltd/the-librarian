@@ -9,6 +9,20 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.6] — 2026-09-16
+
+### Changed
+
+- **npm publishing now uses trusted publishing (OIDC) instead of `NPM_TOKEN`:**
+  the `publish-npm` job in `release.yml` requests `id-token: write`, points
+  `setup-node` at `https://registry.npmjs.org`, and publishes with the
+  runner's GitHub identity validated against the "Automated access"
+  (trusted-publisher) grant for this repo on npmjs.com; the `NPM_TOKEN`
+  secret is no longer read. Releases 1.23.4 and 1.23.5 failed to publish
+  because the token's npm account was not a maintainer of the
+  `@the-librarian` packages — those versions remain unpublished on npm and
+  1.23.6 supersedes them.
+
 ## [1.23.5] — 2026-09-15
 
 ### Changed
@@ -4531,6 +4545,7 @@ another.
 [1.23.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.2...v1.23.3
 [1.23.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.3...v1.23.4
 [1.23.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.4...v1.23.5
+[1.23.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.5...v1.23.6
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0

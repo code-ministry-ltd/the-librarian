@@ -4,7 +4,9 @@
 `release/vX` branch, and no hand-run `git tag` / `gh release` for this repo.
 Every PR bumps the version and writes its CHANGELOG entry; the merge cuts the
 tag, container image and GitHub release automatically, followed by public npm
-packages when `NPM_TOKEN` is configured. This file is the per-repo bump-size rule;
+packages published via **npm trusted publishing** (a GitHub OIDC identity
+validated against the "Automated access" grant for this repo on npmjs.com —
+no `NPM_TOKEN`). This file is the per-repo bump-size rule;
 the cross-family runbook (which repos, version files, coordinated bumps) lives
 in [`docs/release-runbook.md`](./release-runbook.md).
 

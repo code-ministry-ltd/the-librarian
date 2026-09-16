@@ -326,6 +326,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # Trusted publishing: npm validates the GitHub OIDC identity (see the
+      # "Automated access" grant for this repo on npmjs.com) instead of a token.
+      id-token: write
 
     steps:
       - name: Check out the exact release tag
@@ -337,6 +340,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.17.1"
+          # Wires the runner's OIDC identity into npm config so `publish`
+          # authenticates via the npmjs.com trusted-publisher grant.
+          registry-url: https://registry.npmjs.org
 
       - name: Enable corepack (pnpm)
         run: |
@@ -349,17 +355,9 @@ jobs:
       - name: Build the CLI
         run: pnpm --filter @the-librarian/cli build
 
-      - name: Publish public packages to npm (idempotent; skips if already published)
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish public packages to npm (trusted publishing; idempotent)
         run: |
           set -euo pipefail
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "NPM_TOKEN not set — skipping npm publish."
-            echo "Add the NPM_TOKEN repo secret (an npm automation token) to enable auto-publish."
-            exit 0
-          fi
-          pnpm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
           # The root package version is the release source of truth. Stamp it
           # into every public workspace package immediately before publication.
           node scripts/stamp-version.mjs
