@@ -326,8 +326,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # Trusted publishing: npm validates the GitHub OIDC identity (see the
-      # "Automated access" grant for this repo on npmjs.com) instead of a token.
+      # Required so the npm CLI can fetch a GHA ID token and exchange it for a
+      # short-lived publish token (trusted publishing, see the publish step).
       id-token: write
 
     steps:
@@ -339,9 +339,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22.17.1"
-          # Wires the runner's OIDC identity into npm config so `publish`
-          # authenticates via the npmjs.com trusted-publisher grant.
+          # Node 24 ships npm >= 11.5, which implements the registry's OIDC
+          # token exchange for trusted publishing (see the publish step).
+          node-version: "24"
+          # Points npm at the public registry; the publish step authenticates
+          # via the npmjs.com trusted-publisher grant, not a token.
           registry-url: https://registry.npmjs.org
 
       - name: Enable corepack (pnpm)
@@ -355,6 +357,17 @@ jobs:
       - name: Build the CLI
         run: pnpm --filter @the-librarian/cli build
 
+      # Trusted publishing: in CI, `npm publish` (npm >= 11.5) fetches a GHA
+      # ID token (audience npm:registry.npmjs.org — needs the id-token: write
+      # permission above), exchanges it at the registry's
+      # /-/npm/v1/oidc/token/exchange endpoint against the trusted-publisher
+      # grant, and publishes with the resulting short-lived token. pnpm has no
+      # exchange flow (it would send the raw runner token and 404), so publish
+      # with npm directly — both packages have no runtime deps, so no pnpm
+      # workspace rewriting is needed. A failed exchange logs verbosely and
+      # falls through to an unauthenticated publish, which 404s — if this step
+      # 404s, run it with `npm publish --loglevel verbose` once to see the
+      # exchange error.
       - name: Publish public packages to npm (trusted publishing; idempotent)
         run: |
           set -euo pipefail
@@ -362,12 +375,14 @@ jobs:
           # into every public workspace package immediately before publication.
           node scripts/stamp-version.mjs
           V="$(node -p "require('./package.json').version")"
-          for PKG in @the-librarian/cli @the-librarian/pi-extension; do
+          for SPEC in "@the-librarian/cli:packages/installer-cli" "@the-librarian/pi-extension:integrations/pi"; do
+            PKG="${SPEC%%:*}"
+            DIR="${SPEC#*:}"
             if npm view "${PKG}@${V}" version >/dev/null 2>&1; then
               echo "${PKG}@${V} already on npm — nothing to publish."
             else
               echo "Publishing ${PKG}@${V}…"
-              pnpm --filter "${PKG}" publish --access public --no-git-checks
+              (cd "${DIR}" && npm publish --access public --no-git-checks)
               echo "Published ${PKG}@${V}."
             fi
           done

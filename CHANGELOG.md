@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.7] — 2026-09-16
+
+### Fixed
+
+- **The npm publish step now authenticates the way the registry actually
+  requires:** the job runs Node 24 (npm ≥ 11.5) and publishes each package
+  with `npm publish` from its directory. npm exchanges a GitHub OIDC ID token
+  (audience `npm:registry.npmjs.org`) for a short-lived registry token against
+  the trusted-publisher grant before publishing. The previous step used
+  `pnpm publish`, which has no token-exchange flow and sends the raw runner
+  token — the registry rejects that with a bare 404 no matter how correctly
+  the grant is configured, which is why 1.23.6's rerun still failed. The
+  `publish-npm` job's `node-version` moves from 22.17.1 to 24; pnpm remains
+  for install and build.
+
+### Changed
+
+- Release docs now describe the per-package trusted-publisher grant model and
+  how to read a failed exchange (`npm publish --loglevel verbose`).
+
 ## [1.23.6] — 2026-09-16
 
 ### Changed
@@ -4546,6 +4566,7 @@ another.
 [1.23.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.3...v1.23.4
 [1.23.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.4...v1.23.5
 [1.23.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.5...v1.23.6
+[1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0

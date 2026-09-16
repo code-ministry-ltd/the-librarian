@@ -112,14 +112,21 @@ is a clean no-op.
 - **Claude marketplace** — installs pull this repo; the manifest's `source`
   points at `./integrations/claude`. A marketplace-visible change should bump
   `plugins[].version` in `.claude-plugin/marketplace.json` in the same PR.
-- **Pi (npm)** — `integrations/pi` (`@the-librarian/pi-extension`) is published
-  after the verified image and GitHub release via the npm trusted-publisher
-  grant (no token). If a publish 404s with "not in this registry", the grant
-  on npmjs.com is missing or belongs to a different npm account than the one
-  that owns the `@the-librarian` packages.
-  Sanity-check the tarball with `npm pack --dry-run` before a risky change to
-  what ships; the `files` field in its `package.json` is the gate. npm won't let
-  you republish the same version — never bump just to "force" a republish.
+- **npm (CLI + Pi)** — `packages/installer-cli` (`@the-librarian/cli`) and
+  `integrations/pi` (`@the-librarian/pi-extension`) publish after the verified
+  image and GitHub release via the npm trusted-publisher grant (no token).
+  The step must use `npm publish` with npm >= 11.5 (Node 24 in the job): npm
+  exchanges a GHA ID token for a short-lived registry token against the grant.
+  pnpm has no exchange flow and 404s. If a publish 404s with "not in this
+  registry", the exchange failed silently — re-run once with
+  `npm publish --loglevel verbose` to see the exchange error (grant fields —
+  owner `code-ministry-ltd`, repo, workflow `release.yml`, environment — must
+  match the job exactly, and the grant's allowed actions must include
+  `npm publish`).
+  Sanity-check a tarball with `npm pack --dry-run` before a risky change to
+  what ships; the `files` field in the package's `package.json` is the gate.
+  npm won't let you republish the same version — never bump just to "force"
+  a republish.
 - **Hermes** — nothing publishes; the adapter installs by copy. Make sure
   `integrations/hermes` pytest is green in CI (`.github/workflows/hermes-tests.yml`).
 - **Breaking MCP changes** — name the change explicitly in the CHANGELOG
