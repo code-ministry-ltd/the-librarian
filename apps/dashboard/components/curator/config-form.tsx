@@ -1,8 +1,8 @@
 "use client";
 
 // Grooming job-level config — enable, schedule, and the single auto-apply
-// confidence knob (D13). Editorial rebuild: no card chrome, SectionLabel
-// field labels, ui-v2 primitives, accent checkbox. Auto-apply confidence
+// threshold knob (D13). Editorial rebuild: no card chrome, SectionLabel
+// field labels, ui-v2 primitives, accent checkbox. The auto-apply threshold
 // lives in its own labelled sub-section under the schedule.
 
 import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
@@ -13,6 +13,41 @@ import { Button } from "@/components/ui-v2/button";
 import { Hairline } from "@/components/ui-v2/hairline";
 import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
+
+/** The threshold slider's stops: 0 → 1 in 0.1 steps (10 steps, 11 stops). */
+const THRESHOLD_STEPS = 10;
+/**
+ * Fallback for a non-finite config value only. Mirrors core's
+ * `DEFAULT_APPLY_CONFIDENCE_THRESHOLD`; it is not imported because that is a
+ * runtime value from a server-side package, and only types cross into this
+ * client component (the server already normalises the stored setting).
+ */
+const DEFAULT_THRESHOLD = 0.8;
+
+/**
+ * Clamp a stored threshold onto a slider stop. The setting predates this control
+ * and accepted finer values (the old number input stepped 0.05), so a legacy
+ * 0.75 must not leave the thumb between stops: round to the nearest 0.1.
+ */
+function snapToStop(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_THRESHOLD;
+  return Math.round(Math.min(1, Math.max(0, value)) * THRESHOLD_STEPS) / THRESHOLD_STEPS;
+}
+
+/**
+ * What a threshold stop means for the review queue, in the operator's words.
+ * Mirrors the D13 rule (`curator-apply-policy.ts`): create/update/merge
+ * auto-apply at or above the threshold, so raising it means MORE proposals and
+ * lowering it means fewer — the opposite of the instinct that a higher bar is
+ * "safer". Archive and split are outside this scale entirely: they always
+ * propose, which is why the form carries a standing caveat line.
+ */
+function proposalFrequencyFor(value: number): string {
+  if (value <= 0) return "Never raises proposals";
+  if (value <= 0.5) return "Sometimes raises proposals";
+  if (value <= 0.9) return "Often raises proposals";
+  return "Always raises proposals";
+}
 
 export function GroomingConfigForm({
   initial,
@@ -27,7 +62,7 @@ export function GroomingConfigForm({
   const [error, setError] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [confidence, setConfidence] = useState(String(initial.applyConfidenceThreshold));
+  const [threshold, setThreshold] = useState(snapToStop(initial.applyConfidenceThreshold));
   const [intervalDays, setIntervalDays] = useState(String(initial.intervalDays));
   const [scheduleTime, setScheduleTime] = useState(initial.scheduleTime);
 
@@ -53,7 +88,7 @@ export function GroomingConfigForm({
     startTransition(async () => {
       const patch: GroomingConfigPatch = {
         enabled,
-        applyConfidenceThreshold: Number(confidence),
+        applyConfidenceThreshold: threshold,
         intervalDays: days,
         scheduleTime,
       };
@@ -127,29 +162,46 @@ export function GroomingConfigForm({
       <Hairline />
 
       {/* The ONE apply rule's single knob (D13): create/update/merge auto-apply
-          at/above this confidence; archive/split always propose. */}
+          at/above this threshold; archive/split always propose. The scale stops
+          short of the whole rule, so the caveat line below names what it cannot
+          silence. */}
       <div className="flex flex-col gap-3">
         <header className="flex flex-col gap-1">
-          <SectionLabel as="p">Auto-apply confidence</SectionLabel>
-          <p className="text-xs text-foreground/60">
-            At or above this threshold the curator applies create / update / merge directly. Below
-            it, the curator proposes the fix for your review. Default 0.8 — lower for more
-            proposals, higher for fewer.
+          <SectionLabel as="label" htmlFor="grooming-auto-apply-threshold">
+            Auto-apply threshold
+          </SectionLabel>
+          <p id="grooming-auto-apply-threshold-help" className="text-xs text-foreground/60">
+            How confident should the curator be before it auto-applies?
           </p>
         </header>
-        <Input
-          aria-label="Auto-apply confidence threshold (0–1)"
-          type="number"
-          min="0"
-          max="1"
-          step="0.05"
-          className="w-24"
-          value={confidence}
-          onChange={(e) => {
-            setConfidence(e.target.value);
-            clearStatus();
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <input
+            id="grooming-auto-apply-threshold"
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={threshold}
+            aria-describedby="grooming-auto-apply-threshold-help grooming-auto-apply-threshold-caveat"
+            aria-valuetext={`${threshold.toFixed(1)} — ${proposalFrequencyFor(threshold)}`}
+            onChange={(e) => {
+              setThreshold(Number(e.target.value));
+              clearStatus();
+            }}
+            className="w-full max-w-xs cursor-pointer accent-ink-accent"
+          />
+          {/* The value readout rides WITH the frequency phrase: a range thumb
+              alone doesn't tell the operator which stop it is on. The phrase is
+              mirrored into aria-valuetext, so AT gets it without double-speak. */}
+          <p className="text-xs text-foreground/60">
+            <span className="font-mono tabular-nums text-foreground">{threshold.toFixed(1)}</span>
+            {" — "}
+            {proposalFrequencyFor(threshold)}
+          </p>
+          <p id="grooming-auto-apply-threshold-caveat" className="text-xs text-foreground/40">
+            Archive and split proposals always come to you for review, whatever this is set to.
+          </p>
+        </div>
       </div>
 
       {error ? (

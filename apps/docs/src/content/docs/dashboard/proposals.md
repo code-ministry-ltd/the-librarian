@@ -29,7 +29,7 @@ content diff. Shelf labels are display text; hover them to recover the stable sh
 
 ### The curator's plan
 
-When an intake submission lands in the queue below the auto-apply confidence bar,
+When an intake submission lands in the queue below the auto-apply threshold,
 the card also shows the **curator's plan** — exactly what it wanted to do:
 
 - *"Wanted to **augment** ‹Elaine› with: …"* — with a preview diff of the target

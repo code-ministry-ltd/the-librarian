@@ -1,5 +1,5 @@
 import type { GroomingConfig, GroomingConfigPatch } from "@librarian/core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { GroomingConfigForm } from "@/components/curator/config-form";
@@ -95,9 +95,11 @@ describe("GroomingConfigForm", () => {
     const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
     render(<GroomingConfigForm initial={config} onSave={onSave} />);
 
-    expect(
-      (screen.getByLabelText("Auto-apply confidence threshold (0–1)") as HTMLInputElement).value,
-    ).toBe("0.8");
+    const slider = screen.getByLabelText("Auto-apply threshold") as HTMLInputElement;
+    expect(slider.value).toBe("0.8");
+    // The phrase is mirrored to assistive tech via aria-valuetext, so a screen
+    // reader hears the band rather than an unmoored decimal.
+    expect(slider.getAttribute("aria-valuetext")).toBe("0.8 — Often raises proposals");
 
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(onSave).toHaveBeenCalledTimes(1);
@@ -117,5 +119,50 @@ describe("GroomingConfigForm", () => {
     // vault file now; its dashboard editor is D7), so the patch must not set it.
     expect("promptAddendum" in patch).toBe(false);
     expect(screen.getByText("Saved.")).toBeTruthy();
+  });
+
+  it("names the proposal frequency at every threshold stop, in the honest direction", () => {
+    const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
+    render(<GroomingConfigForm initial={config} onSave={onSave} />);
+    const slider = screen.getByLabelText("Auto-apply threshold") as HTMLInputElement;
+
+    // Raising the threshold narrows the auto-apply band, so it RAISES the number of
+    // proposals. The previous copy implied the reverse; this pins the direction.
+    const stops: Array<[number, string]> = [
+      [0, "Never raises proposals"],
+      [0.1, "Sometimes raises proposals"],
+      [0.5, "Sometimes raises proposals"],
+      [0.6, "Often raises proposals"],
+      [0.9, "Often raises proposals"],
+      [1, "Always raises proposals"],
+    ];
+    for (const [stop, phrase] of stops) {
+      fireEvent.change(slider, { target: { value: String(stop) } });
+      expect(slider.getAttribute("aria-valuetext")).toBe(`${stop.toFixed(1)} — ${phrase}`);
+    }
+  });
+
+  it("states that archive and split proposals are outside the threshold's reach", () => {
+    // The slider's stops describe create/update/merge only (D13). Without this
+    // line, stop 0 reads as "never raises proposals" — which the archive and split
+    // paths always contradict.
+    render(<GroomingConfigForm initial={config} onSave={vi.fn()} />);
+    expect(screen.getByText(/archive and split proposals always come to you/i)).toBeTruthy();
+  });
+
+  it("snaps a legacy off-stop threshold onto the slider grid and saves the snapped value", async () => {
+    // The control this replaced was a number input stepping 0.05, so 0.75 is a real
+    // stored value; the slider has no such stop and normalises it to 0.8.
+    const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
+    render(
+      <GroomingConfigForm
+        initial={{ ...config, applyConfidenceThreshold: 0.75 }}
+        onSave={onSave}
+      />,
+    );
+    expect((screen.getByLabelText("Auto-apply threshold") as HTMLInputElement).value).toBe("0.8");
+
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ applyConfidenceThreshold: 0.8 });
   });
 });

@@ -35,8 +35,10 @@ reason not to.
 The curator applies safe changes itself and asks you about risky ones:
 
 - **Create, update, and merge** are applied automatically **when the curator is
-  confident enough** — there is a single confidence threshold you can tune (the
-  default is fairly cautious).
+  confident enough** — the **Auto-apply threshold** slider on
+  [Settings → Curator](/dashboard/curator/) is the single knob, defaulting to a
+  cautious 0.8. **Raise it to review more proposals; lower it to let the curator
+  apply more unattended.**
 - **Archive and split** — the only operations that lose or reshape information —
   **always** become [proposals](/dashboard/proposals/) for you to approve, no matter
   how confident the curator is.

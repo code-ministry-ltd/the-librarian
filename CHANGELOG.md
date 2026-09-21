@@ -9,6 +9,30 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.8] — 2026-09-21
+
+### Fixed
+
+- **The auto-apply confidence help text told you to turn the dial the wrong
+  way.** It read "lower for more proposals, higher for fewer", which is
+  inverted: lowering the threshold widens the band the curator applies
+  unattended, so it raises _fewer_ proposals. The control now asks "How
+  confident should the curator be before it auto-applies?" and names the
+  resulting frequency at the current stop.
+- **The same caption implied the threshold governed every proposal.** It never
+  did — archive and split always become proposals (rethink D13), as does any
+  operation touching a `requires_approval` memory. A standing line under the
+  control now says so, so the lowest stop no longer reads as a promise that the
+  review queue will stay empty.
+
+### Changed
+
+- **Settings → Curator's confidence number field is now an "Auto-apply
+  threshold" slider**, with eleven stops from 0 to 1 in 0.1 steps. Same setting
+  (`curator.apply.confidence_threshold`), a coarser and more legible control. A
+  stored off-grid value — the old field stepped 0.05, so 0.75 exists in the
+  wild — is snapped to the nearest stop when the form is saved.
+
 ## [1.23.7] — 2026-09-16
 
 ### Fixed
@@ -4567,6 +4591,7 @@ another.
 [1.23.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.4...v1.23.5
 [1.23.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.5...v1.23.6
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
+[1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0
