@@ -1,6 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "1.23.8",
+  "version": "1.23.9",
   "description": "A portable, agent-agnostic memory system for AI agents.",
   "private": true,
   "type": "module",
@@ -38,7 +38,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r run typecheck",
+    "typecheck": "pnpm -r run build && pnpm -r run typecheck",
     "build": "pnpm -r run build",
     "docs:gen": "node --no-warnings scripts/docs-gen.mjs",
     "docs:screenshots": "pnpm --filter @librarian/dashboard run screenshots",

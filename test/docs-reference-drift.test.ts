@@ -6,7 +6,7 @@
 // committed pages are currently in sync.
 
 import { describe, expect, it } from "vitest";
-import { findStaleReferencePages } from "../scripts/check-docs.mjs";
+import { findStaleReferencePages, stalePagesMessage } from "../scripts/check-docs.mjs";
 
 describe("check:docs drift-guard", () => {
   it("reports no drift for the pages committed in this repo", () => {
@@ -32,5 +32,35 @@ describe("check:docs drift-guard", () => {
         throw Object.assign(new Error("no such file"), { code: "ENOENT" });
       }),
     ).toEqual(["gone.md"]);
+  });
+});
+
+// A drift verdict has two possible causes, and the guard used to name only one of
+// them — then advised `pnpm docs:gen` + commit. Against stale dist that command
+// regenerates OLD content and overwrites a correct committed page. These tests pin
+// the guidance, because here the wrong advice is worse than none.
+describe("check:docs failure guidance", () => {
+  it("names every diverging page", () => {
+    const message = stalePagesMessage([
+      "apps/docs/src/content/docs/reference/primer.md",
+      "apps/docs/src/content/docs/reference/other.md",
+    ]);
+    expect(message).toContain("reference/primer.md");
+    expect(message).toContain("reference/other.md");
+  });
+
+  it("names both causes, so a stale build is not mistaken for a stale page", () => {
+    const message = stalePagesMessage(["x.md"]);
+    expect(message).toMatch(/canonical source changed/i);
+    expect(message).toMatch(/built packages .*stale/i);
+  });
+
+  it("puts `pnpm build` before the docs:gen advice, and forbids committing a stale regeneration", () => {
+    const message = stalePagesMessage(["x.md"]);
+    // `build` is the shared first step of both causes; `docs:gen` is only ever
+    // safe AFTER it, so it must not be the first command a reader meets.
+    expect(message.indexOf("pnpm build")).toBeGreaterThan(-1);
+    expect(message.indexOf("pnpm build")).toBeLessThan(message.indexOf("pnpm docs:gen"));
+    expect(message).toMatch(/Do NOT commit/i);
   });
 });

@@ -188,11 +188,19 @@ a worse one.
 ```sh
 pnpm install --frozen-lockfile
 pnpm run lint            # eslint + prettier
-pnpm run typecheck       # tsc --noEmit across every workspace
-pnpm test                # full vitest suite
+pnpm run typecheck       # builds every workspace, then tsc --noEmit
+pnpm test                # full vitest suite (builds first, too)
 pnpm run smoke           # end-to-end against a real local server
 pnpm run healthcheck     # local /mcp + dashboard probes
 ```
+
+Workspaces that import another workspace's **types** resolve them from that
+package's built `dist/`, not its source. `typecheck` and `test` therefore build
+first, so a clean checkout can't produce a failure caused by absent build output.
+The generated-docs guard has the same dependency and is the one place it bites:
+run against stale `dist` it regenerates old content and blames the committed
+pages, and following its advice there would commit a regression. It tells you to
+rebuild instead — run `pnpm build` before `pnpm docs:gen`, always.
 
 Run commands from the repo root unless you mean to scope to one
 workspace (`pnpm --filter @librarian/<pkg> …`).

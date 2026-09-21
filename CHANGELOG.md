@@ -9,6 +9,31 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.23.9] — 2026-09-21
+
+### Fixed
+
+- **`pnpm typecheck` no longer fails on a clean checkout.** Workspaces that
+  import another workspace's types resolve them from that package's built
+  `dist/`, not its source, so the root script now builds every workspace first —
+  the same shape `pnpm test` already had. Previously a fresh clone (no `dist/`)
+  failed with `TS2307: Cannot find module '@librarian/mcp-server'`, and a stale
+  `dist/` failed with confusing phantom type errors such as
+  `Property 'purge' does not exist`.
+- **The generated-docs guard no longer misdiagnoses a stale build as a stale
+  page.** Run against stale `dist/`, it regenerates *old* content and reports the
+  committed pages as drifted — then advised `pnpm docs:gen` and commit, which
+  would have overwritten a correct page with an older one. The failure now names
+  both causes (`pnpm docs:gen` is only ever the fix after a `pnpm build`), and
+  says explicitly not to commit regenerated output until a check against freshly
+  built packages still reports drift. The pass/fail verdict is unchanged.
+
+### Changed
+
+- **`AGENTS.md` §3 now states the build precondition** that `typecheck`,
+  `test`, and the docs guard all share, and `pnpm run typecheck` is documented
+  as building first.
+
 ## [1.23.8] — 2026-09-21
 
 ### Fixed
@@ -4592,6 +4617,7 @@ another.
 [1.23.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.5...v1.23.6
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
+[1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0

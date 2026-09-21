@@ -45,19 +45,36 @@ export function findStaleReferencePages(reference = generateReference(), readFil
   return stale;
 }
 
+/** The message for a drift verdict. Extracted (rather than inlined in `main`)
+ *  so the guidance itself is testable: the wrong guidance here is worse than no
+ *  guidance, because "re-run docs:gen and commit" against a stale build writes an
+ *  OLDER page over the correct one. */
+export function stalePagesMessage(stale) {
+  const list = stale.map((p) => `  - ${p}`).join("\n");
+  return (
+    `check:docs FAILED — these generated reference pages differ from a fresh regeneration:\n${list}\n\n` +
+    "Two different causes produce this, and the fix differs:\n\n" +
+    "  1. A canonical source changed and the committed page was not regenerated.\n" +
+    "     Fix: pnpm build && pnpm docs:gen   (then commit the updated pages)\n\n" +
+    "  2. The built packages this guard reads are STALE, so it regenerated OLD\n" +
+    "     content and these pages only look stale — nothing is wrong with the\n" +
+    "     committed pages.\n" +
+    "     Fix: pnpm build   (then re-run this check)\n\n" +
+    "Run `pnpm build` first, always: it is required for (1) and it is the only\n" +
+    "thing that rules out (2). Do NOT commit `pnpm docs:gen` output until a check\n" +
+    "against freshly built packages still reports drift — regenerating from stale\n" +
+    "output overwrites a correct page with an older one. This is why CI runs the\n" +
+    "guard after its Build step (docs-site spec K8)."
+  );
+}
+
 function main() {
   const stale = findStaleReferencePages();
   if (stale.length === 0) {
     console.log("check:docs — generated reference pages are in sync.");
     return;
   }
-  const list = stale.map((p) => `  - ${p}`).join("\n");
-  console.error(
-    `check:docs FAILED — these generated reference pages are stale:\n${list}\n\n` +
-      "A canonical source changed but the committed reference wasn't regenerated.\n" +
-      "Fix:  pnpm docs:gen  (then commit the updated pages)\n" +
-      "Note: the generator reads built packages — run `pnpm build` first.",
-  );
+  console.error(stalePagesMessage(stale));
   process.exit(1);
 }
 
