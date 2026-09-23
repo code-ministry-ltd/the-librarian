@@ -201,6 +201,104 @@
 }
 
 @layer components {
+  /* Chromium's native range has a near-black unfilled track even in Manuscript.
+     Paint both segments with our theme tokens; preserve the native keyboard
+     interaction and provide an explicit focus-visible ring on the thumb. */
+  .curator-threshold-slider {
+    appearance: none;
+    height: 20px;
+    background: transparent;
+    --slider-active: color-mix(in srgb, var(--ink-accent) 88%, var(--foreground));
+    --slider-rest: color-mix(in srgb, var(--foreground) 45%, var(--background));
+  }
+
+  .curator-threshold-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    background: linear-gradient(
+      to right,
+      var(--slider-active) var(--threshold-fill),
+      var(--slider-rest) var(--threshold-fill)
+    );
+  }
+
+  .curator-threshold-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--slider-active);
+  }
+
+  .curator-threshold-slider::-moz-range-track {
+    height: 4px;
+    background: var(--slider-rest);
+  }
+
+  .curator-threshold-slider::-moz-range-progress {
+    height: 4px;
+    background: var(--slider-active);
+  }
+
+  .curator-threshold-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--slider-active);
+  }
+
+  .curator-threshold-slider:focus-visible {
+    /* The browser outlines the whole input box; the thumb has its own ring. */
+    outline: none;
+  }
+
+  /* Keep vendor pseudo-elements separate: an unsupported selector invalidates
+     the entire selector list in older engines. */
+  .curator-threshold-slider:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--foreground);
+    outline-offset: 3px;
+  }
+
+  .curator-threshold-slider:focus-visible::-moz-range-thumb {
+    outline: 2px solid var(--foreground);
+    outline-offset: 3px;
+  }
+
+  /* Forced-colors suppresses gradient tracks. Let the browser paint its own
+     high-contrast range control and focus outline instead of leaving a lone
+     thumb with no visible scale. */
+  @media (forced-colors: active) {
+    .curator-threshold-slider {
+      appearance: auto;
+    }
+
+    .curator-threshold-slider::-webkit-slider-thumb {
+      appearance: auto;
+    }
+
+    .curator-threshold-slider::-moz-range-thumb {
+      appearance: auto;
+    }
+
+    .curator-threshold-slider::-webkit-slider-runnable-track {
+      background: revert;
+    }
+
+    .curator-threshold-slider::-moz-range-track {
+      background: revert;
+    }
+
+    .curator-threshold-slider::-moz-range-progress {
+      background: revert;
+    }
+
+    .curator-threshold-slider:focus-visible {
+      outline: auto;
+    }
+  }
+
   /* Editorial prose for the vault reader. Scoped so the dashboard's
      dense 14px UI body stays where it is and only the markdown reader
      gets the 16px / 65–75ch reading-room ramp. Replaces the dead

@@ -1,24 +1,34 @@
 "use client";
 
-// Intake job-level config (spec 043 C5b + spec 045 D-3). Enable + cadence.
-// Editorial rebuild — no card chrome (the parent tab owns the container);
-// SectionLabel field labels, ui-v2 Input + Button, accent checkbox.
+// Intake job-level config (spec 043 C5b + spec 045 D-3). Enable, cadence,
+// and the shared D13 auto-apply threshold. Editorial, no card chrome.
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { SaveConfigResult } from "@/app/curator/actions";
+import {
+  AutoApplyThresholdField,
+  snapThresholdToStop,
+} from "@/components/curator/auto-apply-threshold-field";
 import { Button } from "@/components/ui-v2/button";
+import { Hairline } from "@/components/ui-v2/hairline";
 import { Input } from "@/components/ui-v2/input";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 
 export function IntakeConfigForm({
   enabled: initialEnabled,
   intervalMinutes: initialIntervalMinutes,
+  applyConfidenceThreshold: initialThreshold,
   onSave,
 }: {
   enabled: boolean;
   intervalMinutes: number;
-  onSave: (input: { enabled?: boolean; intervalMinutes?: number }) => Promise<SaveConfigResult>;
+  applyConfidenceThreshold: number;
+  onSave: (input: {
+    enabled?: boolean;
+    intervalMinutes?: number;
+    applyConfidenceThreshold?: number;
+  }) => Promise<SaveConfigResult>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -26,6 +36,7 @@ export function IntakeConfigForm({
   const [error, setError] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [intervalMinutes, setIntervalMinutes] = useState(String(initialIntervalMinutes));
+  const [threshold, setThreshold] = useState(snapThresholdToStop(initialThreshold));
 
   useEffect(() => {
     if (!saved) return;
@@ -43,7 +54,13 @@ export function IntakeConfigForm({
       return;
     }
     startTransition(async () => {
-      const result = await onSave({ enabled, intervalMinutes: minutes });
+      const result = await onSave({
+        enabled,
+        intervalMinutes: minutes,
+        // The value is shared with Grooming. Do not overwrite another tab's
+        // newer edit when this form only changed cadence or enablement.
+        ...(threshold !== initialThreshold ? { applyConfidenceThreshold: threshold } : {}),
+      });
       if (result.ok) {
         setSaved(true);
         router.refresh();
@@ -104,6 +121,19 @@ export function IntakeConfigForm({
         </p>
       </div>
 
+      <Hairline />
+
+      <AutoApplyThresholdField
+        id="intake-auto-apply-threshold"
+        value={threshold}
+        sharedWith="Grooming"
+        onChange={(value) => {
+          setThreshold(value);
+          setSaved(false);
+          setError(null);
+        }}
+      />
+
       {error ? (
         <p
           role="alert"
@@ -122,7 +152,7 @@ export function IntakeConfigForm({
       ) : null}
 
       <Button type="submit" variant="primary" className="self-start" disabled={pending}>
-        {pending ? "Saving…" : "Save schedule"}
+        {pending ? "Saving…" : "Save settings"}
       </Button>
     </form>
   );

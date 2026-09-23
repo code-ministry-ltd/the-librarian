@@ -104,10 +104,9 @@ describe("GroomingConfigForm", () => {
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(onSave).toHaveBeenCalledTimes(1);
     const patch = onSave.mock.calls[0]![0];
-    expect(patch).toMatchObject({
-      enabled: false,
-      applyConfidenceThreshold: 0.8,
-    });
+    expect(patch).toMatchObject({ enabled: false });
+    // A schedule-only save must not undo a newer shared setting from Intake.
+    expect(patch).not.toHaveProperty("applyConfidenceThreshold");
     // The per-slice interval control is retired (plan 046 T4); the form no longer
     // carries an intervalMinutes patch field.
     expect("intervalMinutes" in patch).toBe(false);
@@ -119,6 +118,11 @@ describe("GroomingConfigForm", () => {
     // vault file now; its dashboard editor is D7), so the patch must not set it.
     expect("promptAddendum" in patch).toBe(false);
     expect(screen.getByText("Saved.")).toBeTruthy();
+  });
+
+  it("labels the action as saving settings including the threshold", () => {
+    render(<GroomingConfigForm initial={config} onSave={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeTruthy();
   });
 
   it("names the proposal frequency at every threshold stop, in the honest direction", () => {

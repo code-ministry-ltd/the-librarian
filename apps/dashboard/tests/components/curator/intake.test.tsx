@@ -1,5 +1,5 @@
 import type { IntakeOperation, IntakeRun } from "@librarian/core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
@@ -44,22 +44,98 @@ describe("IntakeConfigForm", () => {
     const onSave = vi.fn(async (_input: { enabled?: boolean; intervalMinutes?: number }) => ({
       ok: true as const,
     }));
-    render(<IntakeConfigForm enabled={false} intervalMinutes={5} onSave={onSave} />);
+    render(
+      <IntakeConfigForm
+        enabled={false}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.8}
+        onSave={onSave}
+      />,
+    );
 
     const toggle = screen.getByRole("checkbox");
     expect((toggle as HTMLInputElement).checked).toBe(false);
     await userEvent.click(toggle);
-    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
 
     expect(onSave).toHaveBeenCalledTimes(1);
-    // The save now carries the cadence alongside the toggle (spec 045 D-3).
+    // An unchanged threshold must not overwrite a newer value from the other tab.
     expect(onSave.mock.calls[0]![0]).toEqual({ enabled: true, intervalMinutes: 5 });
     expect(await screen.findByText("Saved.")).toBeTruthy();
   });
 
+  it("shows the shared threshold in Intake and saves the chosen stop with the schedule", async () => {
+    const onSave = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.75}
+        onSave={onSave}
+      />,
+    );
+    const slider = screen.getByRole("slider", { name: "Auto-apply threshold" });
+    expect(slider).toHaveValue("0.8");
+    expect(slider).toHaveAttribute("aria-valuetext", "0.8 — Often raises proposals");
+    expect(screen.getByText(/shared with grooming/i)).toBeTruthy();
+    expect(screen.getByText(/protected memories and forced submissions/i)).toBeTruthy();
+
+    fireEvent.change(slider, { target: { value: "0" } });
+    expect(slider).toHaveValue("0");
+    expect(slider).toHaveStyle({ "--threshold-fill": "0%" });
+    expect(slider).toHaveAttribute("aria-valuetext", "0.0 — Never raises proposals");
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onSave).toHaveBeenCalledWith({
+      enabled: true,
+      intervalMinutes: 5,
+      applyConfidenceThreshold: 0,
+    });
+  });
+
+  it("does not overwrite a newer shared threshold when only the intake schedule changes", async () => {
+    const onSave = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.8}
+        onSave={onSave}
+      />,
+    );
+    await userEvent.clear(screen.getByLabelText(/run every \(minutes\)/i));
+    await userEvent.type(screen.getByLabelText(/run every \(minutes\)/i), "15");
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(onSave).toHaveBeenCalledWith({ enabled: true, intervalMinutes: 15 });
+  });
+
+  it("snaps an old off-grid threshold when intake settings are saved", async () => {
+    const onSave = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.75}
+        onSave={onSave}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(onSave).toHaveBeenCalledWith({
+      enabled: true,
+      intervalMinutes: 5,
+      applyConfidenceThreshold: 0.8,
+    });
+  });
+
   it("surfaces a save error", async () => {
     const onSave = vi.fn(async () => ({ ok: false as const, error: "boom" }));
-    render(<IntakeConfigForm enabled={true} intervalMinutes={5} onSave={onSave} />);
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.8}
+        onSave={onSave}
+      />,
+    );
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
   });

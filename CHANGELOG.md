@@ -9,6 +9,24 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.25.0] — 2026-09-23
+
+### Added
+
+- **Intake now shows the auto-apply threshold alongside Grooming.** Both sliders
+  read and write the same setting; there is no second threshold to drift. The
+  Intake admin config exposes this shared value and accepts an optional bounded
+  update. The form explains why archive, split, protected, and forced changes can
+  still become proposals even at 0, and that existing proposals stay in the queue.
+
+### Fixed
+
+- **The threshold slider no longer has a black unfilled track in the light
+  theme.** Its track, thumb, and keyboard focus use the dashboard palette in
+  both themes, with the selected portion visible in Chromium. Forced-colors
+  mode restores the native high-contrast track and keyboard focus. The Firefox
+  progress track is styled, but has not been browser-verified.
+
 ## [1.24.0] — 2026-09-23
 
 ### Fixed
@@ -4627,6 +4645,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.25.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.9...v1.24.0
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0

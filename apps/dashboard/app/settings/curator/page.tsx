@@ -137,6 +137,7 @@ export default async function CuratorSettingsPage() {
                 <IntakeConfigForm
                   enabled={intakeConfig.enabled}
                   intervalMinutes={intakeConfig.intervalMinutes}
+                  applyConfidenceThreshold={intakeConfig.applyConfidenceThreshold}
                   onSave={setIntakeConfigAction}
                 />
               ) : null}

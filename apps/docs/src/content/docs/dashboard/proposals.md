@@ -29,8 +29,11 @@ content diff. Shelf labels are display text; hover them to recover the stable sh
 
 ### The curator's plan
 
-When an intake submission lands in the queue below the auto-apply threshold,
-the card also shows the **curator's plan** — exactly what it wanted to do:
+When an intake submission lands in the queue — whether below the shared
+[auto-apply threshold](/guides/configuring-the-curator/#the-one-rule-that-governs-what-happens-automatically)
+or because it needs review regardless of confidence — the card also shows the
+**curator's plan** for eligible create/update submissions: exactly what it wanted
+to do:
 
 - *"Wanted to **augment** ‹Elaine› with: …"* — with a preview diff of the target
   memory as it would look **if the plan were applied**;

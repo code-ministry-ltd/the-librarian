@@ -26,10 +26,23 @@ const config: GroomingConfig = {
 
 describe("IntakeConfigForm — sweep cadence", () => {
   it("renders the current interval and saves it via setConfig({intervalMinutes})", async () => {
-    const onSave = vi.fn(async (_input: { enabled?: boolean; intervalMinutes?: number }) => ({
-      ok: true as const,
-    }));
-    render(<IntakeConfigForm enabled={true} intervalMinutes={5} onSave={onSave} />);
+    const onSave = vi.fn(
+      async (_input: {
+        enabled?: boolean;
+        intervalMinutes?: number;
+        applyConfidenceThreshold?: number;
+      }) => ({
+        ok: true as const,
+      }),
+    );
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.8}
+        onSave={onSave}
+      />,
+    );
 
     const minutes = screen.getByLabelText(/run every \(minutes\)/i) as HTMLInputElement;
     expect(minutes.value).toBe("5");
@@ -45,7 +58,14 @@ describe("IntakeConfigForm — sweep cadence", () => {
 
   it("rejects a non-positive interval client-side without calling onSave", async () => {
     const onSave = vi.fn(async () => ({ ok: true as const }));
-    render(<IntakeConfigForm enabled={true} intervalMinutes={5} onSave={onSave} />);
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.8}
+        onSave={onSave}
+      />,
+    );
 
     const minutes = screen.getByLabelText(/run every \(minutes\)/i);
     await userEvent.clear(minutes);
@@ -61,7 +81,14 @@ describe("IntakeConfigForm — sweep cadence", () => {
       ok: false as const,
       error: "intervalMinutes must be an integer ≥ 1",
     }));
-    render(<IntakeConfigForm enabled={true} intervalMinutes={5} onSave={onSave} />);
+    render(
+      <IntakeConfigForm
+        enabled={true}
+        intervalMinutes={5}
+        applyConfidenceThreshold={0.8}
+        onSave={onSave}
+      />,
+    );
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(screen.getByText(/Error: intervalMinutes must be an integer ≥ 1/)).toBeTruthy();
   });

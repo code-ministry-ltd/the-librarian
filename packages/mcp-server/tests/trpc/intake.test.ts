@@ -55,6 +55,7 @@ async function trpcPost<T>(server: ServerHandle, path: string, input?: unknown):
 interface IntakeConfig {
   enabled: boolean;
   intervalMinutes: number;
+  applyConfidenceThreshold: number;
   consumer: {
     providerId: string;
     providerExists: boolean;
@@ -211,7 +212,7 @@ describe("tRPC intake surface", () => {
       const response = await fetch(`${server.trpcUrl}/trpc/intake.setConfig`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
-        body: JSON.stringify({ intervalMinutes: 0 }),
+        body: JSON.stringify({ intervalMinutes: 0, enabled: true, applyConfidenceThreshold: 0 }),
       });
       expect(response.status).toBeGreaterThanOrEqual(400);
       const json = (await response.json()) as { error?: { message?: string } };
@@ -220,6 +221,58 @@ describe("tRPC intake surface", () => {
       // The rejected write did not persist — the interval stays at its default.
       const config = await trpcGet<IntakeConfig>(server, "intake.config");
       expect(config.intervalMinutes).toBe(5);
+      expect(config.enabled).toBe(false);
+      expect(config.applyConfidenceThreshold).toBe(0.8);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("the intake threshold updates the single setting shared with grooming", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      expect((await trpcGet<IntakeConfig>(server, "intake.config")).applyConfidenceThreshold).toBe(
+        0.8,
+      );
+      const saved = await trpcPost<IntakeConfig>(server, "intake.setConfig", {
+        applyConfidenceThreshold: 0,
+      });
+      expect(saved.applyConfidenceThreshold).toBe(0);
+      expect((await trpcGet<IntakeConfig>(server, "intake.config")).applyConfidenceThreshold).toBe(
+        0,
+      );
+      const grooming = await trpcGet<{ applyConfidenceThreshold: number }>(
+        server,
+        "grooming.config",
+      );
+      expect(grooming.applyConfidenceThreshold).toBe(0);
+      await trpcPost(server, "grooming.setConfig", { applyConfidenceThreshold: 0.5 });
+      expect((await trpcGet<IntakeConfig>(server, "intake.config")).applyConfidenceThreshold).toBe(
+        0.5,
+      );
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("rejects an out-of-range threshold without changing intake enablement or cadence", async () => {
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.trpcUrl}/trpc/intake.setConfig`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
+        body: JSON.stringify({
+          enabled: true,
+          intervalMinutes: 30,
+          applyConfidenceThreshold: -0.1,
+        }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(await trpcGet<IntakeConfig>(server, "intake.config")).toMatchObject({
+        enabled: false,
+        intervalMinutes: 5,
+        applyConfidenceThreshold: 0.8,
+      });
     } finally {
       await server.stop();
     }

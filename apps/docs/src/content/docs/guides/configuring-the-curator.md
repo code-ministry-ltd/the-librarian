@@ -35,16 +35,20 @@ reason not to.
 The curator applies safe changes itself and asks you about risky ones:
 
 - **Create, update, and merge** are applied automatically **when the curator is
-  confident enough** — the **Auto-apply threshold** slider on
-  [Settings → Curator](/dashboard/curator/) is the single knob, defaulting to a
-  cautious 0.8. **Raise it to review more proposals; lower it to let the curator
-  apply more unattended.**
+  confident enough**. The **Auto-apply threshold** slider appears in **both Intake
+  and Grooming** under [Settings → Curator](/dashboard/curator/). These are two views
+  of **the same setting**, defaulting to 0.8; saving it in either tab changes both
+  jobs. **Raise it to review more proposals; lower it to let the curator apply more
+  unattended.**
 - **Archive and split** — the only operations that lose or reshape information —
   **always** become [proposals](/dashboard/proposals/) for you to approve, no matter
-  how confident the curator is.
+  how confident the curator is. Changes to memories marked `requires_approval` and
+  submissions explicitly marked `forceProposal` also require review.
 
-So you are never surprised by a memory vanishing; the most a confident curator does
-on its own is add and tidy.
+Even at **0**, these exceptions can produce Intake proposals. Lowering the threshold
+also does not remove proposals already in the queue; review or reject those
+separately. So you are never surprised by a memory vanishing — the most a
+confident curator does on its own is add and tidy.
 
 ## Choosing a model
 

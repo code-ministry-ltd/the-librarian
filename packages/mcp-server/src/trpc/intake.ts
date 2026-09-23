@@ -9,17 +9,19 @@
 // All admin-gated — there is deliberately NO consumer-agent surface for intake
 // control. This router is read-only aggregation for the dashboard's Intake
 // section; the provider/model WRITE surface is the existing `llm.setConsumerConfig`
-// (not duplicated here). The writes `setConfig` owns are the intake enablement toggle
-// (`curator.intake.enabled`) and the sweep cadence (`curator.intake.interval_minutes`,
-// spec 045 D-3).
+// (not duplicated here). The writes `setConfig` owns are the intake enablement
+// toggle, sweep cadence, and the single confidence threshold shared with
+// Grooming (D13).
 
 import type { IntakeTickResult, LibrarianStore, ListIntakeRunsInput } from "@librarian/core";
 import {
   isIntakeEnabled,
+  readApplyConfidenceThreshold,
   readConsumerConfig,
   readIntakeInterval,
   runIntakeTick,
   setIntakeEnabled,
+  writeApplyConfidenceThreshold,
   writeIntakeInterval,
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
@@ -43,6 +45,8 @@ function gatherIntakeConfig(store: LibrarianStore) {
   return {
     enabled: isIntakeEnabled(store),
     intervalMinutes: readIntakeInterval(store).intervalMinutes,
+    // One shared D13 setting, not a separate intake threshold.
+    applyConfidenceThreshold: readApplyConfidenceThreshold(store),
     consumer: readConsumerConfig(store, "intake"),
   };
 }
@@ -51,19 +55,19 @@ export const intakeRouter = router({
   // Intake's configured state (enablement + the read-only per-consumer view).
   config: adminProcedure.query(({ ctx }) => gatherIntakeConfig(ctx.store)),
 
-  // Update intake's NON-LLM config: the enablement toggle and/or the sweep cadence
-  // (spec 045 D-3). Both fields are optional so the dashboard can patch one without
-  // the other. The enable setting is authoritative (spec 043 D-E) — toggling off
-  // actually disables the job. `intervalMinutes` defers its validation to the core
-  // `writeIntakeInterval` (the single source of truth: integer ≥ 1); its teaching
-  // error is surfaced as a BAD_REQUEST tRPC error rather than a 500. Returns the
-  // fresh readable config.
+  // Partial admin patch: enablement, cadence, and the SAME D13 threshold that
+  // grooming.config exposes. The threshold is schema-validated before any writes;
+  // cadence validation runs before enablement/threshold so a bad interval cannot
+  // partially apply the other fields. Returns the fresh shared value.
   setConfig: adminProcedure
     .input(
-      z.strictObject({ enabled: z.boolean().optional(), intervalMinutes: z.number().optional() }),
+      z.strictObject({
+        enabled: z.boolean().optional(),
+        intervalMinutes: z.number().optional(),
+        applyConfidenceThreshold: z.number().finite().min(0).max(1).optional(),
+      }),
     )
     .mutation(({ ctx, input }) => {
-      if (input.enabled !== undefined) setIntakeEnabled(ctx.store, input.enabled);
       if (input.intervalMinutes !== undefined) {
         try {
           writeIntakeInterval(ctx.store, { intervalMinutes: input.intervalMinutes });
@@ -75,6 +79,10 @@ export const intakeRouter = router({
           });
         }
       }
+      if (input.applyConfidenceThreshold !== undefined) {
+        writeApplyConfidenceThreshold(ctx.store, input.applyConfidenceThreshold);
+      }
+      if (input.enabled !== undefined) setIntakeEnabled(ctx.store, input.enabled);
       return gatherIntakeConfig(ctx.store);
     }),
 

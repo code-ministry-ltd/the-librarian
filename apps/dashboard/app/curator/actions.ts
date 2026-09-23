@@ -191,18 +191,17 @@ export async function runIntakeNowAction(): Promise<RunIntakeNowResult> {
   }
 }
 
-// Update intake's NON-LLM config: the enablement toggle (`curator.intake.enabled`,
-// authoritative per spec 043 D-E — toggling off actually disables the job) and/or
-// the sweep cadence (`curator.intake.interval_minutes`, spec 045 D-3). Both fields
-// are optional so the form can patch one without the other; a bad cadence comes back
-// as a server BAD_REQUEST and is surfaced inline by the form.
+// Update intake's NON-LLM config: enablement, sweep cadence, and the ONE
+// confidence threshold shared with grooming. All fields are optional;
+// validation failures return BAD_REQUEST and surface inline.
 export async function setIntakeConfigAction(input: {
   enabled?: boolean;
   intervalMinutes?: number;
+  applyConfidenceThreshold?: number;
 }): Promise<SaveConfigResult> {
   try {
     await serverTRPC.intake.setConfig.mutate(input);
-    revalidatePath("/curator");
+    revalidatePath("/settings/curator");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
