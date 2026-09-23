@@ -48,7 +48,7 @@ test.describe("unified curator dashboard", () => {
     // Read the current state, flip it, save, and confirm it persisted on reload.
     const before = await toggle.isChecked();
     await toggle.setChecked(!before);
-    await form.getByRole("button", { name: /Save schedule/i }).click();
+    await form.getByRole("button", { name: /Save settings/i }).click();
     await expect(form.getByText("Saved.")).toBeVisible();
 
     await page.reload();
@@ -63,7 +63,7 @@ test.describe("unified curator dashboard", () => {
     await intakeAfter
       .getByRole("form", { name: "Intake configuration form" })
       .getByRole("button", {
-        name: /Save schedule/i,
+        name: /Save settings/i,
       })
       .click();
     await expect(
