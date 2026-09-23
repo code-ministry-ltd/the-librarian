@@ -41,6 +41,32 @@ const THEMES = ["light", "dark"] as const;
 // WCAG 2.1 Level AA — the product's own accessibility bar (PRODUCT.md).
 const WCAG_AA_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
+test("Expressive Code blocks are keyboard-focusable and scroll with arrow keys", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/connect/opencode/");
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+
+  const codeBlocks = page.locator(".expressive-code pre");
+  const focusableValues = await codeBlocks.evaluateAll((blocks) =>
+    blocks.map((block) => block.getAttribute("tabindex")),
+  );
+  expect(focusableValues.length).toBeGreaterThan(0);
+  expect(focusableValues.every((value) => value === "0")).toBe(true);
+
+  const scrollableBlock = page.locator('.expressive-code pre[data-language="sh"]').first();
+  const dimensions = await scrollableBlock.evaluate((block) => ({
+    width: block.clientWidth,
+    scrollWidth: block.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.width);
+  await scrollableBlock.scrollIntoViewIfNeeded();
+  await scrollableBlock.press("ArrowRight");
+  await expect.poll(() => scrollableBlock.evaluate((block) => block.scrollLeft)).toBeGreaterThan(0);
+});
+
 for (const route of ROUTES) {
   for (const theme of THEMES) {
     test(`${route} meets WCAG 2.1 AA in ${theme} mode`, async ({ page }) => {

@@ -3,6 +3,8 @@ import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightLinksValidator from "starlight-links-validator";
 
+/** @typedef {{ type: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }} HastNode */
+
 // Astro defaults to a static build; the docs site is plain static HTML served
 // by Cloudflare Pages (spec K2), so the output is pinned explicitly.
 // https://docs.astro.build/en/reference/configuration-reference/
@@ -25,6 +27,30 @@ export default defineConfig({
         // Reuses the default footer and adds a dependency-free image lightbox
         // (content images enlarge in a native <dialog>).
         Footer: "./src/components/Footer.astro",
+      },
+      expressiveCode: {
+        plugins: [
+          {
+            name: "keyboard-accessible-code-blocks",
+            hooks: {
+              postprocessRenderedBlock({ renderData }) {
+                // Code can overflow at different viewport widths and zoom levels.
+                // Make every block focusable in the static HTML so keyboard users
+                // can reach and scroll it without depending on client-side JS.
+                /** @param {HastNode} node */
+                const makePreFocusable = (node) => {
+                  if (node.type !== "element") return;
+                  if (node.tagName === "pre") {
+                    node.properties ??= {};
+                    node.properties.tabIndex = 0;
+                  }
+                  for (const child of node.children ?? []) makePreFocusable(child);
+                };
+                makePreFocusable(renderData.blockAst);
+              },
+            },
+          },
+        ],
       },
       // Fails the build on broken INTERNAL links/anchors over the built site.
       // External links are never network-checked (they'd flake), satisfying

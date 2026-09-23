@@ -9,6 +9,15 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.24.0] — 2026-09-23
+
+### Fixed
+
+- **Scrollable documentation code blocks are keyboard-accessible.** Expressive
+  Code now renders a focusable `<pre>` in the static HTML, so keyboard users can
+  reach code that overflows at narrow widths or high zoom. The focus-visible
+  outline uses the Reading Room accent.
+
 ## [1.23.9] — 2026-09-21
 
 ### Fixed
@@ -4618,6 +4627,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.24.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.9...v1.24.0
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1
 [1.23.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.21.2...v1.22.0

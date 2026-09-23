@@ -314,6 +314,14 @@ site-search button[data-open-modal] {
   --ec-frm-trmTtbDotsOpa: 0;
 }
 
+/* Expressive Code blocks may scroll horizontally at narrow widths or high zoom.
+ * Their server-rendered tabindex makes them keyboard reachable; keep the focus
+ * indicator in the same rubric accent as the rest of the docs. */
+.expressive-code pre[tabindex="0"]:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
+
 /* ---- Image lightbox (native <dialog>; see components/Footer.astro) ------ */
 
 /* A theme-aware veil behind the enlarged image. */
