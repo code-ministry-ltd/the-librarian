@@ -6,6 +6,12 @@
 
 import type { LibrarianStore, Principal } from "@librarian/core";
 
+export interface MemoryCorrectionWakeRequest {
+  memory_id: string;
+  snapshot_digest: string;
+  principal: Principal;
+}
+
 export interface ToolContext {
   /**
    * The resolved caller (spec 061 SC 4) — the one identity currency the tool layer reads.
@@ -17,6 +23,8 @@ export interface ToolContext {
   role: "admin" | "agent";
   /** @deprecated derive from principal: `principal.boundActorId`. */
   agentId?: string | undefined;
+  /** Wake durable correction work after a successful flag+marker persist. */
+  wakeMemoryCorrection?: (request: MemoryCorrectionWakeRequest) => void;
 }
 
 export interface McpTextContent {

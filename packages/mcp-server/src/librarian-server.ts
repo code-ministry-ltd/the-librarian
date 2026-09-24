@@ -3,7 +3,7 @@
 // `createLibrarianServer(options)` owns what `bin/http.ts` used to boot
 // imperatively: store construction, the AuthConfig, both HTTP listeners (the
 // public agent surface on :3838 and the internal admin tRPC API on :3840, ADR
-// 0008 P1), the boot migrations, the five background schedulers, and shutdown. It
+// 0008 P1), the boot migrations, the background schedulers, and shutdown. It
 // returns a handle — `{ start, stop, store, internals }` — so the same server
 // the bin runs can be assembled from tests without spawning a subprocess, and so
 // a downstream integrator (the Teams edition, ADR 0011) can compose the same
@@ -51,6 +51,7 @@ import type { AuthConfig } from "./http/auth.js";
 import { assertPluginRoutes } from "./http/routes.js";
 import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
+import { createMemoryCorrectionRuntime } from "./memory-correction-runtime.js";
 import {
   type ActorDisplayProvider,
   type GuardedAuthProvider,
@@ -285,8 +286,8 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // The store construction site — the vaultRouter provider seam's delivery point (spec 062 T1,
   // discharging spec 060 review residual 2). The resolved router (above) is threaded INTO
   // createLibrarianStore; with none supplied, the store defaults to `defaultVaultRouter` and is
-  // byte-identical. At T1 the store STORES the router (exposed as `store.vaultRouter`) but reads
-  // it for no decision yet — every path still hard-codes the vault root. exactOptionalProperty-
+  // byte-identical. The correction runtime reads the stored router to enumerate and revalidate
+  // exact source/reviewer shelves. exactOptionalProperty-
   // Types: only add the key when a plugin supplied one, so the default path stays byte-identical.
   let refusalLogErrorReported = false;
   const store = createLibrarianStore({
@@ -305,6 +306,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     },
     ...(vaultRouter ? { vaultRouter } : {}),
   });
+  const memoryCorrectionRuntime = createMemoryCorrectionRuntime(store);
 
   const auth: AuthConfig = {
     // No longer a network gate (ADR 0008 P3) — only the dashboard auth-enable
@@ -341,6 +343,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   const providerDelivery = {
     ...(guardedAuthProvider ? { authProvider: guardedAuthProvider } : {}),
     ...(actorDisplayProvider ? { actorDisplayProvider } : {}),
+    wakeMemoryCorrection: memoryCorrectionRuntime.wake,
   };
   const publicServer = createHttpServer({
     store,
@@ -601,8 +604,8 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
-  // The load-bearing scheduler set: backup/intake/grooming/chronicle/transcript order, with
-  // the disabled (interval 0 → null) ones excluded. start()/stop() iterate this,
+  // The load-bearing scheduler set: backup/intake/grooming/chronicle/transcript/correction
+  // order, with interval-disabled pollers excluded. start()/stop() iterate this,
   // preserving today's `?.start()` / `?.stop()` semantics (a null scheduler is a
   // no-op) exactly (ADR 0008 shutdown parity, spec 060 SC 3).
   const schedulers = [
@@ -611,6 +614,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     groomingScheduler,
     chronicleScheduler,
     transcriptSweepScheduler,
+    memoryCorrectionRuntime.scheduler,
   ].filter((scheduler): scheduler is SerialScheduler => scheduler !== null);
 
   const onInternalListening = (): void => {
@@ -662,6 +666,9 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         .runNow()
         .catch((error) => logger.error({ err: error }, "transcript settle-sweep boot scan failed"));
     }
+    void memoryCorrectionRuntime.scheduler
+      .runNow()
+      .catch(() => logger.error("targeted memory correction recovery scan failed"));
     // Honest banner (plan 046 T7/D-6): report each job's LIVE enable state read at
     // log time (not a static boot value), and word it as the two distinct jobs.
     logger.info(
@@ -682,6 +689,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   const runtime: ServerRuntime = {
     schedulers,
     store,
+    drainCorrectionWork: memoryCorrectionRuntime.drain,
     publicServer,
     internalServer,
     publicBind: { port, host },
@@ -735,8 +743,10 @@ interface HttpListener {
  * @internal
  */
 export interface ServerRuntime {
-  /** Live schedulers in start/stop order (backup/intake/grooming/transcript), nulls excluded. */
+  /** Live schedulers in start/stop order, nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
+  /** Stop correction claims and drain its active model/store work before store closure. */
+  readonly drainCorrectionWork: () => Promise<void>;
   /** The store whose `close()` must run AFTER the schedulers stop and BEFORE the listeners close. */
   readonly store: Pick<LibrarianStore, "close" | "flushRefusals">;
   readonly publicServer: HttpListener;
@@ -789,6 +799,7 @@ export async function stopRuntime(runtime: ServerRuntime): Promise<void> {
   // Stop the job timers before closing the store — a tick writes through the same
   // store, so neither must fire after store.close().
   for (const scheduler of runtime.schedulers) scheduler.stop();
+  await runtime.drainCorrectionWork();
   // A finite token-bucket overflow has no later refusal to trigger its counted
   // `dropped` row. Drain accepted writes and materialise that row before the
   // process closes the store — but never let a wedged volume park shutdown: the

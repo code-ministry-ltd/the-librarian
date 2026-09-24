@@ -44,6 +44,25 @@ const REMOVED_TOOL_NAMES = [
   "conv_state_clear",
 ];
 
+function flagReasonDescription(): string {
+  const inputSchema: unknown = toolsByName.get("flag_memory")!.inputSchema;
+  if (typeof inputSchema !== "object" || inputSchema === null || !("properties" in inputSchema)) {
+    throw new Error("flag_memory input schema has no properties object");
+  }
+  const properties = inputSchema.properties;
+  if (typeof properties !== "object" || properties === null || !("reason" in properties)) {
+    throw new Error("flag_memory input schema has no reason property");
+  }
+  const reason = properties.reason;
+  if (typeof reason !== "object" || reason === null || !("description" in reason)) {
+    throw new Error("flag_memory reason property has no description");
+  }
+  if (typeof reason.description !== "string") {
+    throw new Error("flag_memory reason description is not a string");
+  }
+  return reason.description;
+}
+
 describe("MCP tool registry contract", () => {
   it("registers exactly the expected set of tool names", () => {
     const actual = [...toolsByName.keys()].sort();
@@ -112,12 +131,24 @@ describe("MCP tool descriptions carry their protocols (rethink T12)", () => {
     expect(description("remember")).not.toMatch(/review queue/i);
   });
 
-  it("flag_memory: wrong/outdated memory, reason required, routes to review + demotes", () => {
-    expect(description("flag_memory")).toMatch(/wrong|incorrect/i);
-    expect(description("flag_memory")).toMatch(/outdated/i);
-    expect(description("flag_memory")).toMatch(/reason/i);
-    expect(description("flag_memory")).toMatch(/review/i);
-    expect(description("flag_memory")).toMatch(/demotes/i);
+  it("flag_memory: correction outcomes are bounded, private-aware, and relayed honestly", () => {
+    const flagDescription = description("flag_memory");
+    expect(flagDescription).toMatch(/wrong|incorrect/i);
+    expect(flagDescription).toMatch(/outdated/i);
+    expect(flagDescription).toMatch(/reason/i);
+    expect(flagDescription).toMatch(/never call while private/i);
+    expect(flagDescription).toMatch(/safe exact-claim removal may apply automatically/i);
+    expect(flagDescription).toMatch(/reviewable proposal may be created/i);
+    expect(flagDescription).toMatch(/unsafe or unreviewable cases remain flagged/i);
+    expect(flagDescription).toMatch(/demotes the memory below unflagged matches/i);
+    expect(flagDescription).toMatch(/relay the returned status to the user/i);
+    expect(flagDescription).toMatch(/queued response is not completion/i);
+    expect(flagDescription).toMatch(/never claim the memory is already corrected/i);
+    expect(flagDescription).toMatch(/whole-memory archive remains a separate human action/i);
+
+    const reasonDescription = flagReasonDescription();
+    expect(reasonDescription).toMatch(/untrusted data/i);
+    expect(reasonDescription).toMatch(/never include secrets/i);
   });
 
   it("store_handoff: contains all five required section headings", () => {

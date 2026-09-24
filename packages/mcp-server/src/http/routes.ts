@@ -53,7 +53,7 @@ import {
 import type { AnyRouter } from "@trpc/server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
-import type { ToolRegistry } from "../mcp/tool.js";
+import type { MemoryCorrectionWakeRequest, ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
 import type { ActorDisplayProvider, GuardedAuthProvider, LibrarianPlugin } from "../plugin.js";
 import { createContextFactory } from "../trpc/context.js";
@@ -121,6 +121,8 @@ export interface RouteDeps {
   authProvider?: GuardedAuthProvider;
   /** Optional actor-display resolver delivered to the internal tRPC context. */
   actorDisplayProvider?: ActorDisplayProvider;
+  /** Post-persist wake callback for durable flagged-correction work. */
+  wakeMemoryCorrection?: (request: MemoryCorrectionWakeRequest) => void;
 }
 
 /**
@@ -145,6 +147,7 @@ interface RouteContext {
    * always `await`ed.
    */
   provider: AuthProvider;
+  wakeMemoryCorrection?: (request: MemoryCorrectionWakeRequest) => void;
 }
 
 /**
@@ -298,6 +301,7 @@ export function createRouteHandler(
         toolRegistry,
         provider,
         surface,
+        ...(deps.wakeMemoryCorrection ? { wakeMemoryCorrection: deps.wakeMemoryCorrection } : {}),
         path: url.pathname,
       };
 
@@ -665,7 +669,10 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   const response = await handleMcpPayload(
     store,
     payload,
-    { principal: authed.principal },
+    {
+      principal: authed.principal,
+      ...(ctx.wakeMemoryCorrection ? { wakeMemoryCorrection: ctx.wakeMemoryCorrection } : {}),
+    },
     ctx.toolRegistry,
   );
   if (response === null) return sendEmpty(res);

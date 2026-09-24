@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 import pytest
+
 from librarian.provider import TOOL_NAMES, tool_schemas
 
 EXPECTED_NAMES = [
@@ -97,6 +98,21 @@ def test_descriptions_carry_their_protocols_within_budget() -> None:
         assert len(schema["description"].encode("utf-8")) <= 1024  # ≤1KB each (spec §5.1)
     # The descriptions are a teaching surface: pin the protocol markers.
     assert "flag_memory" in by_name["recall"]["description"]
+    flag_description = by_name["flag_memory"]["description"]
+    for marker in (
+        "Never call while private.",
+        "safe exact-claim removal may apply automatically",
+        "reviewable proposal may be created",
+        "Unsafe or unreviewable cases remain flagged for human review.",
+        "The flag also demotes the memory below unflagged matches in recall.",
+        "Relay the returned status to the user",
+        "a queued response is not completion",
+        "Whole-memory Archive remains a separate human action.",
+    ):
+        assert marker in flag_description
+    reason_description = by_name["flag_memory"]["parameters"]["properties"]["reason"]["description"]
+    assert "untrusted data" in reason_description
+    assert "never include secrets" in reason_description
     for heading in ("Start & intent", "Journey", "Current state", "What's left", "Open questions"):
         assert heading in by_name["store_handoff"]["description"]
     # Creation is explicit-request-only (mirrors the server teaching surface).
@@ -114,7 +130,14 @@ def test_schemas_are_fresh_copies_per_call() -> None:
 
 # ---- parity against the server's TS sources (monorepo-only) ----
 
-_TOOLS_DIR = Path(__file__).resolve().parents[3] / "packages" / "mcp-server" / "src" / "mcp" / "tools"
+_TOOLS_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "packages"
+    / "mcp-server"
+    / "src"
+    / "mcp"
+    / "tools"
+)
 
 # tool name → (definition file, file holding its properties block)
 _TS_SOURCES = {
@@ -126,6 +149,17 @@ _TS_SOURCES = {
     "claim_handoff": ("claim-handoff.ts", "claim-handoff.ts"),
     "search_references": ("search-references.ts", "search-references.ts"),
 }
+
+
+def _typescript_string_expression(ts_text: str, field: str) -> str:
+    literal = r'"(?:\\.|[^"\\])*"'
+    match = re.search(
+        rf"\b{re.escape(field)}:\s*((?:{literal})(?:\s*\+\s*{literal})*)",
+        ts_text,
+        re.S,
+    )
+    assert match is not None, f"TypeScript field {field!r} has no string expression"
+    return "".join(json.loads(part) for part in re.findall(literal, match.group(1)))
 
 
 def _server_required(ts_text: str) -> set[str]:
@@ -153,3 +187,12 @@ def test_parity_with_server_ts_sources() -> None:
         # agent_id, and never names anything the adapter doesn't advertise.
         adapter_required = set(params.get("required", []))
         assert adapter_required >= _server_required(props_text) - {"agent_id"}, name
+        if name == "flag_memory":
+            assert by_name[name]["description"] == _typescript_string_expression(
+                def_text, "description"
+            )
+            reason = re.search(r"\breason:\s*\{([^{}]*)\}", def_text, re.S)
+            assert reason is not None, "flag_memory.reason is missing from the TypeScript schema"
+            assert params["properties"]["reason"]["description"] == _typescript_string_expression(
+                reason.group(1), "description"
+            )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import librarian
 from librarian.commands import register_commands
 
@@ -18,11 +20,15 @@ class _CommandCtx:
         }
 
 
+class _NamedProvider(Protocol):
+    name: str
+
+
 class _MemoryCtx:
     def __init__(self) -> None:
-        self.providers: list[object] = []
+        self.providers: list[_NamedProvider] = []
 
-    def register_memory_provider(self, provider) -> None:
+    def register_memory_provider(self, provider: _NamedProvider) -> None:
         self.providers.append(provider)
 
 
@@ -69,6 +75,9 @@ def test_toggle_private_blocks_writes_only() -> None:
         assert blocked in text
     assert "`recall`" in text
     assert "logs" in text
+    assert "server cannot verify its marker" in text
+    assert "from public context may still finish after switching private" in text
+    assert "does not cancel queued work" in text
 
 
 def test_register_wires_provider_under_memory_loader() -> None:

@@ -33,6 +33,8 @@ export interface DispatchContext {
   role?: ToolContext["role"];
   /** @deprecated supply `principal` instead — legacy token-bound id. */
   agentId?: string | undefined;
+  /** Post-persist wake for a durable flagged-correction work marker. */
+  wakeMemoryCorrection?: ToolContext["wakeMemoryCorrection"];
 }
 
 export async function dispatchMcp(
@@ -116,6 +118,7 @@ function toToolContext(context: DispatchContext): ToolContext {
     principal,
     role: principal.roles.includes("admin") ? "admin" : "agent",
     agentId: principal.boundActorId,
+    ...(context.wakeMemoryCorrection ? { wakeMemoryCorrection: context.wakeMemoryCorrection } : {}),
   };
 }
 
@@ -219,32 +222,37 @@ function toolsForRole(
 // they are docs-only — stripped here so a `tools/list` payload never spends an
 // agent's context on prose it can't act on (docs-site spec K7). The tool-level
 // `description` is the deliberate teaching surface and is preserved verbatim.
+type JsonSchemaValue =
+  null | boolean | number | string | JsonSchemaValue[] | { [key: string]: JsonSchemaValue };
+
 interface WireTool {
   name: string;
   description: string;
-  inputSchema: Record<string, unknown>;
+  inputSchema: { [key: string]: JsonSchemaValue };
 }
 
 function toWireTool(tool: ToolDefinition): WireTool {
-  return {
-    name: tool.name,
-    description: tool.description,
-    inputSchema: stripSchemaDescriptions(tool.inputSchema) as Record<string, unknown>,
-  };
+  const inputSchema = stripSchemaDescriptions(tool.inputSchema);
+  if (inputSchema === null || Array.isArray(inputSchema) || typeof inputSchema !== "object") {
+    throw new Error("MCP tool input schema must be a JSON object.");
+  }
+  return { name: tool.name, description: tool.description, inputSchema };
 }
 
 // Deep-clone a JSON-Schema value with every `description` key removed, so no
 // per-property prose survives onto the wire. Operates on a copy — the registry
 // objects (and the docs generator's source of truth) keep their descriptions.
-function stripSchemaDescriptions(value: unknown): unknown {
+function stripSchemaDescriptions(value: unknown): JsonSchemaValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   if (Array.isArray(value)) return value.map(stripSchemaDescriptions);
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  if (typeof value === "object") {
+    const out: { [key: string]: JsonSchemaValue } = {};
+    for (const [key, child] of Object.entries(value)) {
       if (key === "description") continue;
       out[key] = stripSchemaDescriptions(child);
     }
     return out;
   }
-  return value;
+  throw new Error("MCP tool input schema must contain only JSON-compatible values.");
 }

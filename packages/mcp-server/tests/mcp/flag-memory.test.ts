@@ -1,17 +1,22 @@
 // flag_memory verb (spec 047 / ADR 0006) — and the retirement of verify_memory.
 //
 // An agent flags a memory as incorrect/misleading/outdated with a free-text
-// reason. The flag is route-to-review: it never changes the memory's status
-// and never deletes it; the flagger is the calling agent resolved server-side,
-// never a client-supplied id. Dispatched through handleMcpPayload over a real
-// markdown-backed store (the default backend post-cutover).
+// reason. The tool durably queues targeted asynchronous correction review but
+// does not wait for it or change the memory's status in the flagging turn. The
+// flagger is resolved server-side, never client-supplied. Dispatched through
+// handleMcpPayload over a real markdown-backed store.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type LibrarianStore, createLibrarianStore } from "@librarian/core";
+import {
+  DEFAULT_SHELF,
+  type LibrarianStore,
+  type VaultRouter,
+  createLibrarianStore,
+} from "@librarian/core";
 import { handleMcpPayload } from "@librarian/mcp-server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let store: LibrarianStore | null = null;
 let dataDir = "";
@@ -34,13 +39,21 @@ afterEach(() => {
 type CallResult = { result: { content: { text: string }[] } };
 type ErrResult = { error: { code: number; message: string } };
 
-const call = (name: string, args: Record<string, unknown>): Promise<unknown> =>
-  handleMcpPayload(store as never, {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "tools/call",
-    params: { name, arguments: args },
-  });
+const call = (
+  name: string,
+  args: Record<string, unknown>,
+  context: Parameters<typeof handleMcpPayload>[2] = {},
+): Promise<unknown> =>
+  handleMcpPayload(
+    store as never,
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: args },
+    },
+    context,
+  );
 
 const listToolNames = async (): Promise<string[]> => {
   const res = (await handleMcpPayload(store as never, {
@@ -64,11 +77,93 @@ describe("flag_memory verb", () => {
       reason: "this is outdated",
     });
 
-    expect(text(res)).toMatch(/flag/i);
+    expect(text(res)).toMatch(
+      /targeted correction review was queued; no correction has completed yet/i,
+    );
+    expect(text(res)).toMatch(/tell the user it is queued, not already corrected/i);
     const after = store!.getMemory(memory.id)!;
     expect(after.status).toBe("active"); // route-to-review, never archive
     expect(after.flags).toHaveLength(1);
     expect(after.flags[0]).toMatchObject({ reason: "this is outdated" });
+    expect(after.correction_work?.at(-1)).toMatchObject({
+      status: "pending",
+      shelf_id: "main",
+    });
+  });
+
+  it("reports uncertain persistence when a write error occurs after the flag lands", async () => {
+    const { memory } = store!.createMemory({ agent_id: "codex", title: "Old fact", body: "stale" });
+    const originalForShelf = store!.forShelf.bind(store!);
+    vi.spyOn(store!, "forShelf").mockImplementation((shelf, principal) => {
+      const scoped = originalForShelf(shelf, principal);
+      const originalFlag = scoped.flagMemoryForCorrection.bind(scoped);
+      scoped.flagMemoryForCorrection = (input) => {
+        originalFlag(input);
+        throw new Error("simulated commit failure after persistence");
+      };
+      return scoped;
+    });
+
+    const response = await call("flag_memory", {
+      memory_id: memory.id,
+      reason: "the source is outdated",
+    });
+
+    expect(text(response)).toMatch(/may already be recorded/i);
+    expect(text(response)).not.toMatch(/no flag was recorded/i);
+    const persisted = store!.getMemory(memory.id)!;
+    expect(persisted.flags).toHaveLength(1);
+    expect(persisted.correction_work?.at(-1)).toMatchObject({ status: "pending" });
+  });
+
+  it("wakes correction work only after the durable marker is visible", async () => {
+    const { memory } = store!.createMemory({ agent_id: "codex", title: "Old fact", body: "stale" });
+    let wake: { memory_id: string; snapshot_digest: string } | undefined;
+    let observedStatus: string | undefined;
+
+    await call(
+      "flag_memory",
+      { memory_id: memory.id, reason: "this is outdated" },
+      {
+        principal: { kind: "agent", actorId: "claude", roles: ["agent"] },
+        wakeMemoryCorrection(request) {
+          wake = request;
+          observedStatus = store!.getMemory(memory.id)?.correction_work?.at(-1)?.status;
+        },
+      },
+    );
+
+    expect(observedStatus).toBe("pending");
+    expect(wake).toMatchObject({ memory_id: memory.id });
+    expect(wake?.snapshot_digest).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("routes custom-router flags to manual review without inferring synthetic admin authority", async () => {
+    const customRouter = {
+      shelves: () => [DEFAULT_SHELF],
+      writeTarget: () => DEFAULT_SHELF,
+    } satisfies VaultRouter;
+    store!.close();
+    store = createLibrarianStore({ dataDir, vaultRouter: customRouter });
+    const { memory } = store.createMemory({ agent_id: "codex", title: "Old fact", body: "stale" });
+
+    const result = await call(
+      "flag_memory",
+      {
+        memory_id: memory.id,
+        reason: "this is outdated",
+      },
+      {
+        principal: { kind: "agent", actorId: "claude", roles: ["agent"] },
+      },
+    );
+
+    expect(text(result)).toMatch(/custom vault-router authority cannot be independently verified/i);
+    expect(store.getMemory(memory.id)?.status).toBe("active");
+    expect(store.getMemory(memory.id)?.correction_work?.at(-1)).toMatchObject({
+      status: "manual_review",
+      reason_code: "custom_router_unverified",
+    });
   });
 
   it("stamps the flag with the calling agent resolved from the authenticated context", async () => {

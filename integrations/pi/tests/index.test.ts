@@ -134,6 +134,13 @@ describe("registerCommands (the four-verb sugar, docs/slash-commands.md)", () =>
     expect(sent.at(-1)).toContain("User input: hof_123");
   });
 
+  it("warns that private mode cannot cancel correction work already queued in public context", () => {
+    const prompt = COMMAND_SPECS.find((spec) => spec.name === "toggle-private")!.prompt;
+    expect(prompt).toContain("server cannot verify its marker");
+    expect(prompt).toContain("from public context may still finish after switching private");
+    expect(prompt).toContain("does not cancel queued work");
+  });
+
   it("the /handoff template names all five required headings", () => {
     const handoff = COMMAND_SPECS.find((s) => s.name === "handoff")!;
     for (const heading of [

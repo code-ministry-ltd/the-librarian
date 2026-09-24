@@ -13,6 +13,7 @@ import {
   resolveDataDir,
   seedPrimer,
 } from "@librarian/core";
+import { createMemoryCorrectionRuntime } from "../memory-correction-runtime.js";
 import { handleMcpMessage } from "../mcp/rpc.js";
 import { resolveStdioPrincipal } from "./stdio-principal.js";
 
@@ -57,6 +58,10 @@ const store = createLibrarianStore({ secretKey, dataDir });
 // Idempotent + no-clobber — an operator-edited primer is never touched.
 seedPrimer(store);
 
+const memoryCorrectionRuntime = createMemoryCorrectionRuntime(store);
+memoryCorrectionRuntime.scheduler.start();
+void memoryCorrectionRuntime.scheduler.runNow();
+
 process.stdin.setEncoding("utf8");
 
 let buffer = "";
@@ -90,7 +95,10 @@ async function handleLine(line: string): Promise<void> {
   const method = message.method as string | undefined;
   if (!message.id && method?.startsWith("notifications/")) return;
 
-  const response = await handleMcpMessage(store, message, { principal: resolveStdioPrincipal() });
+  const response = await handleMcpMessage(store, message, {
+    principal: resolveStdioPrincipal(),
+    wakeMemoryCorrection: memoryCorrectionRuntime.wake,
+  });
   if (response) send(response);
 }
 
@@ -98,7 +106,20 @@ function send(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
-function shutdown(): void {
-  store.close();
-  process.exit(0);
+let shutdownStarted = false;
+
+async function shutdown(): Promise<void> {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  memoryCorrectionRuntime.scheduler.stop();
+  try {
+    await memoryCorrectionRuntime.drain();
+  } catch {
+    process.stderr.write("Flagged-memory correction worker drain failed during shutdown.\n");
+  }
+  try {
+    store.close();
+  } finally {
+    process.exit(0);
+  }
 }

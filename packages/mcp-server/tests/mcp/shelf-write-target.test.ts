@@ -202,5 +202,8 @@ describe("flag_memory routing across the principal's shelves (spec 062 review F)
     });
     expect(teamFlag.result).toBeUndefined();
     expect(teamFlag.error?.message).toMatch(/read-only/i);
+    const stillUnflagged = store.forShelf(TEAM).getMemory(team.memory.id);
+    expect(stillUnflagged?.flags ?? []).toEqual([]);
+    expect(stillUnflagged?.correction_work ?? []).toEqual([]);
   });
 });

@@ -1017,13 +1017,14 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
   });
 });
 
-// Flagged-memory review queue (spec 048 PR-2). `listFlagged` surfaces every
-// memory with ≥1 open flag (its `flags` carried along for the reviewer);
-// `resolveFlag` adjudicates one — `dismiss` clears the flags + keeps the memory
-// active, `archive` archives it THEN clears its flags. Admin-gated.
+// Flagged-memory review queue. `listFlagged` surfaces each open flag and the
+// durable correction-work status; correction runs asynchronously. `resolveFlag`
+// remains the explicit human path — dismiss clears flags and keeps the memory
+// active, while archive archives it before clearing flags. Admin-gated.
 describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
   interface FlaggedRow extends MemoryRow {
     flags: { agent_id: string; reason: string; created_at: string }[];
+    correction_work?: { shelf_id: string; status: string }[];
   }
 
   it("memories.listFlagged returns only memories with open flags, carrying their flags", async () => {
@@ -1043,6 +1044,36 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
         agent_id: "scribe",
         reason: "outdated since the rewrite",
       });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.listFlagged includes correction status for flagged rows", async () => {
+    const dataDir = makeTempDir();
+    const flagged = seedMemory(dataDir, { title: "Correction status" });
+    const store = createLibrarianStore({ dataDir });
+    try {
+      store.flagMemoryForCorrection({
+        id: flagged.id,
+        reason: "outdated",
+        agent_id: "scribe",
+        principal_id: "scribe",
+        shelf_id: "main",
+      });
+    } finally {
+      store.close();
+    }
+    const server = await startHttpServer({ dataDir });
+    try {
+      const data = await trpcGet<{ memories: FlaggedRow[]; total: number }>(
+        server,
+        "memories.listFlagged",
+      );
+      const work = data.memories[0]?.correction_work?.at(-1);
+      expect(work?.shelf_id).toBe("main");
+      expect(["pending", "processing", "manual_review"]).toContain(work?.status);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -1074,6 +1105,7 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     try {
       const result = await trpcPost<MemoryRow>(server, "memories.resolveFlag", {
         id: m.id,
+        shelf_id: "main",
         action: "dismiss",
       });
       expect(result.status).toBe("active");
@@ -1092,6 +1124,7 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     try {
       const result = await trpcPost<MemoryRow>(server, "memories.resolveFlag", {
         id: m.id,
+        shelf_id: "main",
         action: "archive",
       });
       expect(result.status).toBe("archived");
@@ -1113,7 +1146,7 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
           "content-type": "application/json",
           authorization: `Bearer ${server.token}`,
         },
-        body: JSON.stringify({ id: "mem_nope", action: "dismiss" }),
+        body: JSON.stringify({ id: "mem_nope", shelf_id: "main", action: "dismiss" }),
       });
       expect(response.status).toBe(404);
       const json = (await response.json()) as TrpcErr;
@@ -1141,7 +1174,7 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
       const resolveResponse = await fetch(`${server.url}/trpc/memories.resolveFlag`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
-        body: JSON.stringify({ id: m.id, action: "dismiss" }),
+        body: JSON.stringify({ id: m.id, shelf_id: "main", action: "dismiss" }),
       });
       expect(resolveResponse.status).toBe(404);
     } finally {

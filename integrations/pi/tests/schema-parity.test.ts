@@ -20,7 +20,7 @@ const HIDDEN_FIELDS = new Set(["agent_id", "conv_id"]);
 
 interface JsonSchemaObject {
   type?: string | string[];
-  properties?: Record<string, { type?: string | string[] }>;
+  properties?: Record<string, { type?: string | string[]; description?: string }>;
   required?: string[];
 }
 
@@ -85,4 +85,13 @@ describe("schema parity with @librarian/mcp-server (drift guard)", () => {
       });
     });
   }
+
+  it("mirrors the flag_memory.reason field guidance verbatim", () => {
+    const serverSchema = serverByName.get("flag_memory")!.inputSchema as JsonSchemaObject;
+    const piSchema = librarianToolSpecs().find((tool) => tool.name === "flag_memory")!
+      .parameters as unknown as JsonSchemaObject;
+    expect(piSchema.properties?.reason?.description).toBe(
+      serverSchema.properties?.reason?.description,
+    );
+  });
 });

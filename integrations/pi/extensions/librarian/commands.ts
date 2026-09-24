@@ -30,7 +30,10 @@ const TOGGLE_ON =
   "Private mode is ON. `[librarian:private=on]` — do not call `remember`, " +
   "`store_handoff`, or `flag_memory` until told otherwise. `recall` and " +
   "`search_references` stay allowed; note that read queries still reach the " +
-  "Librarian server's logs. Remain in this state until explicitly toggled off.";
+  "Librarian server's logs. Private mode is an in-conversation instruction; " +
+  "the server cannot verify its marker. A correction job queued by a flag " +
+  "from public context may still finish after switching private; the toggle " +
+  "does not cancel queued work. Remain in this state until explicitly toggled off.";
 
 const TOGGLE_OFF = "Private mode is OFF. `[librarian:private=off]` — normal operation resumed.";
 

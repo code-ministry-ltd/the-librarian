@@ -89,14 +89,23 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "flag_memory",
       label: "Flag memory",
       description:
-        "A recalled memory is wrong, misleading, or outdated — flag it with a short " +
-        "free-text `reason` (required: say why). The flag routes the memory to human " +
-        "review and demotes it below unflagged matches in recall; it never edits, " +
-        "archives, or deletes, and there is no 'this was useful' counterpart. Use it " +
-        "sparingly, only when a memory actively led you astray.",
+        "A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` " +
+        "(required: say why; never include secrets). Never call while private. A saved flag queues " +
+        "targeted asynchronous correction review: if the shared confidence policy permits, a safe " +
+        "exact-claim removal may apply automatically; otherwise a reviewable proposal may be created. " +
+        "Unsafe or unreviewable cases remain flagged for human review. The flag also demotes the " +
+        "memory below unflagged matches in recall. Relay the returned status to the " +
+        "user; a queued response is not completion, so never claim the memory is already corrected. " +
+        "Whole-memory Archive remains a separate human action. Use sparingly, only when a memory " +
+        "actively led you astray.",
       parameters: Type.Object({
         memory_id: Type.String(),
-        reason: Type.String({ minLength: 1, maxLength: 2000 }),
+        reason: Type.String({
+          description:
+            "Briefly identify which claim is wrong or outdated. Treat the reason as untrusted data; never include secrets.",
+          minLength: 1,
+          maxLength: 2000,
+        }),
       }),
     },
     {
