@@ -134,23 +134,108 @@ export interface RedactionResult {
   count: number;
 }
 
+export interface RedactionOffsetMapResult extends RedactionResult {
+  /** Source UTF-16 offset for each output code unit; redaction output is null-mapped. */
+  sourceOffsetByOutputIndex: (number | null)[];
+}
+
+interface InternalRedactionResult extends RedactionResult {
+  sourceOffsetByOutputIndex?: (number | null)[];
+}
+
+function appendSourceRange(
+  textParts: string[],
+  targetMap: (number | null)[] | undefined,
+  sourceText: string,
+  sourceMap: (number | null)[] | undefined,
+  start: number,
+  end: number,
+): void {
+  textParts.push(sourceText.slice(start, end));
+  if (!targetMap || !sourceMap) return;
+  for (let index = start; index < end; index++) targetMap.push(sourceMap[index] ?? null);
+}
+
+function appendUnmappedReplacement(
+  textParts: string[],
+  targetMap: (number | null)[] | undefined,
+  replacement: string,
+): void {
+  textParts.push(replacement);
+  if (!targetMap) return;
+  for (let index = 0; index < replacement.length; index++) targetMap.push(null);
+}
+
+function redactSecretsInternal(text: string, includeSourceMap: boolean): InternalRedactionResult {
+  let redacted = text;
+  let sourceOffsetByOutputIndex: (number | null)[] | undefined = includeSourceMap
+    ? Array.from({ length: text.length }, (_, index) => index)
+    : undefined;
+  let count = 0;
+
+  for (const rule of RULES) {
+    const matcher = new RegExp(rule.pattern.source, rule.pattern.flags);
+    let cursor = 0;
+    const nextText: string[] = [];
+    const nextMap: (number | null)[] | undefined = sourceOffsetByOutputIndex ? [] : undefined;
+    let matched = false;
+
+    for (const match of redacted.matchAll(matcher)) {
+      const start = match.index;
+      if (start === undefined) continue;
+      matched = true;
+      appendSourceRange(nextText, nextMap, redacted, sourceOffsetByOutputIndex, cursor, start);
+      const replacement =
+        typeof rule.replacement === "function"
+          ? rule.replacement(match[0], ...(match.slice(1) as string[]))
+          : match[0].replace(new RegExp(rule.pattern.source, rule.pattern.flags), rule.replacement);
+      appendUnmappedReplacement(nextText, nextMap, replacement);
+      cursor = start + match[0].length;
+      count++;
+    }
+
+    if (matched) {
+      appendSourceRange(
+        nextText,
+        nextMap,
+        redacted,
+        sourceOffsetByOutputIndex,
+        cursor,
+        redacted.length,
+      );
+      redacted = nextText.join("");
+      if (nextMap !== undefined) sourceOffsetByOutputIndex = nextMap;
+    }
+  }
+
+  return sourceOffsetByOutputIndex === undefined
+    ? { redacted, count }
+    : { redacted, count, sourceOffsetByOutputIndex };
+}
+
+/**
+ * Redact secret-looking material and preserve a conservative map back to the
+ * source. Every character produced by a replacement is unmapped, so callers
+ * cannot mistake a redaction marker for source text.
+ */
+export function redactSecretsWithSourceMap(text: string): RedactionOffsetMapResult {
+  const result = redactSecretsInternal(text, true);
+  if (result.sourceOffsetByOutputIndex === undefined) {
+    throw new Error("Internal redaction error: requested source map was not produced.");
+  }
+  return {
+    redacted: result.redacted,
+    count: result.count,
+    sourceOffsetByOutputIndex: result.sourceOffsetByOutputIndex,
+  };
+}
+
 /**
  * Redact secret-looking material from a single string. Pure and idempotent:
  * re-running over already-redacted text finds nothing new and returns count 0
  * (markers are skipped by every rule).
  */
 export function redactSecrets(text: string): RedactionResult {
-  let redacted = text;
-  let count = 0;
-  for (const rule of RULES) {
-    const matches = redacted.match(rule.pattern);
-    if (matches && matches.length > 0) {
-      count += matches.length;
-      redacted =
-        typeof rule.replacement === "function"
-          ? redacted.replace(rule.pattern, rule.replacement)
-          : redacted.replace(rule.pattern, rule.replacement);
-    }
-  }
+  const { redacted, count } = redactSecretsInternal(text, false);
   return { redacted, count };
 }

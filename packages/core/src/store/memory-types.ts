@@ -14,6 +14,7 @@
 // to a `keyof Memory` union at the call site rather than reopening the type.
 
 import type { MemoryStatus } from "../schemas/common.js";
+import type { MemoryCorrectionSpan } from "../memory-correction.js";
 
 /**
  * An agent's open flag against a memory (spec 047 / ADR 0006). A flag is a
@@ -35,6 +36,8 @@ export interface MemoryFlag {
  */
 export type MemoryCorrectionWorkStatus =
   "pending" | "processing" | "proposal_pending" | "manual_review" | "applied" | "cancelled";
+export type CorrectionManualReviewReasonCode =
+  "no_admin_scope" | "no_worker_scope" | "custom_router_unverified";
 
 export interface MemoryCorrectionWork {
   snapshot_digest: string;
@@ -55,6 +58,27 @@ export interface MemoryCorrectionWork {
 export interface MemoryCorrectionWorkItem {
   memory_id: string;
   work: MemoryCorrectionWork;
+}
+
+export interface MemoryCorrectionProposalReview {
+  source_memory_id: string | null;
+  shelf_id: string;
+  status: "ready" | "blocked";
+  reason_code?: string;
+}
+
+export interface MemoryCorrectionProposalInput {
+  source_memory_id: string;
+  snapshot_digest: string;
+  source_digest: string;
+  flags_digest: string;
+  claim_attempt: number;
+  shelf_id: string;
+  proposed_body: string;
+  spans: readonly MemoryCorrectionSpan[];
+  confidence: number;
+  rationale: string;
+  agent_id: string;
 }
 
 export interface Memory {
@@ -167,8 +191,9 @@ export interface MemoryStore {
     agent_id: string;
     principal_id: string;
     shelf_id: string;
+    manual_review_reason_code?: CorrectionManualReviewReasonCode;
   }) => Memory | null;
-  // Enumerate due markers, reclaiming expired processing leases on the next claim.
+  // Enumerate pending/expired work and terminal proposal outcomes awaiting source reconciliation.
   listDueMemoryCorrections: (at?: string) => MemoryCorrectionWorkItem[];
   // Claim pending/due work or reclaim an expired lease; attempts are bounded.
   claimMemoryCorrection: (input: {
@@ -189,6 +214,46 @@ export interface MemoryStore {
           "next_attempt_at" | "lease_expires_at" | "proposal_id" | "reason_code"
         >
       >;
+    agent_id?: string;
+  }) => MemoryCorrectionWork | null;
+  // Apply server-validated exact spans only if the source, flags, and lease still match.
+  applyMemoryCorrection: (input: {
+    id: string;
+    snapshot_digest: string;
+    claim_attempt: number;
+    spans: readonly MemoryCorrectionSpan[];
+    agent_id?: string;
+  }) => Memory | null;
+  /** Targeted lookup by exact source + reviewed flag snapshot, uncapped and shelf-local. */
+  getMemoryCorrectionProposal: (input: {
+    source_memory_id: string;
+    snapshot_digest: string;
+  }) => Memory | null;
+  /** Synchronous snapshot-checked get-or-create of one single-target correction proposal. */
+  createMemoryCorrectionProposal: (input: MemoryCorrectionProposalInput) => Memory | null;
+  /** Validate the correction-only baseline against this exact shelf and current source snapshot. */
+  inspectMemoryCorrectionProposal: (input: {
+    proposal_id: string;
+    shelf_id: string;
+  }) => MemoryCorrectionProposalReview | null;
+  /** Approve a correction proposal only when its exact-shelf source/flags/content baseline is current. */
+  approveMemoryCorrectionProposal: (input: {
+    proposal_id: string;
+    shelf_id: string;
+    agent_id?: string;
+  }) => Memory | null;
+  /** Reject a correction proposal and leave its source available for manual review. */
+  rejectMemoryCorrectionProposal: (input: {
+    proposal_id: string;
+    shelf_id: string;
+    agent_id?: string;
+  }) => Memory | null;
+  /** Reconcile a durable terminal proposal outcome after a crash between proposal/source writes. */
+  reconcileMemoryCorrectionProposalResolution: (input: {
+    source_memory_id: string;
+    proposal_id?: string;
+    snapshot_digest: string;
+    shelf_id: string;
     agent_id?: string;
   }) => MemoryCorrectionWork | null;
   // Clear every open flag on a memory — the dashboard's adjudication

@@ -37,7 +37,12 @@ export {
   normalizeForFingerprint,
   normalizedTitle,
 } from "./grooming-fingerprint.js";
-export { type RedactionResult, redactSecrets } from "./grooming-redaction.js";
+export {
+  type RedactionOffsetMapResult,
+  type RedactionResult,
+  redactSecrets,
+  redactSecretsWithSourceMap,
+} from "./grooming-redaction.js";
 export {
   type PrepassFinding,
   type PrepassFindingKind,
@@ -50,6 +55,24 @@ export {
   buildBaseCuratorPrompt,
   buildCuratorPrompt,
 } from "./curator-prompt.js";
+export {
+  type CorrectionFlagReason,
+  type MemoryCorrectionCandidateResult,
+  type MemoryCorrectionOutput,
+  type MemoryCorrectionSpan,
+  type ParsedMemoryCorrectionOutput,
+  type PreparedMemoryCorrectionInput,
+  type PreparedMemoryCorrectionResult,
+  buildMemoryCorrectionCandidate,
+  buildMemoryCorrectionMessages,
+  parseMemoryCorrectionOutput,
+  prepareMemoryCorrectionInput,
+} from "./memory-correction.js";
+export {
+  type ProcessMemoryCorrectionWorkOptions,
+  type ProcessMemoryCorrectionWorkResult,
+  processMemoryCorrectionWork,
+} from "./memory-correction-worker.js";
 export {
   type GroomingMemoryInput,
   type GroomingMemoryPatch,
@@ -627,7 +650,15 @@ export {
   searchReferences,
 } from "./store/corpus-index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
-export type { Memory, MemoryStore } from "./store/memory-store.js";
+export type {
+  CorrectionManualReviewReasonCode,
+  Memory,
+  MemoryCorrectionProposalInput,
+  MemoryCorrectionProposalReview,
+  MemoryCorrectionWork,
+  MemoryCorrectionWorkItem,
+  MemoryStore,
+} from "./store/memory-store.js";
 export {
   type AddendumRecord,
   type IntakeInboxOptions,

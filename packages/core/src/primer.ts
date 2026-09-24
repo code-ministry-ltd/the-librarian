@@ -34,7 +34,7 @@ export const PRIMER_MAX_BYTES = 2048;
  */
 export const DEFAULT_PRIMER = `You are connected to The Librarian — durable, shared memory across sessions, agents, and harnesses; recall before answering anything that may have prior context, and remember durable facts, preferences, and decisions as you learn them.
 
-Memory: you HAVE \`recall\` and \`remember\` — use them; do not rely on this window alone. Call \`recall\` before answering whenever prior context may exist, and ALWAYS after a compaction or context reset (earlier facts may be gone from your window but live in memory). Call \`remember\` whenever you learn a durable fact, preference, or decision — fire-and-forget; the curator files it. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason.
+Memory: you HAVE \`recall\` and \`remember\` — use them; do not rely on this window alone. Call \`recall\` before answering whenever prior context may exist, and ALWAYS after a compaction or context reset (earlier facts may be gone from your window but live in memory). Call \`remember\` whenever you learn a durable fact, preference, or decision — fire-and-forget; the curator files it. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason. Relay the returned status: queued review is not completion, so do not claim a correction until its outcome is confirmed.
 
 Handoffs: create a handoff only when the user has explicitly asked for one — to hand work off, call \`store_handoff\` with a document carrying the five required sections — Start & intent, Journey, Current state, What's left, Open questions. To take over work, call \`list_handoffs\`, then \`claim_handoff\` the one you want.
 
@@ -42,7 +42,7 @@ Learning: when asked to extract lessons from a conversation, call \`remember\` o
 
 References: long-form background material is not auto-recalled — call \`search_references\` when the task needs depth.
 
-Private mode: if the user asks to go private or off the record, acknowledge it and stop calling \`remember\`, \`store_handoff\`, and \`flag_memory\` until they toggle back. \`recall\` and \`search_references\` stay available, and those queries reach the server's logs — say so if asked.
+Private mode is an in-conversation instruction; the server cannot verify its marker. If the user asks to go private or off the record, acknowledge it and stop calling \`remember\`, \`store_handoff\`, and \`flag_memory\` until they toggle back. A correction job queued by a flag from public context may still finish after switching private; the toggle does not cancel queued work. \`recall\` and \`search_references\` stay available, and those queries reach the server's logs — say so if asked.
 
 If The Librarian is unreachable, continue without it — never block the user's work.
 `;

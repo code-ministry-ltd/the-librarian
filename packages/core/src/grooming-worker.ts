@@ -11,7 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { CURATOR_PROMPT_VERSION, buildCuratorPrompt } from "./curator-prompt.js";
-import { type ApplyStore, applyOperations } from "./grooming-apply.js";
+import { applyOperations } from "./grooming-apply.js";
 import type {
   EvidenceSlice,
   MemoryEvidenceBundle,
@@ -23,17 +23,18 @@ import { deterministicPrepass } from "./grooming-prepass.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import { validateOperations } from "./grooming-validate.js";
 import type { CurationRun, CurationStore } from "./store/curation-store.js";
+import type { MemoryStore } from "./store/memory-types.js";
 
 /**
  * The store surface ONE grooming run touches (spec 062 SC 7, T6) — the run/operation bookkeeping
  * ({@link CurationStore}, incl. the vault-backed evidence reads `gatherMemoryEvidence` /
- * `listGroomingSlices`) plus the live-memory mutation surface the apply layer needs
- * ({@link ApplyStore}). A full {@link LibrarianStore} satisfies it structurally (it extends both),
+ * `listGroomingSlices`) plus the full raw memory surface ({@link MemoryStore}) for direct and
+ * targeted corrections. A full {@link LibrarianStore} satisfies it structurally,
  * so the pre-existing callers pass their store straight through — byte-identical. The narrower type
  * is what lets the store hand grooming a SHELF-SCOPED view (`groomingStoreForShelf`): the memory
  * reads/writes resolve beneath the shelf's prefix while the run bookkeeping stays vault-singular.
  */
-export type GroomingStore = CurationStore & ApplyStore;
+export type GroomingStore = CurationStore & MemoryStore;
 
 export interface RunCurationCaps {
   maxMemories?: number;

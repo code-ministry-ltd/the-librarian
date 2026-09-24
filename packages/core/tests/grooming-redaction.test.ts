@@ -10,12 +10,48 @@
 // `FAKE…`) so they exercise the FORMAT detection without tripping secret
 // scanners (GitHub push protection / GitGuardian) on what are not real secrets.
 
-import { redactSecrets } from "@librarian/core";
+import { redactSecrets, redactSecretsWithSourceMap } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 const X = "X".repeat(40); // long synthetic filler — satisfies any length floor
 
 describe("redactSecrets", () => {
+  it("maps unredacted UTF-16 code units and marks replacement output unmappable", () => {
+    const source = `😀 Keep. API_KEY=${X} Stale.`;
+    const mapped = redactSecretsWithSourceMap(source);
+    const plain = redactSecrets(source);
+    const markerStart = mapped.redacted.indexOf("[REDACTED:secret]");
+    const staleStart = mapped.redacted.indexOf("Stale.");
+
+    expect(mapped.redacted).toBe(plain.redacted);
+    expect(mapped.count).toBe(plain.count);
+    expect(mapped.sourceOffsetByOutputIndex.slice(markerStart, markerStart + 16)).toEqual(
+      Array(16).fill(null),
+    );
+    expect(mapped.sourceOffsetByOutputIndex.slice(staleStart, staleStart + 6)).toEqual(
+      Array.from({ length: 6 }, (_, offset) => source.indexOf("Stale.") + offset),
+    );
+  });
+
+  it("redacts large inputs without overflowing while copying source maps", () => {
+    const prefix = "x".repeat(150_000);
+    const key = ["api", "key"].join("_");
+    const source = `${prefix} ${key}=${"A".repeat(40)} tail`;
+
+    const plain = redactSecrets(source);
+    const mapped = redactSecretsWithSourceMap(source);
+    const expected = `${prefix} ${key}=[REDACTED:secret] tail`;
+    const tailStart = mapped.redacted.indexOf("tail");
+
+    expect(plain).toEqual({ redacted: expected, count: 1 });
+    expect(mapped.redacted).toBe(expected);
+    expect(mapped.count).toBe(1);
+    expect(mapped.sourceOffsetByOutputIndex).toHaveLength(expected.length);
+    expect(mapped.sourceOffsetByOutputIndex.slice(tailStart, tailStart + 4)).toEqual(
+      Array.from({ length: 4 }, (_, offset) => source.indexOf("tail") + offset),
+    );
+  });
+
   it("leaves clean text untouched and reports zero redactions", () => {
     const { redacted, count } = redactSecrets("A normal memory about the deploy process.");
     expect(redacted).toBe("A normal memory about the deploy process.");
