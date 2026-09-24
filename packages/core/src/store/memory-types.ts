@@ -144,6 +144,9 @@ export interface MemoryStore {
   countMemoriesByAgentId: () => { agent_id: string; count: number }[];
   listMemoryIdsByAgentId: (agentId: string) => string[];
   archiveMemory: (id: string, agent_id?: string) => Memory | null;
+  // Dashboard action: archive the whole target, clear its flags, and cancel
+  // correction work in the same memory-document persist.
+  archiveFlaggedMemory: (id: string, agent_id?: string) => Memory | null;
   // The narrow inverse of archiveMemory (spec 044 D-5b): restore an archived
   // memory to Active (idempotent on an already-active row). Drives admin unmerge.
   unarchiveMemory: (id: string, agent_id?: string) => Memory | null;
@@ -157,6 +160,37 @@ export interface MemoryStore {
   // (route-to-review, never archive). `agent_id` is the calling agent,
   // resolved server-side. Fail-soft: unknown id → null.
   flagMemory: (id: string, reason: string, agent_id?: string) => Memory | null;
+  // Atomically persist an agent flag with a digest-only targeted-correction marker.
+  flagMemoryForCorrection: (input: {
+    id: string;
+    reason: string;
+    agent_id: string;
+    principal_id: string;
+    shelf_id: string;
+  }) => Memory | null;
+  // Enumerate due markers, reclaiming expired processing leases on the next claim.
+  listDueMemoryCorrections: (at?: string) => MemoryCorrectionWorkItem[];
+  // Claim pending/due work or reclaim an expired lease; attempts are bounded.
+  claimMemoryCorrection: (input: {
+    id: string;
+    snapshot_digest: string;
+    lease_ms?: number;
+    agent_id?: string;
+  }) => MemoryCorrectionWork | null;
+  // Update only the currently fenced claim after rechecking its source/flag snapshot.
+  updateMemoryCorrectionWork: (input: {
+    id: string;
+    snapshot_digest: string;
+    claim_attempt: number;
+    patch: Pick<MemoryCorrectionWork, "status"> &
+      Partial<
+        Pick<
+          MemoryCorrectionWork,
+          "next_attempt_at" | "lease_expires_at" | "proposal_id" | "reason_code"
+        >
+      >;
+    agent_id?: string;
+  }) => MemoryCorrectionWork | null;
   // Clear every open flag on a memory — the dashboard's adjudication
   // primitive. Status is left untouched. Fail-soft: unknown id → null.
   resolveFlags: (id: string, agent_id?: string) => Memory | null;

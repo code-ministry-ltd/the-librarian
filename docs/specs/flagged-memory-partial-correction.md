@@ -1,6 +1,6 @@
 # Flagged-memory partial correction (draft)
 
-**Status:** Approved; implementation in progress. The first store slice adds durable digest-only work metadata with markdown round-trip coverage. The correction worker, runtime wiring, proposal flow, and dashboard remain unimplemented.
+**Status:** Approved; implementation in progress. The store slices now persist digest-only work metadata, batch new flags, reclaim bounded leased work with same-process attempt fencing, and cancel it alongside Dismiss/Archive. The correction worker, runtime wiring, proposal flow, and dashboard remain unimplemented.
 
 ## Objective
 

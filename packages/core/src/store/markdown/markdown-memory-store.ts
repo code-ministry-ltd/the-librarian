@@ -1,6 +1,8 @@
 // Markdown-backed MemoryStore (plan 036 Phase 2) — built behind the
 // existing `MemoryStore` interface; the vault of markdown documents IS the
 // storage layer.
+
+import { createHash } from "node:crypto";
 //
 // The store is SYNC (the verb tests are sync): vault I/O
 // is sync, and the git commit-per-op is an injected sync committer
@@ -25,7 +27,12 @@ import type { Vault } from "../corpus/vault.js";
 import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
 import { routeMemoryWrite } from "../memory-routing.js";
-import type { Memory, MemoryStore } from "../memory-store.js";
+import type {
+  Memory,
+  MemoryCorrectionWork,
+  MemoryCorrectionWorkStatus,
+  MemoryStore,
+} from "../memory-store.js";
 import { tokenize } from "../memory-tokenize.js";
 import { parseMemoryDocument, serializeMemoryDocument } from "./memory-doc.js";
 
@@ -86,6 +93,54 @@ function memoryFileName(memory: { id: string; title: string }): string {
 // flagged memory still surfaces. Only the ranking is affected; inclusion is
 // gated on pre-penalty relevance, so a flagged memory is never excluded.
 const FLAG_PENALTY = 2;
+const CORRECTION_MAX_ATTEMPTS = 3;
+const CORRECTION_LEASE_MS = 60_000;
+
+function digest(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function correctionDigests(memory: Memory): {
+  source_digest: string;
+  flags_digest: string;
+  snapshot_digest: string;
+} {
+  const {
+    flags: _flags,
+    correction_work: _correctionWork,
+    updated_at: _updatedAt,
+    updated_by: _updatedBy,
+    ...source
+  } = memory;
+  const source_digest = digest(source);
+  const flags_digest = digest(memory.flags ?? []);
+  return {
+    source_digest,
+    flags_digest,
+    snapshot_digest: digest({ source_digest, flags_digest }),
+  };
+}
+
+function cancelCorrectionWork(
+  work: MemoryCorrectionWork[] | undefined,
+  reason_code: string,
+): MemoryCorrectionWork[] | undefined {
+  if (!work) return work;
+  let changed = false;
+  const cancelled = work.map((item) => {
+    if (
+      item.status !== "pending" &&
+      item.status !== "processing" &&
+      item.status !== "proposal_pending"
+    ) {
+      return item;
+    }
+    changed = true;
+    const { lease_expires_at: _lease, ...withoutLease } = item;
+    return { ...withoutLease, status: "cancelled" as const, reason_code };
+  });
+  return changed ? cancelled : work;
+}
 
 function cmpStr(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -246,9 +301,41 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   function archiveMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
     const existing = getMemory(id);
     if (!existing) throw new Error(`No memory found for id ${id}`);
-    if (existing.status === MemoryStatus.Archived) return existing; // idempotent
+    const correction_work = cancelCorrectionWork(existing.correction_work, "cancelled_by_archive");
+    if (existing.status === MemoryStatus.Archived && correction_work === existing.correction_work) {
+      return existing; // idempotent
+    }
     return persist(
-      { ...existing, status: MemoryStatus.Archived, updated_at: now() },
+      {
+        ...existing,
+        status: MemoryStatus.Archived,
+        updated_at: now(),
+        ...(correction_work !== undefined ? { correction_work } : {}),
+      },
+      commitSubject.memoryArchive(id),
+      agent_id,
+    );
+  }
+
+  function archiveFlaggedMemory(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
+    const existing = getMemory(id);
+    if (!existing) throw new Error(`No memory found for id ${id}`);
+    const correction_work = cancelCorrectionWork(existing.correction_work, "cancelled_by_archive");
+    if (
+      existing.status === MemoryStatus.Archived &&
+      (existing.flags ?? []).length === 0 &&
+      correction_work === existing.correction_work
+    ) {
+      return existing;
+    }
+    return persist(
+      {
+        ...existing,
+        status: MemoryStatus.Archived,
+        flags: [],
+        updated_at: now(),
+        ...(correction_work !== undefined ? { correction_work } : {}),
+      },
       commitSubject.memoryArchive(id),
       agent_id,
     );
@@ -318,6 +405,195 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     );
   }
 
+  // The public flag path writes the flag and its digest-only correction marker
+  // in one existing memory-store persist. Bodies and reasons remain on the
+  // memory itself, never in operational work metadata.
+  function flagMemoryForCorrection(input: {
+    id: string;
+    reason: string;
+    agent_id: string;
+    principal_id: string;
+    shelf_id: string;
+  }): Memory | null {
+    const { id, reason, agent_id, principal_id, shelf_id } = input;
+    const existing = getMemory(id);
+    if (!existing) return null;
+    if (!principal_id || !shelf_id)
+      throw new Error("Correction work requires resolved principal and shelf ids.");
+
+    const queuedAt = now();
+    const flagged: Memory = {
+      ...existing,
+      flags: [...(existing.flags ?? []), { agent_id, reason, created_at: queuedAt }],
+      updated_at: queuedAt,
+    };
+    const digests = correctionDigests(flagged);
+    const history = cancelCorrectionWork(existing.correction_work, "superseded_by_new_flag") ?? [];
+    const workStatus: MemoryCorrectionWorkStatus =
+      flagged.status === MemoryStatus.Active ? "pending" : "manual_review";
+    const work: MemoryCorrectionWork = {
+      ...digests,
+      principal_id,
+      shelf_id,
+      status: workStatus,
+      attempt_count: 0,
+      queued_at: queuedAt,
+      ...(workStatus === "manual_review" ? { reason_code: "ineligible_status" } : {}),
+    };
+    return persist(
+      { ...flagged, correction_work: [...history, work] },
+      commitSubject.memoryFlag(id),
+      agent_id,
+    );
+  }
+
+  function listDueMemoryCorrections(at: string = now()): {
+    memory_id: string;
+    work: MemoryCorrectionWork;
+  }[] {
+    const atMs = Date.parse(at);
+    if (!Number.isFinite(atMs)) throw new Error(`Expected ISO-8601 timestamp, got '${at}'.`);
+    const isDue = (value?: string) => value === undefined || Date.parse(value) <= atMs;
+    return readAllMemories()
+      .flatMap((memory) =>
+        (memory.correction_work ?? [])
+          .filter(
+            (work) =>
+              (work.status === "pending" && isDue(work.next_attempt_at)) ||
+              (work.status === "processing" &&
+                (work.lease_expires_at === undefined || isDue(work.lease_expires_at))),
+          )
+          .map((work) => ({ memory_id: memory.id, work })),
+      )
+      .sort((a, b) => cmpStr(a.work.queued_at, b.work.queued_at));
+  }
+
+  function claimMemoryCorrection(input: {
+    id: string;
+    snapshot_digest: string;
+    lease_ms?: number;
+    agent_id?: string;
+  }): MemoryCorrectionWork | null {
+    const {
+      id,
+      snapshot_digest,
+      lease_ms = CORRECTION_LEASE_MS,
+      agent_id = "system-memory-correction",
+    } = input;
+    if (!Number.isFinite(lease_ms) || lease_ms <= 0) {
+      throw new Error(`Expected a positive correction lease duration, got '${lease_ms}'.`);
+    }
+    const existing = getMemory(id);
+    if (!existing) return null;
+    const index = (existing.correction_work ?? []).findIndex(
+      (work) => work.snapshot_digest === snapshot_digest,
+    );
+    if (index < 0) return null;
+    const work = existing.correction_work?.[index];
+    if (!work) return null;
+    const claimedAt = now();
+    const claimedAtMs = Date.parse(claimedAt);
+    if (!Number.isFinite(claimedAtMs)) {
+      throw new Error(`Expected ISO-8601 timestamp, got '${claimedAt}'.`);
+    }
+    const isExpired =
+      work.status === "processing" &&
+      (work.lease_expires_at === undefined || Date.parse(work.lease_expires_at) <= claimedAtMs);
+    const isPending =
+      work.status === "pending" &&
+      (work.next_attempt_at === undefined || Date.parse(work.next_attempt_at) <= claimedAtMs);
+    if (!isPending && !isExpired) return null;
+
+    const persistWork = (nextWork: MemoryCorrectionWork): MemoryCorrectionWork => {
+      const correction_work = [...existing.correction_work!];
+      correction_work[index] = nextWork;
+      const saved = persist(
+        { ...existing, correction_work, updated_at: claimedAt },
+        commitSubject.memoryUpdate(id),
+        agent_id,
+      );
+      const savedWork = saved.correction_work?.[index];
+      if (!savedWork) throw new Error(`Correction marker disappeared while persisting ${id}.`);
+      return savedWork;
+    };
+    if (correctionDigests(existing).snapshot_digest !== snapshot_digest) {
+      const { lease_expires_at: _lease, ...withoutLease } = work;
+      persistWork({ ...withoutLease, status: "manual_review", reason_code: "snapshot_drift" });
+      return null;
+    }
+    if (work.attempt_count >= CORRECTION_MAX_ATTEMPTS) {
+      const { lease_expires_at: _lease, ...withoutLease } = work;
+      persistWork({ ...withoutLease, status: "manual_review", reason_code: "max_attempts" });
+      return null;
+    }
+    const { next_attempt_at: _nextAttempt, ...ready } = work;
+    return persistWork({
+      ...ready,
+      status: "processing",
+      attempt_count: work.attempt_count + 1,
+      lease_expires_at: new Date(claimedAtMs + lease_ms).toISOString(),
+    });
+  }
+
+  function updateMemoryCorrectionWork(input: {
+    id: string;
+    snapshot_digest: string;
+    claim_attempt: number;
+    patch: Pick<MemoryCorrectionWork, "status"> &
+      Partial<
+        Pick<
+          MemoryCorrectionWork,
+          "next_attempt_at" | "lease_expires_at" | "proposal_id" | "reason_code"
+        >
+      >;
+    agent_id?: string;
+  }): MemoryCorrectionWork | null {
+    const {
+      id,
+      snapshot_digest,
+      claim_attempt,
+      patch,
+      agent_id = "system-memory-correction",
+    } = input;
+    const existing = getMemory(id);
+    if (!existing) return null;
+    const works = existing.correction_work ?? [];
+    const index = works.findIndex((work) => work.snapshot_digest === snapshot_digest);
+    const work = works[index];
+    if (!work || work.status !== "processing" || work.attempt_count !== claim_attempt) return null;
+    const updatedAt = now();
+    if (correctionDigests(existing).snapshot_digest !== snapshot_digest) {
+      const { lease_expires_at: _lease, ...withoutLease } = work;
+      const correction_work = [...works];
+      correction_work[index] = {
+        ...withoutLease,
+        status: "manual_review",
+        reason_code: "snapshot_drift",
+      };
+      persist(
+        { ...existing, correction_work, updated_at: updatedAt },
+        commitSubject.memoryUpdate(id),
+        agent_id,
+      );
+      return null;
+    }
+    const {
+      lease_expires_at: _oldLease,
+      next_attempt_at: _oldNextAttempt,
+      ...withoutSchedule
+    } = work;
+    const status: MemoryCorrectionWorkStatus = patch.status;
+    const nextWork: MemoryCorrectionWork = { ...withoutSchedule, ...patch, status };
+    const correction_work = [...works];
+    correction_work[index] = nextWork;
+    const saved = persist(
+      { ...existing, correction_work, updated_at: updatedAt },
+      commitSubject.memoryUpdate(id),
+      agent_id,
+    );
+    return saved.correction_work?.[index] ?? null;
+  }
+
   // Clear every open flag on a memory (spec 047 / ADR 0006) — the adjudication
   // primitive the dashboard drives once a flag has been reviewed. Leaves the
   // status untouched (a flag never moved it). Fail-soft: an unknown id is a
@@ -325,8 +601,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
   function resolveFlags(id: string, agent_id: string = DEFAULT_AGENT_ID): Memory | null {
     const existing = getMemory(id);
     if (!existing) return null; // unknown id — fail-soft no-op
+    const correction_work = cancelCorrectionWork(existing.correction_work, "cancelled_by_dismiss");
     return persist(
-      { ...existing, flags: [], updated_at: now() },
+      {
+        ...existing,
+        flags: [],
+        updated_at: now(),
+        ...(correction_work !== undefined ? { correction_work } : {}),
+      },
       commitSubject.memoryResolveFlags(id),
       agent_id,
     );
@@ -708,9 +990,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     getRelated,
     updateMemory,
     archiveMemory,
+    archiveFlaggedMemory,
     unarchiveMemory,
     purgeMemory,
     flagMemory,
+    flagMemoryForCorrection,
+    listDueMemoryCorrections,
+    claimMemoryCorrection,
+    updateMemoryCorrectionWork,
     resolveFlags,
     approveProposal,
     resolveProposal,

@@ -28,9 +28,13 @@ afterEach(() => {
 
 const NOW = "2026-07-01T00:00:00.000Z";
 
-function setup() {
+function setup(options: { now?: () => string; onWrite?: () => void } = {}) {
   const vault = createVault({ dataDir });
-  const store = createMarkdownMemoryStore({ vault, now: () => NOW });
+  const store = createMarkdownMemoryStore({
+    vault,
+    now: options.now ?? (() => NOW),
+    onWrite: options.onWrite,
+  });
   const seed = (over: Partial<Memory> & { id: string }): Memory => {
     const memory: Memory = {
       id: over.id,
@@ -189,6 +193,246 @@ describe("markdown MemoryStore — flagMemory", () => {
   it("is a fail-soft no-op returning null for an unknown id", () => {
     const { store } = setup();
     expect(store.flagMemory("ghost", "reason", "codex")).toBeNull();
+  });
+});
+
+describe("markdown MemoryStore — flagged correction work", () => {
+  it("persists a flag and a digest-only pending work marker in one write", () => {
+    let writes = 0;
+    const { store, seed } = setup({ onWrite: () => writes++ });
+    seed({ id: "m", body: "Useful fact. Stale fact." });
+    writes = 0;
+
+    const flagged = store.flagMemoryForCorrection({
+      id: "m",
+      reason: "The stale fact is no longer true.",
+      agent_id: "codex",
+      principal_id: "principal-1",
+      shelf_id: "shelf-1",
+    });
+
+    expect(writes).toBe(1);
+    expect(flagged!.flags).toHaveLength(1);
+    expect(flagged!.correction_work).toHaveLength(1);
+    const [work] = flagged!.correction_work!;
+    expect(work).toMatchObject({
+      principal_id: "principal-1",
+      shelf_id: "shelf-1",
+      status: "pending",
+      attempt_count: 0,
+      queued_at: NOW,
+    });
+    expect(work.snapshot_digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(work.source_digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(work.flags_digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(work)).not.toContain("Useful fact");
+    expect(JSON.stringify(work)).not.toContain("Stale fact");
+    expect(JSON.stringify(work)).not.toContain("no longer true");
+  });
+
+  it("coalesces new flags into a fresh batch and cancels stale pending work", () => {
+    const { store, seed } = setup();
+    seed({ id: "m" });
+    store.flagMemoryForCorrection({
+      id: "m",
+      reason: "first",
+      agent_id: "codex",
+      principal_id: "principal-1",
+      shelf_id: "shelf-1",
+    });
+    const flagged = store.flagMemoryForCorrection({
+      id: "m",
+      reason: "second",
+      agent_id: "claude",
+      principal_id: "principal-2",
+      shelf_id: "shelf-1",
+    });
+
+    expect(flagged!.flags).toHaveLength(2);
+    expect(flagged!.correction_work).toHaveLength(2);
+    expect(flagged!.correction_work?.map(({ status }) => status)).toEqual(["cancelled", "pending"]);
+    expect(flagged!.correction_work?.[0].reason_code).toBe("superseded_by_new_flag");
+  });
+
+  it("fences off a worker whose expired lease was reclaimed", () => {
+    let currentTime = NOW;
+    const { store, seed } = setup({ now: () => currentTime });
+    seed({ id: "m", body: "source" });
+    const flagged = store.flagMemoryForCorrection({
+      id: "m",
+      reason: "outdated",
+      agent_id: "codex",
+      principal_id: "p",
+      shelf_id: "s",
+    });
+    const snapshot = flagged!.correction_work![0].snapshot_digest;
+    expect(
+      store.claimMemoryCorrection({
+        id: "m",
+        snapshot_digest: snapshot,
+        lease_ms: 1_000,
+        agent_id: "worker",
+      })?.attempt_count,
+    ).toBe(1);
+
+    currentTime = "2026-07-01T00:00:02.000Z";
+    expect(
+      store.claimMemoryCorrection({
+        id: "m",
+        snapshot_digest: snapshot,
+        lease_ms: 1_000,
+        agent_id: "worker",
+      })?.attempt_count,
+    ).toBe(2);
+    expect(
+      store.updateMemoryCorrectionWork({
+        id: "m",
+        snapshot_digest: snapshot,
+        claim_attempt: 1,
+        patch: { status: "manual_review", reason_code: "stale_worker" },
+      }),
+    ).toBeNull();
+    expect(
+      store.updateMemoryCorrectionWork({
+        id: "m",
+        snapshot_digest: snapshot,
+        claim_attempt: 2,
+        patch: { status: "manual_review", reason_code: "current_worker" },
+      }),
+    ).toMatchObject({ status: "manual_review", attempt_count: 2 });
+  });
+
+  it("recovers a processing marker with a missing lease", () => {
+    const { store, vault, seed } = setup();
+    seed({ id: "m", body: "source" });
+    const flagged = store.flagMemoryForCorrection({
+      id: "m",
+      reason: "outdated",
+      agent_id: "codex",
+      principal_id: "p",
+      shelf_id: "s",
+    });
+    const [queued] = flagged!.correction_work!;
+    const { lease_expires_at: _lease, ...withoutLease } = queued;
+    const memory = store.getMemory("m")!;
+    vault.writeText(
+      "memories/m.md",
+      serializeMemoryDocument({
+        ...memory,
+        correction_work: [{ ...withoutLease, status: "processing", attempt_count: 1 }],
+      }),
+    );
+
+    expect(store.listDueMemoryCorrections(NOW)).toHaveLength(1);
+    expect(
+      store.claimMemoryCorrection({
+        id: "m",
+        snapshot_digest: queued.snapshot_digest,
+        lease_ms: 1_000,
+        agent_id: "worker",
+      }),
+    ).toMatchObject({ status: "processing", attempt_count: 2 });
+  });
+
+  it("dismiss cancels active correction work in the same write that clears flags", () => {
+    let writes = 0;
+    const { store, seed } = setup({ onWrite: () => writes++ });
+    seed({ id: "m" });
+    const flagged = store.flagMemoryForCorrection({
+      id: "m",
+      reason: "outdated",
+      agent_id: "codex",
+      principal_id: "p",
+      shelf_id: "s",
+    });
+    const snapshot = flagged!.correction_work![0].snapshot_digest;
+    store.claimMemoryCorrection({
+      id: "m",
+      snapshot_digest: snapshot,
+      lease_ms: 1_000,
+      agent_id: "worker",
+    });
+    writes = 0;
+
+    const dismissed = store.resolveFlags("m", "dashboard");
+
+    expect(writes).toBe(1);
+    expect(dismissed!.flags).toEqual([]);
+    expect(dismissed!.correction_work![0]).toMatchObject({
+      status: "cancelled",
+      reason_code: "cancelled_by_dismiss",
+    });
+    expect(dismissed!.correction_work![0].lease_expires_at).toBeUndefined();
+  });
+
+  it("archives and resolves a flagged memory while cancelling work in one write", () => {
+    let writes = 0;
+    const { store, seed } = setup({ onWrite: () => writes++ });
+    seed({ id: "m" });
+    store.flagMemoryForCorrection({
+      id: "m",
+      reason: "outdated",
+      agent_id: "codex",
+      principal_id: "p",
+      shelf_id: "s",
+    });
+    writes = 0;
+
+    const archived = store.archiveFlaggedMemory("m", "dashboard");
+
+    expect(writes).toBe(1);
+    expect(archived!.status).toBe("archived");
+    expect(archived!.flags).toEqual([]);
+    expect(archived!.correction_work![0]).toMatchObject({
+      status: "cancelled",
+      reason_code: "cancelled_by_archive",
+    });
+  });
+
+  it("reclaims only expired processing work and refuses a changed source snapshot", () => {
+    let currentTime = NOW;
+    const { store, seed } = setup({ now: () => currentTime });
+    seed({ id: "m", body: "original" });
+    const flagged = store.flagMemoryForCorrection({
+      id: "m",
+      reason: "outdated",
+      agent_id: "codex",
+      principal_id: "p",
+      shelf_id: "s",
+    });
+    const snapshot = flagged!.correction_work![0].snapshot_digest;
+
+    expect(
+      store.claimMemoryCorrection({
+        id: "m",
+        snapshot_digest: snapshot,
+        lease_ms: 1_000,
+        agent_id: "worker",
+      }),
+    ).toMatchObject({ status: "processing", attempt_count: 1 });
+    expect(store.listDueMemoryCorrections(NOW)).toEqual([]);
+    currentTime = "2026-07-01T00:00:02.000Z";
+    expect(store.listDueMemoryCorrections(currentTime)).toHaveLength(1);
+
+    store.updateMemory("m", { body: "changed while inference was running" });
+    expect(
+      store.updateMemoryCorrectionWork({
+        id: "m",
+        snapshot_digest: snapshot,
+        claim_attempt: 1,
+        patch: { status: "manual_review" },
+      }),
+    ).toBeNull();
+    expect(
+      store.claimMemoryCorrection({
+        id: "m",
+        snapshot_digest: snapshot,
+        lease_ms: 1_000,
+        agent_id: "worker",
+      }),
+    ).toBeNull();
+    expect(store.getMemory("m")!.body).toBe("changed while inference was running");
+    expect(store.getMemory("m")!.correction_work![0].status).toBe("manual_review");
   });
 });
 
