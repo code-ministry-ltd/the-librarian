@@ -1,12 +1,11 @@
-// Flagged review queue (spec 048 PR-2): list every memory an agent has flagged
-// for review, surfacing the title, body, and each open flag's reason + flagger,
-// with per-row Dismiss / Archive actions. A flag never changes a memory's
-// status — these stay active until an admin adjudicates here. Dismiss clears the
-// flags and keeps the memory; Archive archives it then clears the flags. Both
-// go through the `resolveFlagAction` server action, then refetch the queue.
+// Flagged review queue: list every memory an agent has flagged for review,
+// surfacing its text, flag details, and correction-work status. Safe targeted
+// corrections run asynchronously; admins can dismiss flags or explicitly archive
+// the whole memory when human review is needed.
 
 "use client";
 
+import Link from "next/link";
 import { useTransition } from "react";
 import { MemoryCard } from "./memory-card";
 import type { MemoryRow } from "./types";
@@ -20,18 +19,69 @@ interface MemoryFlag {
   created_at: string;
 }
 
-type FlaggedRow = MemoryRow & { flags?: MemoryFlag[] };
+type FlaggedRow = MemoryRow & {
+  flags?: MemoryFlag[];
+  shelfWritable?: boolean;
+  correction_proposal?: { id: string } | null;
+};
+
+type CorrectionWorkStatus = NonNullable<MemoryRow["correction_work"]>[number]["status"];
+
+const CORRECTION_STATUS_MESSAGES: Partial<Record<CorrectionWorkStatus, string>> = {
+  pending: "Correction review is queued.",
+  processing: "Correction review is in progress.",
+  manual_review: "Automatic correction could not be applied; manual review is needed.",
+  applied: "A correction was applied, but this open flag still needs review.",
+  cancelled: "Correction work was cancelled; this flag still needs a human decision.",
+};
+
+function CorrectionWorkNotice({
+  status,
+  hasProposal,
+}: {
+  status: CorrectionWorkStatus | undefined;
+  hasProposal: boolean;
+}) {
+  if (hasProposal) {
+    return (
+      <p role="status" className="mt-2 text-sm text-foreground/70">
+        A partial correction is waiting for approval; these flags remain open until then.{" "}
+        <Link href="/proposals" className="underline underline-offset-2">
+          Review proposal
+        </Link>
+      </p>
+    );
+  }
+
+  if (status === "proposal_pending") {
+    return (
+      <p role="status" className="mt-2 text-sm text-foreground/70">
+        The correction proposal is being recovered; no review action is available yet.
+      </p>
+    );
+  }
+
+  if (!status) return null;
+  const message = CORRECTION_STATUS_MESSAGES[status];
+  return message ? (
+    <p role="status" className="mt-2 text-sm text-foreground/70">
+      {message}
+    </p>
+  ) : null;
+}
 
 export function FlaggedView() {
   const listQuery = trpc.memories.listFlagged.useQuery(undefined, {
     refetchOnWindowFocus: false,
+    refetchInterval: 10_000,
   });
   const memories = (listQuery.data?.memories ?? []) as FlaggedRow[];
   const [pending, startTransition] = useTransition();
 
-  const resolve = (id: string, action: "dismiss" | "archive") =>
+  const resolve = (memory: FlaggedRow, action: "dismiss" | "archive") =>
     startTransition(async () => {
-      await resolveFlagAction(id, action);
+      if (!memory.shelfId) return;
+      await resolveFlagAction(memory.id, memory.shelfId, action);
       await listQuery.refetch();
     });
 
@@ -56,6 +106,9 @@ export function FlaggedView() {
     <ul className="flex flex-col gap-2">
       {memories.map((memory) => {
         const flags = memory.flags ?? [];
+        const correctionStatus = memory.correction_work
+          ?.filter((work) => work.shelf_id === memory.shelfId)
+          .at(-1)?.status;
         return (
           <li key={memory.id}>
             <MemoryCard
@@ -65,27 +118,38 @@ export function FlaggedView() {
               bodyMode="prose"
               meta={[
                 memory.agent_id ? <span>{memory.agent_id}</span> : null,
+                memory.shelfLabel ? <span>Shelf: {memory.shelfLabel}</span> : null,
                 <span>{new Date(memory.updated_at).toLocaleDateString()}</span>,
               ]}
               actions={
                 <>
                   <Button
                     variant="outline"
-                    disabled={pending}
-                    onClick={() => resolve(memory.id, "dismiss")}
+                    disabled={pending || !memory.shelfId || memory.shelfWritable === false}
+                    onClick={() => resolve(memory, "dismiss")}
                   >
                     Dismiss
                   </Button>
                   <Button
                     variant="destructive"
-                    disabled={pending}
-                    onClick={() => resolve(memory.id, "archive")}
+                    disabled={pending || !memory.shelfId || memory.shelfWritable === false}
+                    onClick={() => resolve(memory, "archive")}
                   >
                     Archive
                   </Button>
                 </>
               }
             >
+              <CorrectionWorkNotice
+                status={correctionStatus}
+                hasProposal={Boolean(memory.correction_proposal)}
+              />
+              {memory.shelfWritable === false ? (
+                <p role="status" className="mt-2 text-sm text-foreground/60">
+                  This shelf is read-only here. Ask an administrator with write access to resolve
+                  these flags.
+                </p>
+              ) : null}
               <ul className="mt-2 flex flex-col gap-1.5">
                 {flags.map((flag, i) => (
                   <li

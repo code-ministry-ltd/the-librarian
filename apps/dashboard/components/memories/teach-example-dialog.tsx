@@ -34,9 +34,11 @@ interface Preview {
 
 export function TeachExampleDialog({
   proposalId,
+  proposalShelfId,
   proposalTitle,
 }: {
   proposalId: string;
+  proposalShelfId: string;
   proposalTitle: string;
 }) {
   const router = useRouter();
@@ -72,7 +74,7 @@ export function TeachExampleDialog({
       if (!preview) return;
       setError(null);
       try {
-        const result = await teachExampleAction(proposalId, preview.candidate);
+        const result = await teachExampleAction(proposalId, proposalShelfId, preview.candidate);
         if (!result.ok) {
           setError(result.error);
           return;

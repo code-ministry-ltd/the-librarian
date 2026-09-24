@@ -13,6 +13,10 @@ dependencies).
   `search_references`. Each call is proxied over HTTP MCP (`tools/call`),
   auto-scoped to your configured `agent_id` (and `project_key` for handoffs),
   with memory ids surfaced so the flag-after-recall loop works.
+- **Targeted correction review** — `flag_memory` queues an asynchronous review:
+  a safe exact claim may be removed or proposed, while unsafe cases stay
+  flagged. Its response reports queue status, not completion; whole-memory
+  Archive remains a separate human action.
 - **The primer in the system prompt** — `system_prompt_block()` returns the
   operator-editable primer fetched from the server's `GET /primer.md`
   (cached per session). The primer teaches the recall/remember loop and the
@@ -26,6 +30,9 @@ dependencies).
   every exchange until `[librarian:private=off]` is never shipped), the
   conversation is keyed by Hermes' own session id (concurrent sessions never
   collide), and it is fully fail-soft — a Librarian outage never blocks a turn.
+  Private mode is an in-conversation instruction; the server cannot verify its
+  marker. A correction job queued by a flag from public context may still finish
+  after switching private; the toggle does not cancel queued work.
 - **Optional slash commands** — `/handoff`, `/takeover`, `/learn`,
   `/toggle-private`: thin prompt templates over the same protocols, registered
   only when the plugin is also enabled as a general plugin. Nothing is lost

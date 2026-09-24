@@ -8,6 +8,8 @@
 // parameter's name, type, required-ness, and human description — so a verb or
 // parameter can never silently vanish from the reference.
 
+import { readFileSync } from "node:fs";
+
 import { DEFAULT_PRIMER } from "@librarian/core";
 import { tools } from "@librarian/mcp-server";
 import { describe, expect, it } from "vitest";
@@ -146,6 +148,37 @@ describe("included canonical docs (slash commands, capture matrix)", () => {
     ] as const) {
       const body = page.replace(/^---\n[\s\S]*?\n---\n/, "");
       expect(body, `${name} body should not start with an H1`).not.toMatch(/^\s*#\s/);
+    }
+  });
+});
+
+describe("private-mode correction caveat parity", () => {
+  const surfaces = [
+    "packages/core/src/primer.ts",
+    "docs/slash-commands.md",
+    "integrations/claude/README.md",
+    "integrations/claude/commands/toggle-private.md",
+    "integrations/codex/README.md",
+    "integrations/hermes/README.md",
+    "integrations/hermes/librarian/commands.py",
+    "integrations/opencode/README.md",
+    "integrations/opencode/commands/toggle-private.md",
+    "integrations/pi/README.md",
+    "integrations/pi/extensions/librarian/commands.ts",
+  ];
+
+  it("warns on every harness surface that queued public correction work may finish while private", () => {
+    for (const file of surfaces) {
+      const content = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+      expect(content, `${file}: server-side limitation missing`).toMatch(
+        /server cannot verify its\s+marker/,
+      );
+      expect(content, `${file}: queued-work timing missing`).toMatch(
+        /from public\s+context may still finish\s+after switching private/,
+      );
+      expect(content, `${file}: non-cancellation guarantee missing`).toMatch(
+        /cancel\s+queued work/,
+      );
     }
   });
 });

@@ -84,7 +84,7 @@ LIBRARIAN_HOST=0.0.0.0 LIBRARIAN_AGENT_TOKENS="codex:<strong-token>" pnpm run se
 | --- | --- |
 | `recall` | Hybrid search over durable memories — call before answering anything with prior context |
 | `remember` | Save a durable fact, preference, or decision — fire-and-forget; the curator files it |
-| `flag_memory` | Flag a wrong/outdated memory (reason required) for human review |
+| `flag_memory` | Queue targeted correction review for a wrong/outdated memory: a safe exact claim may be removed, a proposal may be created, or an unsafe case may stay flagged. The tool reports queue status, not completion; Archive remains a separate human action. |
 | `store_handoff` | Persist a five-section handoff document for another agent to resume |
 | `list_handoffs` | List unclaimed handoffs waiting to be picked up |
 | `claim_handoff` | Atomically claim a handoff and receive its document |
@@ -176,7 +176,7 @@ and the model drives them from what you say:
 | "hand this off" / "we're done for now" | Authors a five-section document — Start & intent, Journey, Current state, What's left, Open questions — and persists it via `store_handoff` |
 | "pick up where I left off" / "what was I doing" | `list_handoffs`, presents the candidates, atomically claims your pick with `claim_handoff`, resumes from the document |
 | "save what we learned" | Extracts durable lessons, submits the ones you approve via `remember` (one call per lesson; the curator dedupes and files them) |
-| "go private" / "back on the record" | Emits the `[librarian:private=on\|off]` marker — pure in-conversation. While private: no `remember`/`store_handoff`/`flag_memory`; `recall`/`search_references` stay allowed (those queries reach the server's logs) |
+| "go private" / "back on the record" | Emits the `[librarian:private=on\|off]` marker — pure in-conversation. While private: no `remember`/`store_handoff`/`flag_memory`; `recall`/`search_references` stay allowed (those queries reach the server's logs). Private mode is an in-conversation instruction; the server cannot verify its marker. A correction job queued by a flag from public context may still finish after switching private; the toggle does not cancel queued work. |
 | "what do I know about …" | `recall` |
 | "remember that …" | `remember` |
 | (a recalled memory was wrong) | `flag_memory(memory_id, reason)` |

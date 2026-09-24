@@ -64,6 +64,7 @@ function revalidateMemoryRoutes(): void {
   revalidatePath("/");
   revalidatePath("/proposals");
   revalidatePath("/archive");
+  revalidatePath("/flagged");
 }
 
 // `patch` (D11): the judge's curated title/body/tags, sent when the admin
@@ -71,10 +72,15 @@ function revalidateMemoryRoutes(): void {
 // behaviour (the raw submission activates unchanged).
 export async function approveProposalAction(
   id: string,
+  shelfId: string,
   patch?: { title?: string; body?: string; tags?: string[] },
 ): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.approve.mutate({ id, ...(patch ? { patch } : {}) });
+    await serverTRPC.memories.approve.mutate({
+      id,
+      shelf_id: shelfId,
+      ...(patch ? { patch } : {}),
+    });
     revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {
@@ -97,9 +103,9 @@ export async function applyProposalPlanAction(id: string): Promise<ActionResult>
   }
 }
 
-export async function rejectProposalAction(id: string): Promise<ActionResult> {
+export async function rejectProposalAction(id: string, shelfId: string): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.reject.mutate({ id });
+    await serverTRPC.memories.reject.mutate({ id, shelf_id: shelfId });
     revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {
@@ -135,11 +141,12 @@ export async function distillExampleAction(
 // rejected proposal whose lesson was lost.
 export async function teachExampleAction(
   proposalId: string,
+  shelfId: string,
   candidate: string,
 ): Promise<ActionResult> {
   try {
     await serverTRPC.examples.set.mutate({ content: candidate });
-    await serverTRPC.memories.reject.mutate({ id: proposalId });
+    await serverTRPC.memories.reject.mutate({ id: proposalId, shelf_id: shelfId });
     revalidateMemoryRoutes();
     return { ok: true };
   } catch (err) {
@@ -194,10 +201,11 @@ export async function proposeMoveAction(
 // navigation back doesn't show a stale queue.
 export async function resolveFlagAction(
   id: string,
+  shelfId: string,
   action: "dismiss" | "archive",
 ): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.resolveFlag.mutate({ id, action });
+    await serverTRPC.memories.resolveFlag.mutate({ id, shelf_id: shelfId, action });
     revalidatePath("/");
     revalidatePath("/flagged");
     revalidatePath("/archive");

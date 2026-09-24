@@ -123,7 +123,10 @@ Privacy + control (it always defers to you):
 
 - **Private mode wins.** Any turn inside a `[librarian:private=on]` …
   `[librarian:private=off]` span is skipped, forward-only — a private turn is
-  never captured, even retroactively.
+  never captured, even retroactively. Private mode is an in-conversation
+  instruction; the server cannot verify its marker. A correction job queued by a
+  flag from public context may still finish after switching private; the toggle
+  does not cancel queued work.
 - **Per-machine kill-switch.** Set `LIBRARIAN_AUTO_SAVE=false` in your
   environment and capture ships nothing on this machine.
 - **Inert when intake is off.** If the server's curator intake gate is disabled,
@@ -140,7 +143,7 @@ Privacy + control (it always defers to you):
 | --- | --- |
 | `recall` | Hybrid search over durable memories — call before answering anything with prior context |
 | `remember` | Save a durable fact, preference, or decision — fire-and-forget; the curator files it |
-| `flag_memory` | Flag a wrong/outdated memory (reason required) for human review |
+| `flag_memory` | Queue targeted correction review for a wrong/outdated memory: a safe exact claim may be removed, a proposal may be created, or an unsafe case may stay flagged. The tool reports queue status, not completion; Archive remains a separate human action. |
 | `store_handoff` | Persist a five-section handoff document for another agent to resume |
 | `list_handoffs` | List unclaimed handoffs waiting to be picked up |
 | `claim_handoff` | Atomically claim a handoff and receive its document |

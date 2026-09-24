@@ -65,16 +65,32 @@ export function ProposalCard({
   // lack the key, and `unknown` (nothing recorded to compare) must never block.
   const driftedMemories = (row.drift?.sources ?? []).filter((s) => s.drifted);
   const isDrifted = row.drift?.status === "drifted";
-  /** Guards every affordance that activates the proposal — never Reject. */
-  const approvalBlocked = pending || isDrifted;
+  const isCorrection = source === "flagged_correction" || row.correctionReview !== undefined;
+  const shelfId = proposal.shelfId ?? "";
+  const shelfCanWrite = Boolean(shelfId) && proposal.shelfWritable !== false;
+  /** No correction activation without a current exact-shelf baseline; Reject remains available. */
+  const approvalBlocked =
+    pending ||
+    isDrifted ||
+    !shelfCanWrite ||
+    (isCorrection && row.correctionReview?.status !== "ready");
 
   const badge = proposalBadge({ action, targetCount: targets.length });
-  const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
+  const approveLabel = isCorrection
+    ? "Approve correction"
+    : approveConsequenceLabel({ action, targetCount: targets.length });
 
   const run = (fn: () => Promise<unknown>) =>
     startTransition(async () => {
       try {
-        await fn();
+        const result = await fn();
+        if (result && typeof result === "object" && "ok" in result && result.ok === false) {
+          setError(
+            "error" in result && typeof result.error === "string" ? result.error : "Action failed.",
+          );
+          return;
+        }
+        setError(null);
         router.refresh();
       } catch {
         // Fail-soft (AGENTS.md): a Librarian/network failure must never throw
@@ -197,6 +213,46 @@ export function ProposalCard({
 
       <MemoryTags tags={proposal.tags} />
 
+      {isCorrection ? (
+        <section
+          aria-label="Flagged correction review"
+          className="flex flex-col gap-2 border border-ink-hairline bg-foreground/[0.02] p-3"
+        >
+          <SectionLabel>Flagged correction</SectionLabel>
+          <p className="text-sm leading-relaxed text-foreground/75">
+            This proposal removes only the claims identified for correction. Approval activates the
+            corrected copy and archives the flagged source; rejection keeps the source active and
+            flagged for manual review.
+          </p>
+          {targets[0]?.flags?.length ? (
+            <ul className="flex flex-col gap-1.5">
+              {targets[0].flags.map((flag, index) => (
+                <li
+                  key={`${flag.agent_id}-${flag.created_at}-${index}`}
+                  className="border border-destructive/40 bg-destructive/[0.06] px-2.5 py-1.5 text-xs leading-relaxed"
+                >
+                  <span className="text-destructive">&ldquo;{flag.reason}&rdquo;</span>
+                  <span className="text-foreground/60"> — flagged by {flag.agent_id}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-foreground/60">No open flags remain on the source.</p>
+          )}
+          {row.correctionReview?.status !== "ready" ? (
+            <p role="alert" className="text-sm text-destructive">
+              The source, flags, or proposal changed after this correction was prepared. Reject this
+              proposal or review the flagged source manually.
+            </p>
+          ) : null}
+          {!shelfCanWrite ? (
+            <p role="status" className="text-sm text-foreground/60">
+              This shelf is not writable by the current administrator.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {/* Per-action body. Order matters: split first (1 target, no diff, but
           NOT an intake submission), then single-target diff, then merge, then
           the intake no-target fallback. */}
@@ -318,7 +374,7 @@ export function ProposalCard({
             </Button>
             <Button
               disabled={approvalBlocked}
-              onClick={() => run(() => approveProposalAction(proposal.id))}
+              onClick={() => run(() => approveProposalAction(proposal.id, shelfId))}
             >
               Approve as new
             </Button>
@@ -328,13 +384,13 @@ export function ProposalCard({
             <Button
               variant="primary"
               disabled={approvalBlocked}
-              onClick={() => run(() => approveProposalAction(proposal.id, createPatch))}
+              onClick={() => run(() => approveProposalAction(proposal.id, shelfId, createPatch))}
             >
               Approve curated version
             </Button>
             <Button
               disabled={approvalBlocked}
-              onClick={() => run(() => approveProposalAction(proposal.id))}
+              onClick={() => run(() => approveProposalAction(proposal.id, shelfId))}
             >
               Approve raw submission
             </Button>
@@ -343,26 +399,31 @@ export function ProposalCard({
           <Button
             variant="primary"
             disabled={approvalBlocked}
-            onClick={() => run(() => approveProposalAction(proposal.id))}
+            onClick={() => run(() => approveProposalAction(proposal.id, shelfId))}
           >
             {approveLabel}
           </Button>
         )}
-        {/* Proposal-scoped chat (F5/D4) — every proposal gets it, including
-            grooming-sourced and legacy plan-less ones (grounding minus the
-            plan). Confirming a chat action consumes this proposal (D9). */}
-        <DiscussProposalButton proposalId={proposal.id} proposalTitle={proposal.title} />
+        {/* Proposal-scoped chat (F5/D4) is unavailable for flagged-correction
+            proposals, which have a dedicated exact-shelf review path. */}
+        {!isCorrection ? (
+          <DiscussProposalButton proposalId={proposal.id} proposalTitle={proposal.title} />
+        ) : null}
         {/* Teach loop entry point (F4): intake-sourced only in v1 (scenario F —
             grooming rejections don't teach yet). Plain Reject stays untouched
             beside it — teaching is the explicit affordance, never a side
             effect of rejection (D5). */}
         {source === "intake" ? (
-          <TeachExampleDialog proposalId={proposal.id} proposalTitle={proposal.title} />
+          <TeachExampleDialog
+            proposalId={proposal.id}
+            proposalShelfId={shelfId}
+            proposalTitle={proposal.title}
+          />
         ) : null}
         <Button
           variant="destructive"
-          disabled={pending}
-          onClick={() => run(() => rejectProposalAction(proposal.id))}
+          disabled={pending || !shelfCanWrite}
+          onClick={() => run(() => rejectProposalAction(proposal.id, shelfId))}
         >
           Reject
         </Button>

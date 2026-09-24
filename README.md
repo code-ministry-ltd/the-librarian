@@ -182,9 +182,11 @@ is exactly seven tools — contract-tested, with zero internal tools:
   `include_ids: true` for `[mem_…]`-prefixed lines so callers can flag).
 - `remember` — fire-and-forget: each submission lands in the curator's intake
   inbox; the curator dedupes, merges, and files it asynchronously.
-- `flag_memory` — flag a memory as wrong / misleading / outdated with a
-  free-text reason; routes it to review (and soft-demotes it in recall) rather
-  than archiving unilaterally.
+- `flag_memory` — report a wrong / misleading / outdated memory with a
+  free-text reason; queues targeted correction review and soft-demotes it in
+  recall. A safe exact claim may be removed or proposed; unsafe cases remain
+  flagged. The response reports queue status, not completion, and whole-memory
+  Archive remains a separate human action.
 
 Memories are `active`, `proposed`, or `archived`. Admin/curatorial ops
 (archive, approve, update, list proposals) are **not** agent MCP tools — they

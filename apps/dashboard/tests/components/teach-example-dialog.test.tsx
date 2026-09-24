@@ -13,7 +13,8 @@ const refresh = vi.fn();
 
 vi.mock("@/app/(memories)/actions", () => ({
   distillExampleAction: (id: string, note?: string) => distillExampleAction(id, note),
-  teachExampleAction: (id: string, candidate: string) => teachExampleAction(id, candidate),
+  teachExampleAction: (id: string, shelfId: string, candidate: string) =>
+    teachExampleAction(id, shelfId, candidate),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -34,7 +35,13 @@ beforeEach(() => {
 });
 
 function openDialog() {
-  render(<TeachExampleDialog proposalId="mem_p" proposalTitle="TODO fix flaky test" />);
+  render(
+    <TeachExampleDialog
+      proposalId="mem_p"
+      proposalShelfId="shelf-1"
+      proposalTitle="TODO fix flaky test"
+    />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Reject & make an example" }));
 }
 
@@ -71,6 +78,7 @@ describe("TeachExampleDialog", () => {
     await waitFor(() =>
       expect(teachExampleAction).toHaveBeenCalledWith(
         "mem_p",
+        "shelf-1",
         "- Existing example.\n- One-off task reminders.",
       ),
     );

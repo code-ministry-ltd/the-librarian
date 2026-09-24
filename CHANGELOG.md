@@ -9,6 +9,29 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.26.0] — 2026-09-24
+
+### Added
+
+- **Flagged memories can receive safe, targeted correction.** `flag_memory` now
+  queues asynchronous review. The worker removes only safely source-mapped claims
+  under the shared D13 threshold, preserving unrelated facts; safe candidates
+  blocked by policy become exact-shelf proposals, while unsafe cases remain
+  flagged for human review. Whole-memory Archive is never an automatic fallback.
+- **Correction review and history in the dashboard.** The Flagged page shows work
+  status and records applied corrections for 30 days. Proposal approval/rejection
+  validates the exact source shelf and snapshot, with startup recovery for an
+  interrupted proposal/source write that leaves drifted cases flagged for review.
+
+### Changed
+
+- **Flagging reports queue status, not completion.** MCP tools, the primer, docs,
+  and all harness guidance now relay that an asynchronous correction is not yet
+  complete. Persistence errors after a file write report an uncertain outcome and
+  direct users to check the Flagged page before retrying. Private-mode guidance also
+  clarifies that a correction queued by a public flag may finish after switching
+  private; the current marker cannot cancel it.
+
 ## [1.25.0] — 2026-09-23
 
 ### Added
@@ -4645,6 +4668,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.26.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.9...v1.24.0
 [1.23.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.0...v1.23.1

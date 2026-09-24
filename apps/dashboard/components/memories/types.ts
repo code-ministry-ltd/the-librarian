@@ -9,6 +9,8 @@ export type MemoryRow = RouterOutputs["memories"]["list"]["memories"][number];
 // rationale), the memories it supersedes (targets), and a server-rendered
 // old→new diff (non-null only for a single-target replacement).
 export type ProposalReviewRow = RouterOutputs["memories"]["proposalsForReview"][number];
+export type CorrectionHistoryRow =
+  RouterOutputs["memories"]["correctionHistory"]["corrections"][number];
 // A single search_references hit — the same shape the agent's verb returns
 // (vault path id, score, matched section, heading anchor, char range).
 export type ReferenceHit = RouterOutputs["vault"]["searchReferences"]["references"][number];

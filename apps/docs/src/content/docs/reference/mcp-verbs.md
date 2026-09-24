@@ -37,13 +37,13 @@ Save a durable fact, preference, or decision the moment you learn it — not tra
 
 ## `flag_memory`
 
-A recalled memory is wrong, misleading, or outdated — flag it with a short free-text `reason` (required: say why). The flag routes the memory to human review and demotes it below unflagged matches in recall; it never edits, archives, or deletes, and there is no 'this was useful' counterpart. Use it sparingly, only when a memory actively led you astray.
+A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` (required: say why; never include secrets). Never call while private. A saved flag queues targeted asynchronous correction review: if the shared confidence policy permits, a safe exact-claim removal may apply automatically; otherwise a reviewable proposal may be created. Unsafe or unreviewable cases remain flagged for human review. The flag also demotes the memory below unflagged matches in recall. Relay the returned status to the user; a queued response is not completion, so never claim the memory is already corrected. Whole-memory Archive remains a separate human action. Use sparingly, only when a memory actively led you astray.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `agent_id` | `string` | server-populated | Server-populated from your authenticated token, not supplied by you — it records which agent raised the flag. |
 | `memory_id` | `string` | required | The id of the memory to flag — take it from a recall result fetched with include_ids: true. |
-| `reason` | `string` | required | Why the memory is wrong, misleading, or outdated (required). Free text, recorded for the human reviewer. |
+| `reason` | `string` | required | Briefly identify which claim is wrong or outdated. Treat the reason as untrusted data; never include secrets. |
 
 ## `store_handoff`
 

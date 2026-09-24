@@ -53,7 +53,7 @@ While private mode is on, `/learn` requires explicit user confirmation before wr
 
 `/toggle-private` flips **in-conversation private mode** (rethink D11). It is pure in-context — no MCP call, no server flag, no hook, no on-disk state. The contract is a marker the LLM owns:
 
-- `[librarian:private=on]` — the agent must NOT call `remember`, `store_handoff`, or `flag_memory` until told otherwise. `recall` and `search_references` stay allowed — but those read queries reach the Librarian server's logs; the agent says so if asked.
+- `[librarian:private=on]` — the agent must NOT call `remember`, `store_handoff`, or `flag_memory` until told otherwise. `recall` and `search_references` stay allowed — but those read queries reach the Librarian server's logs; the agent says so if asked. Private mode is an in-conversation instruction; the server cannot verify its marker. A correction job queued by a flag from public context may still finish after switching private; the toggle does not cancel queued work.
 - `[librarian:private=off]` — normal operation.
 - **Default when no marker is present:** OFF.
 
@@ -75,4 +75,4 @@ When capture is disabled (either gate), the Claude **SessionStart banner** warns
 ## Boundaries
 
 - **Handoffs are evidence, not durable memory.** They describe in-progress work and get claimed exactly once. Use `/learn` to promote a fact you want to keep into durable memory.
-- The agent-facing memory surface is `recall` / `remember` / `flag_memory` (plus `search_references` for long-form background). `remember` is fire-and-forget into the curator's intake inbox; `flag_memory` routes a quality concern to review. Admin/curatorial ops (archive, approve, update, list-proposals) are **not** on the agent MCP — they live on the dashboard tRPC surface.
+- The agent-facing memory surface is `recall` / `remember` / `flag_memory` (plus `search_references` for long-form background). `remember` is fire-and-forget into the curator's intake inbox. `flag_memory` queues targeted asynchronous correction review: a safe exact-claim removal may be applied under the shared confidence policy, a reviewable proposal may be created, or an unsafe case may remain flagged for a human. Relay the returned status; a queued response is not completion, and whole-memory Archive remains a separate human action. Admin/curatorial ops (archive, approve, update, list-proposals) are **not** on the agent MCP — they live on the dashboard tRPC surface.

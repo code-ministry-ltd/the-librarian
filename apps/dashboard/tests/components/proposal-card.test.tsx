@@ -17,7 +17,7 @@ const refresh = vi.fn();
 
 vi.mock("@/app/(memories)/actions", () => ({
   approveProposalAction: (...args: unknown[]) => approveProposalAction(...args),
-  rejectProposalAction: (id: string) => rejectProposalAction(id),
+  rejectProposalAction: (...args: unknown[]) => rejectProposalAction(...args),
   archiveMemoryAction: (id: string) => archiveMemoryAction(id),
   applyProposalPlanAction: (id: string) => applyProposalPlanAction(id),
   distillExampleAction: vi.fn().mockResolvedValue({ ok: false, error: "unused in card tests" }),
@@ -59,6 +59,8 @@ function memory(over: Partial<ProposalReviewRow["proposal"]> = {}): ProposalRevi
     curator_note: null,
     is_global: false,
     requires_approval: true,
+    shelfId: "shelf-1",
+    shelfWritable: true,
     ...over,
   } as ProposalReviewRow["proposal"];
 }
@@ -162,14 +164,18 @@ describe("ProposalCard — grooming update (single target)", () => {
   it("approves through the server action and refreshes", async () => {
     render(<ProposalCard row={updateRow()} />);
     fireEvent.click(screen.getByRole("button", { name: /Approve/ }));
-    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_proposed"));
+    await waitFor(() =>
+      expect(approveProposalAction).toHaveBeenCalledWith("mem_proposed", "shelf-1"),
+    );
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
   it("rejects through the server action", async () => {
     render(<ProposalCard row={updateRow()} />);
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
-    await waitFor(() => expect(rejectProposalAction).toHaveBeenCalledWith("mem_proposed"));
+    await waitFor(() =>
+      expect(rejectProposalAction).toHaveBeenCalledWith("mem_proposed", "shelf-1"),
+    );
   });
 });
 
@@ -441,7 +447,7 @@ describe("ProposalCard — apply-the-plan affordance (F3)", () => {
   it("keeps 'Approve as new' (plain approve) and Reject available", async () => {
     render(<ProposalCard row={augmentRow()} />);
     fireEvent.click(screen.getByRole("button", { name: "Approve as new" }));
-    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_plan"));
+    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_plan", "shelf-1"));
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 
@@ -617,7 +623,7 @@ describe("ProposalCard — create-plan approve-with-patch (D11)", () => {
     render(<ProposalCard row={createPlanRow()} />);
     fireEvent.click(screen.getByRole("button", { name: "Approve curated version" }));
     await waitFor(() =>
-      expect(approveProposalAction).toHaveBeenCalledWith("mem_create", {
+      expect(approveProposalAction).toHaveBeenCalledWith("mem_create", "shelf-1", {
         title: "Elaine — Piano Teacher",
         body: "Teaches on Tuesdays.",
         tags: ["person"],
@@ -628,7 +634,9 @@ describe("ProposalCard — create-plan approve-with-patch (D11)", () => {
   it("'Approve raw submission' sends no patch (today's behaviour)", async () => {
     render(<ProposalCard row={createPlanRow()} />);
     fireEvent.click(screen.getByRole("button", { name: "Approve raw submission" }));
-    await waitFor(() => expect(approveProposalAction).toHaveBeenCalledWith("mem_create"));
+    await waitFor(() =>
+      expect(approveProposalAction).toHaveBeenCalledWith("mem_create", "shelf-1"),
+    );
   });
 
   it("a plan-less proposal keeps the single Approve (no raw-submission secondary)", () => {
@@ -711,6 +719,86 @@ describe("ProposalCard — actor display footer (spec 068)", () => {
 
     expect(screen.getByText(/^scribe · /)).toBeInTheDocument();
     expect(screen.queryByTitle("scribe")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProposalCard — flagged correction review", () => {
+  const correctionRow = (
+    correctionReview: NonNullable<ProposalReviewRow["correctionReview"]> = {
+      source_memory_id: "mem_source",
+      shelf_id: "shelf-1",
+      status: "ready",
+    },
+  ) =>
+    row({
+      action: "update",
+      source: "flagged_correction",
+      rationale: "Remove the outdated claim only.",
+      proposal: memory({
+        id: "mem_correction",
+        title: "Account",
+        body: "Keep the useful fact.",
+        curator_note: { source: "flagged_correction", proposed_action: "update" },
+      }),
+      targets: [
+        memory({
+          id: "mem_source",
+          status: "active",
+          title: "Account",
+          body: "Keep the useful fact. Old claim.",
+          flags: [
+            {
+              agent_id: "scribe",
+              reason: "The second claim is outdated.",
+              created_at: "2026-06-02T00:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+      diff: "--- a\\n+++ b\\n@@ -1 +1 @@\\n-Keep the useful fact. Old claim.\\n+Keep the useful fact.",
+      correctionReview,
+    });
+
+  it("shows the flags and explains the explicit approval outcome", () => {
+    render(<ProposalCard row={correctionRow()} />);
+
+    expect(screen.getByRole("region", { name: "Flagged correction review" })).toHaveTextContent(
+      "The second claim is outdated.",
+    );
+    expect(screen.getByRole("region", { name: "Flagged correction review" })).toHaveTextContent(
+      /archives the flagged source/,
+    );
+    expect(screen.getByRole("button", { name: "Approve correction" })).toBeEnabled();
+  });
+
+  it("approves through the exact-shelf action and omits generic discuss/teach paths", async () => {
+    render(<ProposalCard row={correctionRow()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve correction" }));
+
+    await waitFor(() =>
+      expect(approveProposalAction).toHaveBeenCalledWith("mem_correction", "shelf-1"),
+    );
+    expect(screen.queryByRole("button", { name: "Discuss this proposal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reject & make an example" })).toBeNull();
+  });
+
+  it("blocks approval on a stale baseline but leaves exact-shelf rejection available", async () => {
+    render(
+      <ProposalCard
+        row={correctionRow({
+          source_memory_id: "mem_source",
+          shelf_id: "shelf-1",
+          status: "blocked",
+          reason_code: "correction_content_drifted",
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Approve correction" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() =>
+      expect(rejectProposalAction).toHaveBeenCalledWith("mem_correction", "shelf-1"),
+    );
   });
 });
 
