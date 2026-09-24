@@ -28,6 +28,35 @@ export interface MemoryFlag {
   created_at: string;
 }
 
+/**
+ * Server-owned work marker for one reviewed flag snapshot. It stores digests and
+ * routing metadata only—never the source body or flag reasons—so recovery can
+ * resume without copying private content into an operational queue.
+ */
+export type MemoryCorrectionWorkStatus =
+  "pending" | "processing" | "proposal_pending" | "manual_review" | "applied" | "cancelled";
+
+export interface MemoryCorrectionWork {
+  snapshot_digest: string;
+  source_digest: string;
+  flags_digest: string;
+  principal_id: string;
+  shelf_id: string;
+  status: MemoryCorrectionWorkStatus;
+  attempt_count: number;
+  queued_at: string;
+  next_attempt_at?: string;
+  lease_expires_at?: string;
+  applied_at?: string;
+  proposal_id?: string;
+  reason_code?: string;
+}
+
+export interface MemoryCorrectionWorkItem {
+  memory_id: string;
+  work: MemoryCorrectionWork;
+}
+
 export interface Memory {
   id: string;
   agent_id: string;
@@ -40,6 +69,8 @@ export interface Memory {
   // Default []. A non-empty list soft-demotes the memory in recall but never
   // changes its status.
   flags: MemoryFlag[];
+  /** Durable targeted-correction work/history; absent on memories with no new work. */
+  correction_work?: MemoryCorrectionWork[];
   title: string;
   body: string;
   confidence: string;

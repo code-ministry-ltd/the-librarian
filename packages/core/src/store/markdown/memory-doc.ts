@@ -16,7 +16,9 @@
 import matter from "gray-matter";
 import { z } from "zod";
 import { IsoTimestampSchema } from "../../schemas/common.js";
-import type { Memory } from "../memory-store.js";
+import type { Memory, MemoryCorrectionWork } from "../memory-store.js";
+
+const Sha256DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
 
 const MemoryFrontmatterSchema = z.object({
   id: z.string().min(1),
@@ -46,6 +48,32 @@ const MemoryFrontmatterSchema = z.object({
       }),
     )
     .default([]),
+  correction_work: z
+    .array(
+      z.object({
+        snapshot_digest: Sha256DigestSchema,
+        source_digest: Sha256DigestSchema,
+        flags_digest: Sha256DigestSchema,
+        principal_id: z.string().min(1),
+        shelf_id: z.string().min(1),
+        status: z.enum([
+          "pending",
+          "processing",
+          "proposal_pending",
+          "manual_review",
+          "applied",
+          "cancelled",
+        ]),
+        attempt_count: z.number().int().min(0).max(3),
+        queued_at: IsoTimestampSchema,
+        next_attempt_at: IsoTimestampSchema.optional(),
+        lease_expires_at: IsoTimestampSchema.optional(),
+        applied_at: IsoTimestampSchema.optional(),
+        proposal_id: z.string().min(1).optional(),
+        reason_code: z.string().min(1).optional(),
+      }),
+    )
+    .optional(),
   is_global: z.boolean(),
   requires_approval: z.boolean(),
   created_at: IsoTimestampSchema,
@@ -81,6 +109,9 @@ export function serializeMemoryDocument(memory: Memory): string {
   // mutation has touched serialises byte-for-byte as before — the golden fixture is unmoved
   // by T4, and only regenerates in T5 where the cycle gains an attributed update/archive.
   if (memory.updated_by !== undefined) frontmatter.updated_by = memory.updated_by;
+  if (memory.correction_work && memory.correction_work.length > 0) {
+    frontmatter.correction_work = memory.correction_work.map(serializeCorrectionWork);
+  }
   frontmatter.curator_note = memory.curator_note ?? null;
   return matter.stringify(memory.body.trim(), frontmatter);
 }
@@ -97,11 +128,44 @@ export function parseMemoryDocument(raw: string): Memory {
   }
   // `updated_by` is optional: under exactOptionalPropertyTypes it must be OMITTED when
   // absent, never set to `undefined` (which zod's `.optional()` yields for a missing key).
-  const { updated_by, ...rest } = result.data;
+  const { updated_by, correction_work, ...rest } = result.data;
+  const normalizedCorrectionWork = correction_work?.map((work): MemoryCorrectionWork => {
+    const { next_attempt_at, lease_expires_at, applied_at, proposal_id, reason_code, ...required } =
+      work;
+    return {
+      ...required,
+      ...(next_attempt_at !== undefined ? { next_attempt_at } : {}),
+      ...(lease_expires_at !== undefined ? { lease_expires_at } : {}),
+      ...(applied_at !== undefined ? { applied_at } : {}),
+      ...(proposal_id !== undefined ? { proposal_id } : {}),
+      ...(reason_code !== undefined ? { reason_code } : {}),
+    };
+  });
   return {
     ...rest,
     body: content.trim(),
     ...(updated_by !== undefined ? { updated_by } : {}),
+    ...(normalizedCorrectionWork !== undefined
+      ? { correction_work: normalizedCorrectionWork }
+      : {}),
+  };
+}
+
+function serializeCorrectionWork(work: MemoryCorrectionWork): Record<string, unknown> {
+  return {
+    snapshot_digest: work.snapshot_digest,
+    source_digest: work.source_digest,
+    flags_digest: work.flags_digest,
+    principal_id: work.principal_id,
+    shelf_id: work.shelf_id,
+    status: work.status,
+    attempt_count: work.attempt_count,
+    queued_at: work.queued_at,
+    ...(work.next_attempt_at !== undefined ? { next_attempt_at: work.next_attempt_at } : {}),
+    ...(work.lease_expires_at !== undefined ? { lease_expires_at: work.lease_expires_at } : {}),
+    ...(work.applied_at !== undefined ? { applied_at: work.applied_at } : {}),
+    ...(work.proposal_id !== undefined ? { proposal_id: work.proposal_id } : {}),
+    ...(work.reason_code !== undefined ? { reason_code: work.reason_code } : {}),
   };
 }
 

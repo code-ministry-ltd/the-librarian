@@ -111,4 +111,30 @@ describe("memory <-> document mapping", () => {
     const parsed = parseMemoryDocument(raw);
     expect(parsed.flags).toEqual([]);
   });
+
+  it("round-trips correction work metadata without storing bodies or flag reasons", () => {
+    const correction_work = [
+      {
+        snapshot_digest: "a".repeat(64),
+        source_digest: "b".repeat(64),
+        flags_digest: "c".repeat(64),
+        principal_id: "codex",
+        shelf_id: "main",
+        status: "pending",
+        attempt_count: 0,
+        queued_at: NOW,
+      },
+    ];
+    const withWork = { ...memory, correction_work } as Memory;
+    const serialized = serializeMemoryDocument(withWork);
+
+    expect(serialized).toContain("correction_work:");
+    expect(serialized).not.toContain("private-flag-reason");
+    expect(parseMemoryDocument(serialized)).toEqual(withWork);
+  });
+
+  it("keeps correction metadata absent from legacy memories with no work", () => {
+    expect(serializeMemoryDocument(memory)).not.toContain("correction_work:");
+    expect(parseMemoryDocument(serializeMemoryDocument(memory))).toEqual(memory);
+  });
 });
