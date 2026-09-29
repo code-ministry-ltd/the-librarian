@@ -159,4 +159,34 @@ describe("redactSecrets", () => {
     const { count } = redactSecrets(`ghp_${"X".repeat(36)} and AKIA${"X".repeat(16)}`);
     expect(count).toBe(2);
   });
+
+  // Review 2026-09-29 #12: /transcript and /ingest redact up to 1 MB of untrusted
+  // text on the event loop, so every rule must stay linear on hostile input.
+  // Before the fix, 50 KB of `a-a-a-…` took over 3 s and 200 KB of `xoxb-a…`
+  // over 70 s; the bound here is loose enough to be stable on a slow CI runner.
+  it.each([
+    ["repeated word-boundary runs", "a-".repeat(500_000)],
+    ["slack-shaped runs", "xoxb-a".repeat(170_000)],
+    ["dotted runs", "a.".repeat(500_000)],
+    ["unterminated private-key headers", "-----BEGIN RSA PRIVATE KEY-----\n".repeat(32_000)],
+    ["jwt-shaped runs", `eyJ${"a".repeat(20)}.`.repeat(40_000)],
+  ])("stays fast on 1 MB of %s", (_label, input) => {
+    const started = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
+  it("still redacts a key after an unterminated private-key header", () => {
+    const begin = "-----BEGIN RSA PRIVATE KEY-----";
+    const end = "-----END RSA PRIVATE KEY-----";
+    const { redacted } = redactSecrets(`${begin}\nstray\n${begin}\n${X}\n${end}\nafter`);
+    expect(redacted).not.toContain(X);
+    expect(redacted).toContain("after");
+  });
+
+  it("redacts an assignment whose key has a long prefix before the keyword", () => {
+    const key = `${"SERVICE_".repeat(20)}API_KEY`;
+    const { redacted } = redactSecrets(`${key}=${X}`);
+    expect(redacted).toBe(`${key}=[REDACTED:secret]`);
+  });
 });

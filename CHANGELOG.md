@@ -39,6 +39,12 @@ changes from this point forward are catalogued here.
   now accepted on `/ingest` only, where the capture token is the gate. The admin
   listener refuses every browser origin not listed in `LIBRARIAN_ALLOWED_ORIGINS`,
   and the dashboard's tRPC proxy no longer forwards one.
+- **Secret redaction can no longer freeze the server.** Three redaction patterns
+  backtracked quadratically on hostile text: runs like `a-a-a-…`, long
+  scheme-like runs, and private-key headers with no end marker. Because
+  `/transcript` and `/ingest` redact up to 1 MB on the event loop, one request
+  could stall every surface for seconds to minutes. All three rules are now
+  linear and redact exactly what they did before.
 
 ### Added
 

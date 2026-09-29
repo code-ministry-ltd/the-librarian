@@ -43,9 +43,12 @@ const RULES: readonly RedactionRule[] = [
     // separator for context; redacts only the value. Quoted values (single or
     // double) are redacted in full (spaces allowed); unquoted values up to the
     // first space (3+ chars, to avoid nuking tiny prose like "token: no").
+    // The match starts at the keyword, not the start of the key: text before a
+    // match is kept verbatim, so the output is identical, and a greedy `[\w-]*`
+    // key prefix backtracked quadratically over long word runs (`a-a-a-…`).
     name: "secret-assignment",
     pattern: new RegExp(
-      `\\b([\\w-]*(?:${ASSIGNMENT_KEYWORDS}))(\\s*[:=]\\s*)` +
+      `((?:${ASSIGNMENT_KEYWORDS}))(\\s*[:=]\\s*)` +
         `(?:"(?!\\[REDACTED)[^"\\n]+"|'(?!\\[REDACTED)[^'\\n]+'|(?!\\[REDACTED)[^\\s"']{3,})`,
       "gi",
     ),
@@ -58,7 +61,11 @@ const RULES: readonly RedactionRule[] = [
   },
   {
     name: "private-key",
-    pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
+    // The body may not cross another BEGIN marker, so each header scans only up to
+    // the next one: linear, where `[\s\S]*?` rescanned to the end of the input for
+    // every unterminated header.
+    pattern:
+      /-----BEGIN [A-Z0-9 ]{0,64}PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S])*?-----END [A-Z0-9 ]{0,64}PRIVATE KEY-----/g,
     replacement: "[REDACTED:private-key]",
   },
   {
@@ -70,7 +77,9 @@ const RULES: readonly RedactionRule[] = [
     // Basic-auth credentials in URLs / connection strings:
     // `scheme://user:pass@host`. Keeps scheme + username, redacts the password.
     name: "url-credential",
-    pattern: /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+):([^\s:/@]+)@/gi,
+    // Schemes are short; an unbounded scheme class backtracked quadratically over
+    // long runs of letters, digits, dots and dashes.
+    pattern: /\b([a-z][a-z0-9+.-]{0,31}:\/\/[^\s:/@]+):([^\s:/@]+)@/gi,
     replacement: "$1:[REDACTED:url-credential]@",
   },
   {
