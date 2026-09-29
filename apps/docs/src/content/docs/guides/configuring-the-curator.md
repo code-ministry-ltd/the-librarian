@@ -43,7 +43,9 @@ The curator applies safe changes itself and asks you about risky ones:
 - **Archive and split** — the only operations that lose or reshape information —
   **always** become [proposals](/dashboard/proposals/) for you to approve, no matter
   how confident the curator is. Changes to memories marked `requires_approval` and
-  submissions explicitly marked `forceProposal` also require review.
+  submissions explicitly marked `forceProposal` also require review. Approving a
+  proposal does **not** protect the resulting memory: once accepted, later curator
+  changes to it follow the threshold like any other memory.
 
 Even at **0**, these exceptions can produce Intake proposals. Lowering the threshold
 also does not remove proposals already in the queue; review or reject those

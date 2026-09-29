@@ -143,12 +143,25 @@ export function parseMemoryDocument(raw: string): Memory {
   });
   return {
     ...rest,
+    requires_approval: rest.requires_approval && !isResolvedProposal(rest),
     body: content.trim(),
     ...(updated_by !== undefined ? { updated_by } : {}),
     ...(normalizedCorrectionWork !== undefined
       ? { correction_work: normalizedCorrectionWork }
       : {}),
   };
+}
+
+// A reviewed proposal: it carries the curator_note every proposal path stamps
+// (intake, grooming, flagged correction, dashboard move) but is no longer
+// proposed. Its requires_approval was the "awaiting review" marker, not a
+// protection. Approval used to leave it set, so every accepted proposal became
+// protected forever and forced every later curator change to it back into
+// review whatever the apply threshold. Reading it as false heals memories
+// approved before approveProposal cleared it, without a migration. A memory
+// protected on purpose (no curator_note) keeps its flag.
+function isResolvedProposal(doc: { status: string; curator_note: unknown }): boolean {
+  return doc.status !== "proposed" && doc.curator_note !== null;
 }
 
 function serializeCorrectionWork(work: MemoryCorrectionWork): Record<string, unknown> {

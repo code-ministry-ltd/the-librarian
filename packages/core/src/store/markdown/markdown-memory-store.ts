@@ -1074,6 +1074,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
       {
         ...proposal,
         status: MemoryStatus.Active,
+        requires_approval: false,
         curator_note: {
           ...note,
           correction: {
@@ -1191,7 +1192,14 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     // replacement is live before any source is dropped (never a window with no
     // active memory for the fact).
     const approved = persist(
-      { ...existing, ...cleanPatch(patch), status: MemoryStatus.Active, updated_at: now() },
+      {
+        ...existing,
+        ...cleanPatch(patch),
+        status: MemoryStatus.Active,
+        // An approved proposal is an ordinary memory, not a protected one.
+        requires_approval: false,
+        updated_at: now(),
+      },
       commitSubject.memoryApprove(id),
       agent_id,
     );

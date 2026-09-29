@@ -692,6 +692,7 @@ describe("markdown MemoryStore — flagged correction work", () => {
     });
 
     expect(approved).toMatchObject({ id: proposal.id, status: "active" });
+    expect(store.getMemory(proposal.id)?.requires_approval).toBe(false);
     expect(store.getMemory(source.id)).toMatchObject({ status: "archived", flags: [] });
     expect(store.getMemory(source.id)?.correction_work?.[0]).toMatchObject({
       status: "applied",
@@ -1066,12 +1067,47 @@ describe("markdown MemoryStore — approveProposal", () => {
     const approved = store.approveProposal("m", "approve", {
       body: "reviewed",
       is_global: true,
-      requires_approval: false,
+      requires_approval: true,
     });
     expect(approved!.status).toBe("active");
     expect(approved!.body).toBe("reviewed");
     expect(approved!.is_global).toBe(false); // smuggled value dropped
-    expect(approved!.requires_approval).toBe(true); // unchanged by the patch
+    expect(approved!.requires_approval).toBe(false); // approval always clears it
+  });
+
+  it("an approved proposal is no longer protected, so later edits need no proposal", () => {
+    const { store, seed } = setup();
+    seed({
+      id: "m",
+      status: "proposed",
+      requires_approval: true,
+      curator_note: { source: "intake", proposed_action: "create" },
+    });
+    store.approveProposal("m", "approve");
+
+    expect(store.getMemory("m")!.requires_approval).toBe(false);
+    expect(store.updateMemory("m", { body: "curator follow-up" })!.body).toBe("curator follow-up");
+  });
+
+  it("reads a proposal approved before the fix as unprotected", () => {
+    const { store, seed } = setup();
+    // The on-disk shape the old approveProposal left behind.
+    seed({
+      id: "m",
+      status: "active",
+      requires_approval: true,
+      curator_note: { source: "grooming", proposed_action: "update" },
+    });
+
+    expect(store.getMemory("m")!.requires_approval).toBe(false);
+    expect(store.updateMemory("m", { body: "curator follow-up" })!.body).toBe("curator follow-up");
+  });
+
+  it("keeps a deliberately protected memory (no curator_note) protected", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", status: "active", requires_approval: true, curator_note: null });
+
+    expect(store.getMemory("m")!.requires_approval).toBe(true);
   });
 
   it("throws when the memory is not proposed", () => {

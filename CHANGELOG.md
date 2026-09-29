@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.26.1] — 2026-09-29
+
+### Fixed
+
+- **Approving a proposal no longer protects the memory forever.** Approval kept
+  the proposal's `requires_approval` flag, so every accepted memory counted as
+  protected and every later curator update or merge touching it became a new
+  proposal, even with the auto-apply threshold at 0. Approval now clears the
+  flag, and memories approved before this fix are read as unprotected, so no
+  migration is needed. A memory protected on purpose keeps its flag.
+
 ## [1.26.0] — 2026-09-24
 
 ### Added
@@ -4668,6 +4679,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.26.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.0...v1.26.1
 [1.26.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.9...v1.24.0
