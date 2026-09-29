@@ -13,6 +13,10 @@ changes from this point forward are catalogued here.
 
 ### Security
 
+- **Patched undici and devalue.** The production dependency audit flagged
+  undici below 8.10.2 (two high-severity advisories) and devalue below 5.9.2,
+  both pulled in by the docs site. The overrides now force the patched versions.
+
 ### Added
 
 - **Codebase review, 29/09/2026.** The full review and its work list live in

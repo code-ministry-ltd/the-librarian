@@ -39,6 +39,8 @@ describe("dependency security policy", () => {
       "postcss@<=8.5.25": "8.5.26",
       "sharp@<0.35.4": "0.35.4",
       "tar@<=7.5.21": "7.5.22",
+      "undici@>=8.0.0 <8.10.2": "8.10.2",
+      "devalue@<5.9.2": "5.9.2",
     };
     const packageOverrides = rootPackage.pnpm?.overrides;
     const workspaceOverrides = parseWorkspaceOverrides(workspace);
