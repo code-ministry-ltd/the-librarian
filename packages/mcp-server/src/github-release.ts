@@ -52,6 +52,10 @@ function fresh(entry: CacheEntry, now: number): boolean {
 
 async function callGithub(): Promise<LatestReleaseStatus> {
   const slug = repoSlug();
+  // The slug is interpolated into the request path: accept only `owner/repo`.
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(slug)) {
+    return { kind: "unavailable", reason: "invalid_repo" };
+  }
   const url = `https://api.github.com/repos/${slug}/releases/latest`;
 
   const controller = new AbortController();
@@ -64,10 +68,16 @@ async function callGithub(): Promise<LatestReleaseStatus> {
     };
     // Optional auth lifts the unauthenticated 60 req/h limit to 5000 — useful
     // for shared dashboards. Anonymous requests are fine for personal use.
-    if (process.env.LIBRARIAN_GITHUB_TOKEN) {
-      headers.authorization = `Bearer ${process.env.LIBRARIAN_GITHUB_TOKEN}`;
-    }
-    const response = await fetch(url, { headers, signal: controller.signal });
+    const token = process.env.LIBRARIAN_GITHUB_TOKEN;
+    if (token) headers.authorization = `Bearer ${token}`;
+    // A credentialed request never follows a redirect (AGENTS.md): it would carry
+    // the token to wherever it points. Anonymous lookups may still follow one
+    // (GitHub redirects renamed repositories).
+    const response = await fetch(url, {
+      headers,
+      signal: controller.signal,
+      redirect: token ? "error" : "follow",
+    });
     if (response.status === 404) {
       return { kind: "no_release", cachedAt: new Date().toISOString() };
     }

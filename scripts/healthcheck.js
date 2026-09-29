@@ -429,6 +429,7 @@ async function probeHttpMcp(url, { agentToken }) {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${agentToken}` },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    redirect: "error", // never carry the token across a redirect (AGENTS.md)
   });
   if (!authorized.ok) {
     throw hint(

@@ -179,6 +179,7 @@ async function smokeHttp(dataDir) {
         method: "initialize",
         params: {},
       }),
+      redirect: "error",
     });
     const json = await authorized.json();
     assert(authorized.ok, "authorized HTTP MCP should succeed");

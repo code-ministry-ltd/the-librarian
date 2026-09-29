@@ -10,7 +10,7 @@ review. Tick an item in the same commit that fixes it, and note the PR.
 - [x] **#2** Reject DNS-rebinding requests: validate `Host` on both listeners and in the dashboard
 - [x] **#22a** Accept `chrome-extension://` origins only on the public `/ingest` route, never on the admin listener
 - [x] **#12** Make secret redaction linear-time (three quadratic rules found and fixed; no input cap needed once linear)
-- [ ] **#23** Add `redirect: "error"` to every credentialed outbound fetch
+- [x] **#23** Add `redirect: "error"` to every credentialed outbound fetch
 
 ## PR 2 — Privacy
 

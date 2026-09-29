@@ -58,6 +58,35 @@ describe("getLatestRelease", () => {
     expect(status.release.bodyExcerpt).toContain("handoffs");
   });
 
+  // AGENTS.md / review 2026-09-29 #23: with a token attached, a redirect must not
+  // be followed (it would carry the bearer to wherever it points).
+  it("refuses redirects when LIBRARIAN_GITHUB_TOKEN is sent", async () => {
+    process.env.LIBRARIAN_GITHUB_TOKEN = "gh-test";
+    let init: RequestInit | undefined;
+    mockFetchOnce(async (_url, requestInit) => {
+      init = requestInit;
+      return new Response("Not Found", { status: 404 });
+    });
+    await getLatestRelease();
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer gh-test");
+    expect(init?.redirect).toBe("error");
+  });
+
+  it("refuses a LIBRARIAN_GITHUB_REPO that is not owner/repo, without calling GitHub", async () => {
+    process.env.LIBRARIAN_GITHUB_REPO = "owner/repo/../../user";
+    let fetched = 0;
+    mockFetchOnce(async () => {
+      fetched++;
+      return jsonResponse({});
+    });
+    try {
+      expect(await getLatestRelease()).toEqual({ kind: "unavailable", reason: "invalid_repo" });
+      expect(fetched).toBe(0);
+    } finally {
+      delete process.env.LIBRARIAN_GITHUB_REPO;
+    }
+  });
+
   it("returns no_release on 404 (pre-tag repo)", async () => {
     mockFetchOnce(async () => new Response("Not Found", { status: 404 }));
     const status = await getLatestRelease();

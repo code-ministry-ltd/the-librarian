@@ -71,6 +71,17 @@ describe("createGroomingLlmClient", () => {
     expect(sent.response_format).toEqual({ type: "json_object" });
   });
 
+  // AGENTS.md / review 2026-09-29 #23: a credentialed call never follows a
+  // redirect, or a 307/308 would replay the bearer and the memory-bearing prompt.
+  it("refuses to follow redirects on the credentialed request", async () => {
+    const fetchMock = vi.fn(async () => completion(OK_BODY));
+    const client = createGroomingLlmClient(CONFIG, { fetch: fetchMock });
+
+    await client.complete({ messages: [{ role: "user", content: "x" }] });
+
+    expect(fetchMock.mock.calls[0]![1]!.redirect).toBe("error");
+  });
+
   it("strips a trailing slash from the endpoint", async () => {
     const fetchMock = vi.fn(async () => completion(OK_BODY));
     const client = createGroomingLlmClient(

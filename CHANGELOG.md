@@ -45,6 +45,12 @@ changes from this point forward are catalogued here.
   `/transcript` and `/ingest` redact up to 1 MB on the event loop, one request
   could stall every surface for seconds to minutes. All three rules are now
   linear and redact exactly what they did before.
+- **Credentialed requests no longer follow redirects.** The curator's LLM client
+  and the GitHub release check sent a bearer token without `redirect: "error"`.
+  A 307/308 from the provider would replay the memory-bearing prompt to
+  wherever it pointed, contrary to the project's own rule. Both now refuse
+  redirects, as do the healthcheck and smoke scripts. `LIBRARIAN_GITHUB_REPO`
+  must now be a plain `owner/repo`.
 
 ### Added
 

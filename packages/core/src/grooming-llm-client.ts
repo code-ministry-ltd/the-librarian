@@ -136,6 +136,9 @@ export function createGroomingLlmClient(
             },
             body: JSON.stringify(body),
             signal: controller.signal,
+            // Never follow a redirect with the bearer and the memory-bearing
+            // prompt attached (AGENTS.md); fetch rejects, reported as "network".
+            redirect: "error",
           });
         } catch (err) {
           throw fetchFailure(err, timeoutMs);
