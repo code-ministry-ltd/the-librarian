@@ -9,6 +9,15 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.27.1] — 2026-09-29
+
+### Security
+
+### Added
+
+- **Codebase review, 29/09/2026.** The full review and its work list live in
+  `docs/review/2026-09-29/` (`codebase-review.md` and `todo.md`).
+
 ## [1.27.0] — 2026-09-29
 
 ### Fixed
@@ -4699,6 +4708,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.27.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.27.0...v1.27.1
 [1.27.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.1...v1.27.0
 [1.26.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.0...v1.26.1
 [1.26.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.25.0...v1.26.0
