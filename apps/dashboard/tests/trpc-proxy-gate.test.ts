@@ -69,6 +69,20 @@ describe("/api/trpc proxy session gate", () => {
     expect((sent.headers as Headers).get("authorization")).toBeNull();
   });
 
+  it("never relays the browser's Origin to the internal listener", async () => {
+    authMock.mockResolvedValue({ user: { name: "owner" } });
+    const req = new NextRequest("http://localhost:3000/api/trpc/grooming.config", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000" },
+      body: "{}",
+    });
+
+    await POST(req, params);
+
+    const sent = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    expect((sent.headers as Headers).get("origin")).toBeNull();
+  });
+
   it("gates GET (tRPC queries) too, not just POST", async () => {
     authMock.mockResolvedValue(null);
 

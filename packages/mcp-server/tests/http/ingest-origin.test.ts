@@ -27,9 +27,49 @@ const config: AuthConfig = {
   port: 3838,
 };
 
+const ingest = { surface: "public", path: "/ingest" } as const;
+
 describe("isAllowedOrigin — chrome-extension origins", () => {
-  it("accepts a chrome-extension:// origin (the browser-extension capture path)", () => {
-    expect(isAllowedOrigin(reqWithOrigin("chrome-extension://abc"), config)).toBe(true);
+  it("accepts a chrome-extension:// origin on /ingest (the browser-extension capture path)", () => {
+    expect(isAllowedOrigin(reqWithOrigin("chrome-extension://abc"), config, ingest)).toBe(true);
+  });
+
+  // Review 2026-09-29 #22a: the exemption is justified by /ingest's capture token.
+  // Any installed extension with localhost access must not get the admin listener,
+  // which has no bearer, nor any other public route.
+  it("refuses a chrome-extension:// origin on any other public route", () => {
+    expect(
+      isAllowedOrigin(reqWithOrigin("chrome-extension://abc"), config, {
+        surface: "public",
+        path: "/mcp",
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses a chrome-extension:// origin on the internal admin listener", () => {
+    expect(
+      isAllowedOrigin(reqWithOrigin("chrome-extension://abc", "127.0.0.1:3840"), config, {
+        surface: "internal",
+        path: "/trpc/auth.config",
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses even a same-host browser origin on the internal admin listener", () => {
+    expect(
+      isAllowedOrigin(reqWithOrigin("http://127.0.0.1:3840", "127.0.0.1:3840"), config, {
+        surface: "internal",
+      }),
+    ).toBe(false);
+  });
+
+  it("serves the internal listener with no Origin, or an explicitly allowed one", () => {
+    const internal = { surface: "internal" } as const;
+    expect(isAllowedOrigin(reqWithOrigin(undefined, "127.0.0.1:3840"), config, internal)).toBe(
+      true,
+    );
+    const listed = { ...config, allowedOrigins: ["https://dash.example.com"] };
+    expect(isAllowedOrigin(reqWithOrigin("https://dash.example.com"), listed, internal)).toBe(true);
   });
 
   it("still rejects a stray cross-site https origin under the same-host rule", () => {

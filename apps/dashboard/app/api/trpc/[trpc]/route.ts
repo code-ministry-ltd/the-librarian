@@ -24,6 +24,9 @@ const STRIP_INBOUND = new Set([
   "content-length",
   "authorization",
   "cookie",
+  // The proxy makes its own same-site check below; the internal listener refuses
+  // any browser Origin (review 2026-09-29 #22a), so never relay one upstream.
+  "origin",
   DASHBOARD_USER_HEADER,
 ]);
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);

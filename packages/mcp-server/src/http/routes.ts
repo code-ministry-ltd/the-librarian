@@ -334,7 +334,7 @@ export function createRouteHandler(
       // remote deployments keep working under any name.
       if (auth.allowNoAuth && !isAllowedHost(req, auth)) return refuseHost(ctx);
 
-      if (!isAllowedOrigin(req, auth)) {
+      if (!isAllowedOrigin(req, auth, { surface: "public", path: url.pathname })) {
         recordOriginRefusal(ctx);
         return sendJson(res, { error: "Origin not allowed" }, 403);
       }
@@ -410,7 +410,7 @@ function createInternalRoutes(deps: {
         // The internal listener is trusted by isolation (loopback / docker net,
         // never published — ADR 0008 P3), but the browser-origin gate still runs
         // before the tRPC adapter, exactly as the if-ladder did.
-        if (!isAllowedOrigin(ctx.req, ctx.auth)) {
+        if (!isAllowedOrigin(ctx.req, ctx.auth, { surface: "internal" })) {
           recordOriginRefusal(ctx);
           return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
         }
@@ -475,7 +475,7 @@ async function runPublicPluginRoute(route: PluginRoute, ctx: RouteContext): Prom
  * internal branch always oks).
  */
 async function runInternalPluginRoute(route: PluginRoute, ctx: RouteContext): Promise<void> {
-  if (!isAllowedOrigin(ctx.req, ctx.auth)) {
+  if (!isAllowedOrigin(ctx.req, ctx.auth, { surface: "internal" })) {
     recordOriginRefusal(ctx);
     return sendJson(ctx.res, { error: "Origin not allowed" }, 403);
   }

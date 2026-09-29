@@ -32,6 +32,13 @@ changes from this point forward are catalogued here.
   names (`.local`, `.lan`, `.internal`, `.home.arpa`) keep working. List any other
   name you use in the new `LIBRARIAN_ALLOWED_HOSTS` setting. Deployments where a
   token or login protects the request are unaffected.
+- **Browser extensions no longer get admin access.** Any
+  `chrome-extension://` origin was accepted everywhere, including on the internal
+  admin listener, which has no token. Any installed extension allowed to reach
+  localhost could therefore read secrets and mint tokens. Extension origins are
+  now accepted on `/ingest` only, where the capture token is the gate. The admin
+  listener refuses every browser origin not listed in `LIBRARIAN_ALLOWED_ORIGINS`,
+  and the dashboard's tRPC proxy no longer forwards one.
 
 ### Added
 

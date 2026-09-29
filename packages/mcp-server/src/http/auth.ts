@@ -504,19 +504,33 @@ export function hostRefusalMessage(req: IncomingMessage): string {
   );
 }
 
-export function isAllowedOrigin(req: IncomingMessage, config: AuthConfig): boolean {
+/** Where a request landed, for {@link isAllowedOrigin}. */
+export interface OriginScope {
+  surface: AuthSurface;
+  /** The request path; only `/ingest` accepts browser-extension origins. */
+  path?: string;
+}
+
+export function isAllowedOrigin(
+  req: IncomingMessage,
+  config: AuthConfig,
+  scope: OriginScope = { surface: "public" },
+): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
-  if (config.allowedOrigins.length) return config.allowedOrigins.includes(origin);
+  if (config.allowedOrigins.length && config.allowedOrigins.includes(origin)) return true;
+  // The internal listener grants admin with no bearer (ADR 0008 P3). Its callers
+  // are the dashboard's server and proxy, never a browser page, so a browser
+  // Origin is refused unless the operator listed it explicitly.
+  if (scope.surface === "internal") return false;
+  if (config.allowedOrigins.length) return false;
   // Browser-extension capture path (ingest spec criterion 1 / S1, D28): a
   // Chromium MV3 background service worker POSTs to /ingest with an
   // `Origin: chrome-extension://<id>` header, which the same-host rule below
-  // would 403 before dispatch. Let any `chrome-extension:` scheme origin pass:
-  // the capture bearer token is the real gate (D28), the server is bearer- not
-  // cookie-authed (so CSRF isn't the threat), and a web page cannot forge a
-  // `chrome-extension://` origin. Scoped to exactly that scheme — a stray
-  // `https://evil.com` origin still falls through to the same-host check.
-  if (origin.startsWith("chrome-extension://")) return true;
+  // would 403 before dispatch. The capture bearer token is the real gate there
+  // (D28), so the exemption applies to /ingest only: any extension with localhost
+  // access must not reach another route by it (review 2026-09-29 #22a).
+  if (origin.startsWith("chrome-extension://")) return scope.path === "/ingest";
   try {
     const originUrl = new URL(origin);
     const hostHeader = req.headers.host || `${config.host}:${config.port}`;
