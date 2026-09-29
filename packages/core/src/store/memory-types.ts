@@ -193,6 +193,14 @@ export interface MemoryStore {
     shelf_id: string;
     manual_review_reason_code?: CorrectionManualReviewReasonCode;
   }) => Memory | null;
+  // Admin "Re-assess": queue fresh correction work for the memory's current flags
+  // once earlier work has finished (manual review, cancelled, or applied). Unknown id → null.
+  reassessMemoryCorrection: (input: {
+    id: string;
+    shelf_id: string;
+    principal_id: string;
+    agent_id?: string;
+  }) => Memory | null;
   // Enumerate pending/expired work and terminal proposal outcomes awaiting source reconciliation.
   listDueMemoryCorrections: (at?: string) => MemoryCorrectionWorkItem[];
   // Claim pending/due work or reclaim an expired lease; attempts are bounded.

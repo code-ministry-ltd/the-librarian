@@ -170,7 +170,60 @@ describe("buildMemoryCorrectionCandidate", () => {
       "- Stale item",
     ]);
 
-    expect(result).toMatchObject({ ok: true, value: { body: "\n- Useful item" } });
+    expect(result).toMatchObject({ ok: true, value: { body: "- Useful item" } });
+  });
+
+  it("deletes a complete list item even when it contains commas, semicolons, or conjunctions", () => {
+    const flagged =
+      "*   Code Style: CSS must reside in external `.css` files; inline `<style>` blocks in HTML are prohibited.";
+    const source = [
+      "**Development Preferences:**",
+      "*   Home Tech Stack: prefer Node/TypeScript, aligning with the workspace stack.",
+      flagged,
+      "*   Security & Quality: review and audit every change.",
+    ].join("\n");
+
+    const result = buildMemoryCorrectionCandidate(source, redactSecretsWithSourceMap(source), [
+      flagged,
+    ]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        body: [
+          "**Development Preferences:**",
+          "*   Home Tech Stack: prefer Node/TypeScript, aligning with the workspace stack.",
+          "*   Security & Quality: review and audit every change.",
+        ].join("\n"),
+      },
+    });
+  });
+
+  it("removes the line break with the last list item so no blank line is left behind", () => {
+    const source = "- Useful item\n- Stale item, and more";
+    const result = buildMemoryCorrectionCandidate(source, redactSecretsWithSourceMap(source), [
+      "- Stale item, and more",
+    ]);
+
+    expect(result).toMatchObject({ ok: true, value: { body: "- Useful item" } });
+  });
+
+  it("refuses a list item with nested sub-items rather than orphaning them", () => {
+    const source = "- Stale parent\n  - Useful child\n- Sibling";
+    expect(
+      buildMemoryCorrectionCandidate(source, redactSecretsWithSourceMap(source), [
+        "- Stale parent",
+      ]),
+    ).toMatchObject({ ok: false, reason_code: "quote_not_standalone_claim" });
+  });
+
+  it("refuses part of a list item even though whole items are allowed", () => {
+    const source = "- Keep this; stale clause\n- Sibling";
+    expect(
+      buildMemoryCorrectionCandidate(source, redactSecretsWithSourceMap(source), [
+        "- Keep this; stale",
+      ]),
+    ).toMatchObject({ ok: false, reason_code: "quote_not_standalone_claim" });
   });
 
   it("rejects missing, ambiguous, redacted, overlapping, or non-claim spans all-or-nothing", () => {

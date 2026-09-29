@@ -998,6 +998,94 @@ describe("markdown MemoryStore — flagged correction work", () => {
   });
 });
 
+describe("markdown MemoryStore — reassessMemoryCorrection", () => {
+  function flagToManualReview(store: ReturnType<typeof createMarkdownMemoryStore>) {
+    return store.flagMemoryForCorrection({
+      id: "m",
+      reason: "The stale fact is no longer true.",
+      agent_id: "codex",
+      principal_id: "flagger",
+      shelf_id: "shelf-1",
+      manual_review_reason_code: "no_worker_scope",
+    })!;
+  }
+
+  it("re-queues finished manual-review work so the worker picks it up again", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", body: "Useful fact. Stale fact." });
+    const flagged = flagToManualReview(store);
+    expect(store.listDueMemoryCorrections(NOW)).toEqual([]);
+
+    const reassessed = store.reassessMemoryCorrection({
+      id: "m",
+      shelf_id: "admin-shelf",
+      principal_id: "admin",
+      agent_id: "admin",
+    });
+
+    // Same body + flags → same snapshot, so the finished entry is replaced, not duplicated.
+    expect(reassessed!.correction_work).toHaveLength(1);
+    expect(reassessed!.correction_work![0]).toEqual({
+      snapshot_digest: flagged.correction_work![0]!.snapshot_digest,
+      source_digest: flagged.correction_work![0]!.source_digest,
+      flags_digest: flagged.correction_work![0]!.flags_digest,
+      principal_id: "flagger",
+      shelf_id: "shelf-1",
+      status: "pending",
+      attempt_count: 0,
+      queued_at: NOW,
+    });
+    expect(reassessed!.flags).toHaveLength(1);
+    expect(store.listDueMemoryCorrections(NOW)).toHaveLength(1);
+  });
+
+  it("queues work for a flag raised before targeted correction existed", () => {
+    const { store, seed } = setup();
+    seed({
+      id: "m",
+      flags: [{ agent_id: "codex", reason: "old flag", created_at: NOW }],
+    });
+
+    const reassessed = store.reassessMemoryCorrection({
+      id: "m",
+      shelf_id: "shelf-1",
+      principal_id: "admin",
+    });
+
+    expect(reassessed!.correction_work).toEqual([
+      expect.objectContaining({ principal_id: "admin", shelf_id: "shelf-1", status: "pending" }),
+    ]);
+  });
+
+  it("refuses while earlier correction work is still in flight", () => {
+    const { store, seed } = setup();
+    seed({ id: "m" });
+    store.flagMemoryForCorrection({
+      id: "m",
+      reason: "stale",
+      agent_id: "codex",
+      principal_id: "flagger",
+      shelf_id: "shelf-1",
+    });
+
+    expect(() =>
+      store.reassessMemoryCorrection({ id: "m", shelf_id: "shelf-1", principal_id: "admin" }),
+    ).toThrow(/already has correction work pending; wait for it to finish/);
+  });
+
+  it("refuses a memory with no open flags and returns null for an unknown id", () => {
+    const { store, seed } = setup();
+    seed({ id: "m" });
+
+    expect(() =>
+      store.reassessMemoryCorrection({ id: "m", shelf_id: "shelf-1", principal_id: "admin" }),
+    ).toThrow(/has no open flags to re-assess/);
+    expect(
+      store.reassessMemoryCorrection({ id: "missing", shelf_id: "shelf-1", principal_id: "admin" }),
+    ).toBeNull();
+  });
+});
+
 describe("markdown MemoryStore — resolveFlags", () => {
   it("clears the flags list and leaves status unchanged", () => {
     const { store, seed } = setup();

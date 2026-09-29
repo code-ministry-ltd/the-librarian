@@ -1,15 +1,16 @@
 // Flagged review queue: list every memory an agent has flagged for review,
 // surfacing its text, flag details, and correction-work status. Safe targeted
-// corrections run asynchronously; admins can dismiss flags or explicitly archive
-// the whole memory when human review is needed.
+// corrections run asynchronously; admins can dismiss flags, explicitly archive
+// the whole memory, or re-assess once earlier correction work has finished.
 
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
+import { canReassessCorrection, describeCorrectionReason } from "./correction-reasons";
 import { MemoryCard } from "./memory-card";
 import type { MemoryRow } from "./types";
-import { resolveFlagAction } from "@/app/(memories)/actions";
+import { reassessFlagAction, resolveFlagAction } from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
 import { trpc } from "@/lib/trpc-client";
 
@@ -25,7 +26,14 @@ type FlaggedRow = MemoryRow & {
   correction_proposal?: { id: string } | null;
 };
 
-type CorrectionWorkStatus = NonNullable<MemoryRow["correction_work"]>[number]["status"];
+type CorrectionWork = NonNullable<MemoryRow["correction_work"]>[number];
+type CorrectionWorkStatus = CorrectionWork["status"];
+
+const IN_FLIGHT: ReadonlySet<CorrectionWorkStatus> = new Set([
+  "pending",
+  "processing",
+  "proposal_pending",
+]);
 
 const CORRECTION_STATUS_MESSAGES: Partial<Record<CorrectionWorkStatus, string>> = {
   pending: "Correction review is queued.",
@@ -36,12 +44,13 @@ const CORRECTION_STATUS_MESSAGES: Partial<Record<CorrectionWorkStatus, string>> 
 };
 
 function CorrectionWorkNotice({
-  status,
+  work,
   hasProposal,
 }: {
-  status: CorrectionWorkStatus | undefined;
+  work: CorrectionWork | undefined;
   hasProposal: boolean;
 }) {
+  const status = work?.status;
   if (hasProposal) {
     return (
       <p role="status" className="mt-2 text-sm text-foreground/70">
@@ -63,9 +72,11 @@ function CorrectionWorkNotice({
 
   if (!status) return null;
   const message = CORRECTION_STATUS_MESSAGES[status];
+  const reason = status === "manual_review" ? describeCorrectionReason(work?.reason_code) : null;
   return message ? (
     <p role="status" className="mt-2 text-sm text-foreground/70">
       {message}
+      {reason ? ` ${reason}` : null}
     </p>
   ) : null;
 }
@@ -77,11 +88,22 @@ export function FlaggedView() {
   });
   const memories = (listQuery.data?.memories ?? []) as FlaggedRow[];
   const [pending, startTransition] = useTransition();
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
   const resolve = (memory: FlaggedRow, action: "dismiss" | "archive") =>
     startTransition(async () => {
       if (!memory.shelfId) return;
       await resolveFlagAction(memory.id, memory.shelfId, action);
+      await listQuery.refetch();
+    });
+
+  const reassess = (memory: FlaggedRow) =>
+    startTransition(async () => {
+      if (!memory.shelfId) return;
+      const result = await reassessFlagAction(memory.id, memory.shelfId);
+      setActionErrors(({ [memory.id]: _cleared, ...rest }) =>
+        result.ok ? rest : { ...rest, [memory.id]: result.error },
+      );
       await listQuery.refetch();
     });
 
@@ -106,9 +128,15 @@ export function FlaggedView() {
     <ul className="flex flex-col gap-2">
       {memories.map((memory) => {
         const flags = memory.flags ?? [];
-        const correctionStatus = memory.correction_work
+        const correctionWork = memory.correction_work
           ?.filter((work) => work.shelf_id === memory.shelfId)
-          .at(-1)?.status;
+          .at(-1);
+        const hasProposal = Boolean(memory.correction_proposal);
+        const canReassess =
+          !hasProposal &&
+          !(correctionWork && IN_FLIGHT.has(correctionWork.status)) &&
+          canReassessCorrection(correctionWork?.reason_code);
+        const actionError = actionErrors[memory.id];
         return (
           <li key={memory.id}>
             <MemoryCard
@@ -123,6 +151,15 @@ export function FlaggedView() {
               ]}
               actions={
                 <>
+                  {canReassess ? (
+                    <Button
+                      variant="outline"
+                      disabled={pending || !memory.shelfId || memory.shelfWritable === false}
+                      onClick={() => reassess(memory)}
+                    >
+                      Re-assess
+                    </Button>
+                  ) : null}
                   <Button
                     variant="outline"
                     disabled={pending || !memory.shelfId || memory.shelfWritable === false}
@@ -140,10 +177,12 @@ export function FlaggedView() {
                 </>
               }
             >
-              <CorrectionWorkNotice
-                status={correctionStatus}
-                hasProposal={Boolean(memory.correction_proposal)}
-              />
+              <CorrectionWorkNotice work={correctionWork} hasProposal={hasProposal} />
+              {actionError ? (
+                <p role="alert" className="mt-2 text-sm text-destructive">
+                  {actionError}
+                </p>
+              ) : null}
               {memory.shelfWritable === false ? (
                 <p role="status" className="mt-2 text-sm text-foreground/60">
                   This shelf is read-only here. Ask an administrator with write access to resolve

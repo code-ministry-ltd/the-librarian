@@ -166,6 +166,12 @@ export function buildMemoryCorrectionCandidate(
   if (spans.some((span) => !isStandaloneClaim(sourceBody, span))) {
     return { ok: false, reason_code: "quote_not_standalone_claim" };
   }
+  for (let index = 0; index < spans.length; index++) {
+    const span = spans[index];
+    if (span && isWholeListItem(sourceBody, span)) {
+      spans[index] = withLineBreak(sourceBody, span, spans[index - 1], spans[index + 1]);
+    }
+  }
 
   let body = sourceBody;
   for (let index = spans.length - 1; index >= 0; index--) {
@@ -228,17 +234,10 @@ function findUniqueOccurrence(text: string, quote: string): { start: number } | 
 }
 
 function isStandaloneClaim(source: string, span: MemoryCorrectionSpan): boolean {
+  // A whole list item is one self-contained unit however it is punctuated, so the
+  // compound-sentence guard below applies only to sentence-level quotes.
+  if (isWholeListItem(source, span)) return !hasNestedContent(source, span);
   if (/[;,—–]|\b(?:and|but|or|yet|whereas|while)\b/i.test(span.quote)) return false;
-  const lineStart = source.lastIndexOf("\n", span.start - 1) + 1;
-  const nextLineStart = source.indexOf("\n", span.end);
-  const lineEnd = nextLineStart < 0 ? source.length : nextLineStart;
-  if (
-    span.start === lineStart &&
-    span.end === lineEnd &&
-    /^ {0,3}(?:[-*+]|\d+[.)])\s+\S.*$/.test(span.quote)
-  ) {
-    return true;
-  }
 
   const before = source.slice(0, span.start);
   const after = source.slice(span.end);
@@ -247,6 +246,49 @@ function isStandaloneClaim(source: string, span: MemoryCorrectionSpan): boolean 
     /[.!?]["'”’)]*$/.test(span.quote) && (span.end === source.length || /^\s/.test(after));
   const sentenceStops = span.quote.match(/[.!?]["'”’)]*(?=\s|$)/g) ?? [];
   return sentenceStartsHere && sentenceEndsHere && sentenceStops.length === 1;
+}
+
+function isWholeListItem(source: string, span: MemoryCorrectionSpan): boolean {
+  const lineStart = source.lastIndexOf("\n", span.start - 1) + 1;
+  const nextLineStart = source.indexOf("\n", span.end);
+  const lineEnd = nextLineStart < 0 ? source.length : nextLineStart;
+  return (
+    span.start === lineStart &&
+    span.end === lineEnd &&
+    /^ {0,3}(?:[-*+]|\d+[.)])\s+\S.*$/.test(span.quote)
+  );
+}
+
+/** Deleting a parent item would orphan an indented child or continuation line. */
+function hasNestedContent(source: string, span: MemoryCorrectionSpan): boolean {
+  if (span.end >= source.length) return false;
+  const nextLine = source.slice(span.end + 1).split("\n", 1)[0] ?? "";
+  if (nextLine.trim().length === 0) return false;
+  const indent = (line: string) => line.length - line.trimStart().length;
+  return indent(nextLine) > indent(span.quote);
+}
+
+/**
+ * Take one adjacent line break with a removed list item so the list closes up
+ * instead of gaining a blank line. Never claim a break a neighbouring span owns.
+ */
+function withLineBreak(
+  source: string,
+  span: MemoryCorrectionSpan,
+  previous: MemoryCorrectionSpan | undefined,
+  next: MemoryCorrectionSpan | undefined,
+): MemoryCorrectionSpan {
+  if (source[span.end] === "\n" && (!next || next.start > span.end + 1)) {
+    return { start: span.start, end: span.end + 1, quote: `${span.quote}\n` };
+  }
+  if (
+    span.start > 0 &&
+    source[span.start - 1] === "\n" &&
+    (!previous || previous.end < span.start - 1)
+  ) {
+    return { start: span.start - 1, end: span.end, quote: `\n${span.quote}` };
+  }
+  return span;
 }
 
 function stripCodeFence(raw: string): string {

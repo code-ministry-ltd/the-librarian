@@ -1157,6 +1157,47 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     }
   });
 
+  it("memories.reassessFlag queues a fresh correction pass for the memory's open flags", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Needs another look" });
+    flagMemory(dataDir, m.id, "one line is outdated", "scribe");
+    const server = await startHttpServer({ dataDir });
+    try {
+      const result = await trpcPost<FlaggedRow>(server, "memories.reassessFlag", {
+        id: m.id,
+        shelf_id: "main",
+      });
+      expect(result.status).toBe("active");
+      expect(result.flags).toHaveLength(1);
+      expect(result.correction_work?.at(-1)).toMatchObject({ shelf_id: "main", status: "pending" });
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.reassessFlag explains why a memory with no open flags cannot be re-assessed", async () => {
+    const dataDir = makeTempDir();
+    const m = seedMemory(dataDir, { title: "Clean fact" });
+    const server = await startHttpServer({ dataDir });
+    try {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.reassessFlag`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${server.token}`,
+        },
+        body: JSON.stringify({ id: m.id, shelf_id: "main" }),
+      });
+      expect(response.status).toBe(400);
+      const json = (await response.json()) as TrpcErr;
+      expect(json.error?.message).toMatch(/has no open flags to re-assess/);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
   it("listFlagged / resolveFlag are unreachable from the public (network) listener (ADR 0008 P3)", async () => {
     const dataDir = makeTempDir();
     const m = seedMemory(dataDir, { title: "Protected by gate" });

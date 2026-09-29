@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.27.0] — 2026-09-29
+
+### Fixed
+
+- **Flagged corrections can remove a whole list item again.** The safety check
+  that stops the curator cutting half of a compound sentence also rejected any
+  list item containing a comma, semicolon, dash or "and"/"or", which is most of
+  them, so these flags fell back to manual review. A complete list item is now
+  removable however it is punctuated, unless it has nested sub-items. Removing
+  it no longer leaves a blank line in the list.
+
+### Added
+
+- **The Flagged page explains why automatic correction stopped.** A row that
+  needs manual review now says why in plain English instead of a generic notice.
+- **Re-assess on the Flagged page.** Runs the automatic correction again over a
+  memory's current text and flags once earlier work has finished, including
+  flags raised before targeted correction existed. Backed by the admin-only
+  `memories.reassessFlag` tRPC mutation.
+
 ## [1.26.1] — 2026-09-29
 
 ### Fixed
@@ -4679,6 +4699,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.27.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.1...v1.27.0
 [1.26.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.0...v1.26.1
 [1.26.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.24.0...v1.25.0

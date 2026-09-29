@@ -215,6 +215,18 @@ export async function resolveFlagAction(
   }
 }
 
+// "Re-assess" on the Flagged page: queue a fresh targeted-correction pass. The
+// server refuses with a teaching message while earlier work is still running.
+export async function reassessFlagAction(id: string, shelfId: string): Promise<ActionResult> {
+  try {
+    await serverTRPC.memories.reassessFlag.mutate({ id, shelf_id: shelfId });
+    revalidatePath("/flagged");
+    return { ok: true };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export type BulkUpdateResult =
   { ok: true; updated: number; transaction_id: string } | { ok: false; error: string };
 

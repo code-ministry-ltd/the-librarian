@@ -133,6 +133,11 @@ const ResolveFlagInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
+const ReassessFlagInputSchema = z.object({
+  id: z.string().min(1),
+  shelf_id: z.string().min(1),
+});
+
 // D1.1 — bulk-update + distinctValues input shapes for the dashboard's
 // re-home flow and data-driven filter dropdowns. (Memories are project-less,
 // so re-home is agent-only now.)
@@ -881,6 +886,31 @@ export const memoriesRouter = router({
       input.action === "archive"
         ? shelfStore.archiveFlaggedMemory(input.id, ctx.principal.actorId)
         : shelfStore.resolveFlags(input.id, ctx.principal.actorId);
+    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
+    return /* SAFETY: the null-checked result is read/written only in the exact writable shelf above. */ result as unknown as MemoryShape;
+  }),
+
+  // "Re-assess" on the Flagged page: queue a fresh targeted-correction pass over
+  // the memory's current flags on the exact writable shelf shown in the row. The
+  // correction worker picks it up on its next poll and re-checks every gate.
+  reassessFlag: adminProcedure.input(ReassessFlagInputSchema).mutation(({ ctx, input }) => {
+    const shelf = exactWritableShelfForPrincipal(ctx.store, ctx.principal, input.shelf_id);
+    if (!shelf) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
+    const shelfStore = ctx.store.forShelf(shelf, ctx.principal);
+    let result;
+    try {
+      result = shelfStore.reassessMemoryCorrection({
+        id: input.id,
+        shelf_id: shelf.id,
+        principal_id: ctx.principal.actorId,
+        agent_id: ctx.principal.actorId,
+      });
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
     if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
     return /* SAFETY: the null-checked result is read/written only in the exact writable shelf above. */ result as unknown as MemoryShape;
   }),

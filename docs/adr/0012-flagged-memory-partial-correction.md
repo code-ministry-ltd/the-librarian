@@ -25,3 +25,7 @@ A flagged memory may combine an outdated claim with useful facts. Sending every 
 - Automatic review uses the configured Grooming provider. Known secret patterns are redacted, but redaction is best-effort and cannot guarantee removal of arbitrary sensitive text.
 - Durable proposal outcomes permit recovery from interruption between proposal and source writes without claiming a multi-document transaction. Drift, missing authority, or unrecoverable state remains flagged for manual review. If an approved correction supersedes another correction proposal for the same source, the stale proposal is archived with a resolution marker rather than sent through generic proposal resolution.
 - The MCP surface remains the existing seven verbs with the same `flag_memory` input schema. Dashboard history and review controls provide the human decision surface.
+
+## Amendments
+
+- **2026-09-29 (v1.27.0):** A complete list item counts as a standalone claim whatever its internal punctuation; the compound-sentence guard applies to sentence-level quotes only. A list item with indented child or continuation lines is still refused. A removed list item takes one adjacent line break with it. Administrators can **Re-assess** a flag whose work has finished; this queues fresh work over the current snapshot and the worker re-checks every gate.

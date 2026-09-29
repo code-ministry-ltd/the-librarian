@@ -531,6 +531,62 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     );
   }
 
+  // A finished correction pass is never retried on its own. Re-assess queues a
+  // fresh pass over the current body and flags; it reuses the flagger's principal
+  // and shelf routing when earlier work exists. The worker re-checks every gate.
+  function reassessMemoryCorrection(input: {
+    id: string;
+    shelf_id: string;
+    principal_id: string;
+    agent_id?: string;
+  }): Memory | null {
+    const { id, shelf_id, principal_id, agent_id = DEFAULT_AGENT_ID } = input;
+    const existing = getMemory(id);
+    if (!existing) return null;
+    if (existing.status !== MemoryStatus.Active) {
+      throw new Error(
+        `Only active memories can be re-assessed; memory ${id} is ${existing.status}.`,
+      );
+    }
+    if ((existing.flags ?? []).length === 0) {
+      throw new Error(`Memory ${id} has no open flags to re-assess.`);
+    }
+    const history = existing.correction_work ?? [];
+    const inFlight = history.find(
+      (work) =>
+        work.status === "pending" ||
+        work.status === "processing" ||
+        work.status === "proposal_pending",
+    );
+    if (inFlight) {
+      throw new Error(
+        `Memory ${id} already has correction work ${inFlight.status.replace("_", " ")}; wait for it to finish before re-assessing.`,
+      );
+    }
+    const previous = history.at(-1);
+    const queuedAt = now();
+    const digests = correctionDigests(existing);
+    const work: MemoryCorrectionWork = {
+      ...digests,
+      principal_id: previous?.principal_id ?? principal_id,
+      shelf_id: previous?.shelf_id ?? shelf_id,
+      status: "pending",
+      attempt_count: 0,
+      queued_at: queuedAt,
+    };
+    // Work is looked up by snapshot digest, so an unchanged memory replaces its
+    // finished entry instead of appending a second one with the same digest.
+    const correction_work = [
+      ...history.filter((item) => item.snapshot_digest !== digests.snapshot_digest),
+      work,
+    ];
+    return persist(
+      { ...existing, correction_work, updated_at: queuedAt },
+      commitSubject.memoryUpdate(id),
+      agent_id,
+    );
+  }
+
   function listDueMemoryCorrections(at: string = now()): {
     memory_id: string;
     work: MemoryCorrectionWork;
@@ -1587,6 +1643,7 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     purgeMemory,
     flagMemory,
     flagMemoryForCorrection,
+    reassessMemoryCorrection,
     listDueMemoryCorrections,
     claimMemoryCorrection,
     updateMemoryCorrectionWork,

@@ -936,6 +936,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
           purgeMemory: () => refuseWrite(),
           flagMemory: () => refuseWrite(),
           resolveFlags: () => refuseWrite(),
+          reassessMemoryCorrection: () => refuseWrite(),
           approveProposal: () => refuseWrite(),
           resolveProposal: () => refuseWrite(),
           bulkUpdateMemory: () => refuseWrite(),

@@ -24,9 +24,11 @@ vi.mock("@/lib/trpc-client", () => ({
 }));
 
 const resolveFlagAction = vi.fn().mockResolvedValue({ ok: true });
+const reassessFlagAction = vi.fn().mockResolvedValue({ ok: true });
 vi.mock("@/app/(memories)/actions", () => ({
   resolveFlagAction: (id: string, shelfId: string, action: "dismiss" | "archive") =>
     resolveFlagAction(id, shelfId, action),
+  reassessFlagAction: (id: string, shelfId: string) => reassessFlagAction(id, shelfId),
 }));
 
 const { FlaggedView } = await import("@/components/memories/flagged-view");
@@ -55,6 +57,7 @@ function flaggedRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   refetch.mockReset();
   resolveFlagAction.mockReset().mockResolvedValue({ ok: true });
+  reassessFlagAction.mockReset().mockResolvedValue({ ok: true });
   queryState = { data: { memories: [flaggedRow()] }, isLoading: false, isError: false };
 });
 
@@ -93,6 +96,107 @@ describe("FlaggedView", () => {
     };
     render(<FlaggedView />);
     expect(screen.getByRole("status")).toHaveTextContent(/manual review is needed/i);
+  });
+
+  it("explains in plain English why automatic correction stopped", () => {
+    queryState = {
+      data: {
+        memories: [
+          flaggedRow({
+            correction_work: [
+              {
+                shelf_id: "shelf-1",
+                status: "manual_review",
+                reason_code: "quote_not_standalone_claim",
+              },
+            ],
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    render(<FlaggedView />);
+    expect(screen.getByRole("status")).toHaveTextContent(/isn't a complete sentence or list item/);
+  });
+
+  it("names an unrecognised reason code rather than hiding it", () => {
+    queryState = {
+      data: {
+        memories: [
+          flaggedRow({
+            correction_work: [
+              { shelf_id: "shelf-1", status: "manual_review", reason_code: "brand_new_code" },
+            ],
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    render(<FlaggedView />);
+    expect(screen.getByRole("status")).toHaveTextContent(/brand_new_code/);
+  });
+
+  it("re-assesses a memory whose correction needs manual review and refetches the queue", async () => {
+    queryState = {
+      data: {
+        memories: [
+          flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status: "manual_review" }] }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    render(<FlaggedView />);
+    fireEvent.click(screen.getByRole("button", { name: "Re-assess" }));
+    await waitFor(() => expect(reassessFlagAction).toHaveBeenCalledWith("mem_1", "shelf-1"));
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
+  });
+
+  it("shows the server's explanation when a re-assess is refused", async () => {
+    reassessFlagAction.mockResolvedValue({
+      ok: false,
+      error: "Memory mem_1 already has correction work pending; wait for it to finish.",
+    });
+    render(<FlaggedView />);
+    fireEvent.click(screen.getByRole("button", { name: "Re-assess" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/wait for it to finish/);
+  });
+
+  it("does not offer Re-assess while correction work is still queued or running", () => {
+    for (const status of ["pending", "processing"]) {
+      queryState = {
+        data: { memories: [flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status }] })] },
+        isLoading: false,
+        isError: false,
+      };
+      const { unmount } = render(<FlaggedView />);
+      expect(screen.queryByRole("button", { name: "Re-assess" })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("does not offer Re-assess after the correction proposal was rejected", () => {
+    queryState = {
+      data: {
+        memories: [
+          flaggedRow({
+            correction_work: [
+              {
+                shelf_id: "shelf-1",
+                status: "manual_review",
+                reason_code: "correction_proposal_rejected",
+              },
+            ],
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    };
+    render(<FlaggedView />);
+    expect(screen.queryByRole("button", { name: "Re-assess" })).not.toBeInTheDocument();
   });
 
   it("links a pending correction proposal from the flagged row", () => {

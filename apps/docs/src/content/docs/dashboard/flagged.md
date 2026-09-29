@@ -30,10 +30,14 @@ here.
 
 ## Targeted corrections
 
-The correction worker may remove only exact, confidently identified claim spans;
-it constructs the corrected text itself so unrelated facts remain unchanged. If
-the shared confidence policy allows it, the correction applies and clears the
-reviewed flags. Unsafe or unreviewable cases remain flagged for a person.
+The correction worker may remove only exact, confidently identified claims: a
+whole sentence, or a whole list item. It constructs the corrected text itself so
+unrelated facts remain unchanged. A list item can be removed however it is
+punctuated, but not if it has indented sub-items beneath it, and never just part
+of one. If the shared confidence policy allows it, the correction applies and
+clears the reviewed flags. Unsafe or unreviewable cases remain flagged for a
+person, and the row says why in plain English — for example, that the flagged
+text isn't a complete sentence or list item, or that Grooming is turned off.
 
 When a safe candidate needs human approval — for example, because it is below the
 shared confidence threshold or the memory is protected — the system creates a
@@ -45,6 +49,12 @@ review.
 
 ## The main task
 
+- **Re-assess** — run the automatic correction again over the memory's current
+text and flags. A finished assessment is never retried on its own, so use this
+after fixing whatever stopped it (turning Grooming on, say), or for a flag raised
+before targeted correction existed. The worker picks it up within about a minute.
+It isn't offered while an assessment is still queued or running, or after you
+rejected the correction proposal for the same flags.
 - **Dismiss** — the flag was unfounded; clear the flags and keep the memory active.
 - **Archive** — explicitly archive the whole memory and clear its flags. This remains
 a separate human action; an unsafe correction never falls back to whole-memory
