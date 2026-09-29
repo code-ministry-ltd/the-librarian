@@ -110,6 +110,8 @@ export interface LibrarianServerOptions {
   agentTokenMap: Map<string, string>;
   /** Browser-origin allow-list (LIBRARIAN_ALLOWED_ORIGINS), already split. */
   allowedOrigins: string[];
+  /** Extra names the server may be reached by (LIBRARIAN_ALLOWED_HOSTS); DNS-rebinding guard. */
+  allowedHosts?: string[];
   /** The localhost no-auth bypass (`resolveAllowNoAuth`); grants AGENT on `/mcp`, never admin. */
   allowNoAuth: boolean;
   /** Generic request-body cap (/mcp, /transcript). */
@@ -270,6 +272,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     agentToken,
     agentTokenMap,
     allowedOrigins,
+    allowedHosts,
     allowNoAuth,
     maxBodyBytes,
     backupTickMs,
@@ -316,6 +319,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     agentToken,
     agentTokenMap,
     allowedOrigins,
+    ...(allowedHosts ? { allowedHosts } : {}),
     // The localhost no-auth bypass grants AGENT on /mcp (never admin, ADR 0008 P3).
     allowNoAuth,
     host,

@@ -22,6 +22,16 @@ changes from this point forward are catalogued here.
   user. Every parse and render path now goes through one wrapper that accepts
   YAML only and refuses anything else, and a lint rule blocks direct use of the
   parser.
+- **Web pages can no longer reach the admin API through DNS rebinding.** A page
+  on a domain the attacker controls could rebind that name to your machine. The
+  browser then treated the server as same-origin, so the page could call the
+  internal admin listener (reading secrets and minting tokens), the dashboard
+  while its authentication was off, and `/mcp` under the no-auth bypass. These now
+  refuse any `Host` that a public DNS name could produce. `localhost`, IP
+  addresses, single-label names such as Docker service names, and local-network
+  names (`.local`, `.lan`, `.internal`, `.home.arpa`) keep working. List any other
+  name you use in the new `LIBRARIAN_ALLOWED_HOSTS` setting. Deployments where a
+  token or login protects the request are unaffected.
 
 ### Added
 

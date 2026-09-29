@@ -7,7 +7,7 @@ review. Tick an item in the same commit that fixes it, and note the PR.
 
 - [x] **#17** Bump the undici (and devalue) overrides so the production audit passes again
 - [x] **#1** Disable gray-matter's JavaScript front-matter engines on every parse path
-- [ ] **#2** Reject DNS-rebinding requests: validate `Host` on both listeners and in the dashboard
+- [x] **#2** Reject DNS-rebinding requests: validate `Host` on both listeners and in the dashboard
 - [ ] **#22a** Accept `chrome-extension://` origins only on the public `/ingest` route, never on the admin listener
 - [ ] **#12** Make secret redaction linear-time and bound its input
 - [ ] **#23** Add `redirect: "error"` to every credentialed outbound fetch

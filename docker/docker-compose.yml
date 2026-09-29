@@ -29,6 +29,7 @@ services:
       # Optional one-shot first-owner bootstrap. Empty is dormant.
       LIBRARIAN_BOOTSTRAP_CLAIM_SECRET: "${LIBRARIAN_BOOTSTRAP_CLAIM_SECRET:-}"
       LIBRARIAN_ALLOWED_ORIGINS: "${LIBRARIAN_ALLOWED_ORIGINS:-}"
+      LIBRARIAN_ALLOWED_HOSTS: "${LIBRARIAN_ALLOWED_HOSTS:-}"
       LIBRARIAN_DATA_DIR: "/data"
       LIBRARIAN_HOST: "0.0.0.0"
       LIBRARIAN_PORT: "3838"
@@ -91,6 +92,7 @@ services:
       # through Compose's otherwise-literal environment map.
       LIBRARIAN_SINGLE_PORT: "${LIBRARIAN_SINGLE_PORT:-}"
       LIBRARIAN_PUBLIC_URL: "${LIBRARIAN_PUBLIC_URL:-}"
+      LIBRARIAN_ALLOWED_HOSTS: "${LIBRARIAN_ALLOWED_HOSTS:-}"
       NODE_ENV: "production"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"

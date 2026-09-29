@@ -65,6 +65,8 @@ import {
   type AuthResult,
   REQUIRE_EXPLICIT_AUTH_HEADER,
   defaultAuthProvider,
+  hostRefusalMessage,
+  isAllowedHost,
   isAllowedOrigin,
   principalToAuthResult,
   refusalRequestAttribution,
@@ -308,6 +310,9 @@ export function createRouteHandler(
       // Internal listener: the admin tRPC surface and nothing else. Anything that
       // isn't a mounted route (only /trpc/*) on this socket is not its job → 404.
       if (surface === "internal") {
+        // The internal listener grants admin without a bearer, so a DNS-rebinding
+        // page must never reach any of its routes.
+        if (!isAllowedHost(req, auth)) return refuseHost(ctx);
         for (const route of internalRoutes) {
           if (route.match(req.method, url.pathname)) return await route.handle(ctx);
         }
@@ -323,6 +328,11 @@ export function createRouteHandler(
           return await route.handle(ctx);
         }
       }
+
+      // With the no-auth bypass on, a request needs no bearer, so a DNS-rebinding
+      // page could drive /mcp. With a token in force it has nothing to replay, and
+      // remote deployments keep working under any name.
+      if (auth.allowNoAuth && !isAllowedHost(req, auth)) return refuseHost(ctx);
 
       if (!isAllowedOrigin(req, auth)) {
         recordOriginRefusal(ctx);
@@ -968,6 +978,12 @@ function sendJson(
 function sendEmpty(res: ServerResponse): void {
   res.writeHead(202, { "cache-control": "no-store" });
   res.end();
+}
+
+/** Refuse a DNS-rebinding Host. Logged as a browser-origin refusal: same threat class. */
+function refuseHost(ctx: RouteContext): void {
+  recordOriginRefusal(ctx);
+  sendJson(ctx.res, { error: hostRefusalMessage(ctx.req) }, 403);
 }
 
 function recordOriginRefusal(ctx: RouteContext): void {

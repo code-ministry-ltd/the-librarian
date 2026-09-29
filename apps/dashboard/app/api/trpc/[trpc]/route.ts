@@ -1,6 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
+import { hostRefusalMessage, isAllowedHost } from "@/lib/allowed-host";
 import { getAuthConfig } from "@/lib/auth-config-client";
 import { resolveEnforcement } from "@/lib/auth-gate";
 import {
@@ -90,6 +91,10 @@ async function proxy(req: NextRequest, segment: string): Promise<Response> {
   if (enforcement !== "open") {
     const session = await auth().catch(() => null);
     if (!session) return new Response("Unauthorized", { status: 401 });
+  } else if (!isAllowedHost(req.headers.get("host"))) {
+    // Open mode has no session to check, so refuse a DNS-rebinding page before it
+    // reaches the admin listener (review 2026-09-29 #2).
+    return new Response(hostRefusalMessage(req.headers.get("host")), { status: 403 });
   }
 
   const upstream = new URL(`${trpcBaseUrl()}/trpc/${segment}`);

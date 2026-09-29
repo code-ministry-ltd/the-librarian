@@ -24,6 +24,7 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { hostRefusalMessage, isAllowedHost } from "@/lib/allowed-host";
 import { getAuthConfigSafe } from "@/lib/auth-config-client";
 import { decideEnforcement, isAuthEnforced, toEnforcementConfig } from "@/lib/auth-gate";
 
@@ -64,7 +65,19 @@ export default async function middleware(req: NextRequest): Promise<Response> {
     config === null ? "unreachable" : toEnforcementConfig(config),
     isAuthEnforced(),
   );
-  if (decision === "open") return NextResponse.next();
+  if (decision === "open") {
+    // Open mode grants admin to anyone who reaches the dashboard, so refuse a
+    // DNS-rebinding page (review 2026-09-29 #2). This also covers server actions,
+    // which POST to these page routes.
+    const host = req.headers.get("host");
+    if (!isAllowedHost(host)) {
+      return new NextResponse(hostRefusalMessage(host), {
+        status: 403,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+    return NextResponse.next();
+  }
   if (decision === "block") return blockResponse();
   if (decision === "claim") {
     return NextResponse.redirect(new URL("/claim", req.nextUrl.origin));

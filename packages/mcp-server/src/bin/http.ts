@@ -112,6 +112,7 @@ try {
 }
 
 const allowedOrigins = parseCsv(process.env.LIBRARIAN_ALLOWED_ORIGINS || "");
+const allowedHosts = parseCsv(process.env.LIBRARIAN_ALLOWED_HOSTS || "");
 const maxBodyBytes = Number(process.env.LIBRARIAN_MAX_BODY_BYTES || 1024 * 1024);
 
 // The no-auth bypass (ADR 0008 P3 regression fix). Resolved AFTER the agent
@@ -182,6 +183,7 @@ const server = createLibrarianServer({
   agentToken,
   agentTokenMap,
   allowedOrigins,
+  allowedHosts,
   allowNoAuth,
   maxBodyBytes,
   backupTickMs,

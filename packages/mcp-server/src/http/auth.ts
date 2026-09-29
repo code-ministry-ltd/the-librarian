@@ -6,6 +6,7 @@
 
 import { createHash, timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import { isIP } from "node:net";
 import {
   type Principal,
   SENTINEL_ACTOR_IDS,
@@ -27,6 +28,12 @@ export interface AuthConfig {
   agentToken: string;
   agentTokenMap: Map<string, string>;
   allowedOrigins: string[];
+  /**
+   * Extra DNS names this server may be reached by (LIBRARIAN_ALLOWED_HOSTS), on top
+   * of the always-safe loopback, IP-literal and single-label names. See
+   * {@link isAllowedHost}.
+   */
+  allowedHosts?: string[];
   /**
    * The no-auth bypass. When true, a public /mcp request with no/invalid bearer
    * resolves to `agent` — NEVER admin (ADR 0008 P3). Resolved at boot by
@@ -431,6 +438,70 @@ export function resolveAllowNoAuth(opts: {
   if (opts.allowNoAuthEnv === "true") return true;
   const noAgentAuthConfigured = !opts.agentToken && opts.agentTokenMap.size === 0;
   return isLoopbackHost(opts.host) && noAgentAuthConfigured;
+}
+
+/**
+ * DNS-rebinding guard. A page on `evil.example` can rebind its name to this
+ * machine, after which the browser treats the server as same-origin and sends
+ * `Host: evil.example` — but a page can never choose the Host header itself. So
+ * refuse any Host a rebinding attacker could produce: a public DNS name the
+ * operator did not list. Always allowed, because no public DNS name can stand in
+ * for them:
+ *
+ *   - IP literals (the browser's origin is then the IP itself);
+ *   - `localhost` and names under `.localhost`, `.local`, `.lan`, `.internal` and
+ *     `.home.arpa`, which only a local resolver answers;
+ *   - single-label names such as a docker-compose service (`mcp-server`), which
+ *     public DNS cannot serve;
+ *   - the configured bind host, LIBRARIAN_ALLOWED_HOSTS, and the hosts of
+ *     LIBRARIAN_ALLOWED_ORIGINS.
+ *
+ * A request with no Host header is not from a browser and passes.
+ */
+export function isAllowedHost(req: IncomingMessage, config: AuthConfig): boolean {
+  const header = req.headers.host;
+  if (!header) return true;
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${header}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const bare = hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
+  if (isIP(bare) !== 0) return true;
+  if (hostname === "localhost" || LOCAL_SUFFIXES.some((suffix) => hostname.endsWith(suffix))) {
+    return true;
+  }
+  if (!hostname.includes(".")) return true;
+  return listedHostnames(config).has(hostname);
+}
+
+/**
+ * Names only a local resolver answers (mDNS, the LAN router, reserved special-use
+ * domains), so a rebinding attacker's public DNS can never serve them.
+ */
+const LOCAL_SUFFIXES = [".localhost", ".local", ".lan", ".internal", ".home.arpa"];
+
+function listedHostnames(config: AuthConfig): Set<string> {
+  const names = new Set<string>([config.host.toLowerCase()]);
+  for (const host of config.allowedHosts ?? []) names.add(host.trim().toLowerCase());
+  for (const origin of config.allowedOrigins) {
+    try {
+      names.add(new URL(origin).hostname.toLowerCase());
+    } catch {
+      // Not a URL — it can only ever match an Origin header verbatim.
+    }
+  }
+  return names;
+}
+
+/** The teaching refusal for {@link isAllowedHost}. */
+export function hostRefusalMessage(req: IncomingMessage): string {
+  return (
+    `Host '${req.headers.host ?? ""}' is not allowed. This refuses DNS-rebinding requests ` +
+    "from web pages. If you reach this server by that name, add it to LIBRARIAN_ALLOWED_HOSTS " +
+    "(comma-separated)."
+  );
 }
 
 export function isAllowedOrigin(req: IncomingMessage, config: AuthConfig): boolean {
