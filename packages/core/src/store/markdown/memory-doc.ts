@@ -13,7 +13,7 @@
 // YAML `Date` back to an ISO string, so the timestamp fields survive hand
 // edits and js-yaml's implicit timestamp typing.
 
-import matter from "gray-matter";
+import { parseFrontmatter, stringifyFrontmatter } from "../../safe-frontmatter.js";
 import { z } from "zod";
 import { IsoTimestampSchema } from "../../schemas/common.js";
 import type { Memory, MemoryCorrectionWork } from "../memory-store.js";
@@ -113,12 +113,12 @@ export function serializeMemoryDocument(memory: Memory): string {
     frontmatter.correction_work = memory.correction_work.map(serializeCorrectionWork);
   }
   frontmatter.curator_note = memory.curator_note ?? null;
-  return matter.stringify(memory.body.trim(), frontmatter);
+  return stringifyFrontmatter(memory.body.trim(), frontmatter);
 }
 
 /** Parse a markdown document back into a `Memory`; teaching error on a bad shape. */
 export function parseMemoryDocument(raw: string): Memory {
-  const { data, content } = matter(raw);
+  const { data, content } = parseFrontmatter(raw);
   const result = MemoryFrontmatterSchema.safeParse(coerceDates(data));
   if (!result.success) {
     const detail = result.error.issues

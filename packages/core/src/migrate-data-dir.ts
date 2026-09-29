@@ -15,7 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import matter from "gray-matter";
+import { parseFrontmatter, stringifyFrontmatter } from "./safe-frontmatter.js";
 import { LEGACY_PROMPT_ADDENDUM_KEY, migrateCuratorAddendum } from "./curator-addendum.js";
 import { migrateLegacyCuratorLlm } from "./curator-consumers.js";
 import { migrateJobEnablement, migrateGroomingSchedule } from "./grooming-config.js";
@@ -203,7 +203,7 @@ function scanRetiredFrontmatter(vault: Vault): FrontmatterScan {
   for (const rel of vault.listMarkdown("memories")) {
     let parsed: { data: Record<string, unknown> };
     try {
-      parsed = matter(vault.readText(rel));
+      parsed = parseFrontmatter(vault.readText(rel));
     } catch {
       continue; // unparseable doc — not this migration's problem
     }
@@ -592,7 +592,7 @@ export function migrateDataDir(options: MigrateDataDirOptions = {}): MigrateData
 // js-yaml). Only the retired keys are touched — every other key keeps its
 // position and value, so the rewrite is the minimal diff. The caller commits.
 function stripRetiredFields(vault: Vault, rel: string): void {
-  const parsed = matter(vault.readText(rel));
+  const parsed = parseFrontmatter(vault.readText(rel));
   // Clone before mutating: gray-matter caches parses by input string, so
   // editing `parsed.data` in place would poison the cache for any later
   // parse of the same bytes.
@@ -609,7 +609,7 @@ function stripRetiredFields(vault: Vault, rel: string): void {
     for (const field of RETIRED_CURATOR_NOTE_FIELDS) delete cleaned[field];
     data.curator_note = cleaned;
   }
-  vault.writeText(rel, matter.stringify(parsed.content, data));
+  vault.writeText(rel, stringifyFrontmatter(parsed.content, data));
 }
 
 // The committed-file slice migrateCuratorAddendum/seedPrimer need, built from

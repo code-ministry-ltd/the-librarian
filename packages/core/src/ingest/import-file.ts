@@ -11,7 +11,7 @@
 // makes re-importing idempotent, which matters because `refs import` is
 // explicitly re-runnable.
 
-import matter from "gray-matter";
+import { parseFrontmatter, stringifyFrontmatter } from "../safe-frontmatter.js";
 import type { IngestVia } from "./ingest-log.js";
 
 export interface ImportedReferenceInput {
@@ -40,7 +40,7 @@ function firstH1(markdown: string): string | null {
  * overwriting anything it already carries. Returns the full document text.
  */
 export function renderImportedReference(input: ImportedReferenceInput): string {
-  const parsed = matter(input.raw);
+  const parsed = parseFrontmatter(input.raw);
   const data: Record<string, unknown> = { ...parsed.data };
 
   if (!data.title) {
@@ -50,5 +50,5 @@ export function renderImportedReference(input: ImportedReferenceInput): string {
   if (!data.captured_at) data.captured_at = input.capturedAt;
   if (!data.via) data.via = input.via;
 
-  return matter.stringify(`\n${parsed.content.trim()}\n`, data);
+  return stringifyFrontmatter(`\n${parsed.content.trim()}\n`, data);
 }

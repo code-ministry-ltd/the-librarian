@@ -12,7 +12,7 @@
 // hand edits (Obsidian / the dashboard): it coerces any YAML `Date` back to
 // an ISO string before validating.
 
-import matter from "gray-matter";
+import { parseFrontmatter } from "../../safe-frontmatter.js";
 import { z } from "zod";
 import { IsoTimestampSchema } from "../../schemas/common.js";
 
@@ -41,7 +41,7 @@ export interface CorpusDocument {
  * doesn't satisfy the minimal schema.
  */
 export function parseDocument(raw: string): CorpusDocument {
-  const { data, content } = matter(raw);
+  const { data, content } = parseFrontmatter(raw);
   const result = CorpusFrontmatterSchema.safeParse(coerceDates(data));
   if (!result.success) {
     const detail = result.error.issues

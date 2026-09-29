@@ -14,7 +14,7 @@
 // Matching is case-insensitive (Obsidian's behaviour); the first file claiming
 // a name wins (vault.listMarkdown is sorted, so ties are deterministic).
 
-import matter from "gray-matter";
+import { parseFrontmatter } from "../../safe-frontmatter.js";
 import type { Vault } from "./vault.js";
 import { parseWikilinks } from "./wikilink.js";
 
@@ -37,7 +37,7 @@ function linkNames(relPath: string, raw: string): string[] {
   const stem = relPath.split("/").pop()?.replace(/\.md$/, "") ?? "";
   const names = new Set<string>(stem ? [stem] : []);
   try {
-    const data = matter(raw).data as Record<string, unknown>;
+    const data = parseFrontmatter(raw).data as Record<string, unknown>;
     for (const key of ["id", "handoff_id", "title"]) {
       const value = data[key];
       if (typeof value === "string" && value.trim()) names.add(value.trim());
@@ -79,7 +79,7 @@ export function buildVaultLinkIndex(
     // wikilink scanner is frontmatter-agnostic anyway).
     let body = raw;
     try {
-      body = matter(raw).content;
+      body = parseFrontmatter(raw).content;
     } catch {
       // keep raw
     }

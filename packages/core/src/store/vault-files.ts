@@ -21,7 +21,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../safe-frontmatter.js";
 import { actorTrailerValue } from "../caller-identity.js";
 import { ADDENDUM_MAX_BYTES } from "../curator-addendum.js";
 import { PRIMER_MAX_BYTES, PRIMER_PATH } from "../primer.js";
@@ -364,7 +364,7 @@ export function validateVaultFile(relPath: string, raw: string, prefix: string =
       } catch (error) {
         errors.push(errorMessage(error));
         try {
-          body = matter(raw).content; // still report missing headings when only frontmatter is bad
+          body = parseFrontmatter(raw).content; // still report missing headings when only frontmatter is bad
         } catch {
           // keep raw — the heading scan tolerates frontmatter noise
         }
@@ -553,7 +553,7 @@ export function createVaultFileStore(deps: VaultFileStoreDeps): SystemVaultFileS
       let frontmatter: Record<string, unknown> | null = null;
       let body = raw;
       try {
-        const parsed = matter(raw);
+        const parsed = parseFrontmatter(raw);
         frontmatter = Object.keys(parsed.data).length > 0 ? coerceDates(parsed.data) : null;
         body = parsed.content;
       } catch {

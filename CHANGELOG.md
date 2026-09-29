@@ -16,6 +16,12 @@ changes from this point forward are catalogued here.
 - **Patched undici and devalue.** The production dependency audit flagged
   undici below 8.10.2 (two high-severity advisories) and devalue below 5.9.2,
   both pulled in by the docs site. The overrides now force the patched versions.
+- **Markdown front matter can no longer run code.** The front-matter parser
+  would evaluate a `---js` (or CoffeeScript) block as JavaScript, so importing a
+  crafted note, or any such file reaching the vault, ran code as the server
+  user. Every parse and render path now goes through one wrapper that accepts
+  YAML only and refuses anything else, and a lint rule blocks direct use of the
+  parser.
 
 ### Added
 

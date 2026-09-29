@@ -82,6 +82,28 @@ export default tseslint.config(
     },
   },
 
+  // gray-matter's default engines `eval` `---js` front matter. Production code
+  // must parse and render front matter through core's safe-frontmatter module,
+  // which refuses the executable engines (review 2026-09-29 item #1).
+  {
+    files: ["packages/*/src/**/*.{js,mjs,ts}", "integrations/**/*.{js,mjs,ts}"],
+    ignores: ["packages/core/src/safe-frontmatter.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "gray-matter",
+              message:
+                "Use parseFrontmatter/stringifyFrontmatter from core's safe-frontmatter module: gray-matter's defaults eval `---js` front matter.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Vitest plugin for test files (currently inert — tests are still
   // `node:test`; this lights up as suites migrate from Phase 3 onward).
   {

@@ -8,7 +8,7 @@
 // Deterministic frontmatter (fixed key order); parse coerces any YAML Date
 // back to an ISO string (js-yaml's implicit timestamp typing / hand edits).
 
-import matter from "gray-matter";
+import { parseFrontmatter, stringifyFrontmatter } from "../../safe-frontmatter.js";
 import { z } from "zod";
 import { IsoTimestampSchema } from "../../schemas/common.js";
 import type { HandoffDetail } from "../handoff-store.js";
@@ -52,12 +52,12 @@ export function serializeHandoffDocument(handoff: HandoffDetail): string {
     claimed_at: handoff.claimed_at,
     claimed_by: handoff.claimed_by ?? null,
   };
-  return matter.stringify(handoff.document_md.trim(), frontmatter);
+  return stringifyFrontmatter(handoff.document_md.trim(), frontmatter);
 }
 
 /** Parse a markdown document back into a `HandoffDetail`; teaching error on a bad shape. */
 export function parseHandoffDocument(raw: string): HandoffDetail {
-  const { data, content } = matter(raw);
+  const { data, content } = parseFrontmatter(raw);
   const result = HandoffFrontmatterSchema.safeParse(coerceDates(data));
   if (!result.success) {
     const detail = result.error.issues

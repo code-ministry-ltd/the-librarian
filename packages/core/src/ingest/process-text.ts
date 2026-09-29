@@ -16,7 +16,7 @@
 // no HTTP in sight).
 
 import { randomBytes } from "node:crypto";
-import matter from "gray-matter";
+import { stringifyFrontmatter } from "../safe-frontmatter.js";
 import { type VaultFileStore, VaultFileExistsError } from "../store/vault-files.js";
 import { type IngestVia, markFailed, markSuccess } from "./ingest-log.js";
 import { slugifyTitle } from "./process-content.js";
@@ -91,7 +91,7 @@ function renderNote(title: string, text: string, via: IngestVia, capturedAt: str
     captured_at: capturedAt,
     via,
   };
-  return matter.stringify(`\n${text.trim()}\n`, data);
+  return stringifyFrontmatter(`\n${text.trim()}\n`, data);
 }
 
 /**

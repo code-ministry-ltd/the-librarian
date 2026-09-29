@@ -80,6 +80,8 @@ directly if you prefer; nothing needs to be told about it.
 Importing a file **keeps whatever frontmatter it already has** and fills in only
 what is missing (`captured_at`, `via`, `source`, and a `title` if you had none).
 An Obsidian folder full of `tags` and `aliases` imports with all of it intact.
+Frontmatter must be YAML. A file whose opening fence names another language
+(`---js`, `---coffee`) is refused, because that kind of frontmatter is code.
 
 ## Format and size
 

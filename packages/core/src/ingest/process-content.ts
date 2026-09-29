@@ -13,7 +13,7 @@
 // a plain store + body + log-id with no HTTP in sight.
 
 import { createHash } from "node:crypto";
-import matter from "gray-matter";
+import { stringifyFrontmatter } from "../safe-frontmatter.js";
 import {
   type VaultFileStore,
   VaultFileExistsError,
@@ -101,7 +101,7 @@ function renderReference(input: ContentCaptureInput, capturedAt: string): string
   data.via = input.via;
   if (input.site?.trim()) data.site = input.site.trim();
   if (input.byline?.trim()) data.byline = input.byline.trim();
-  return matter.stringify(`\n${input.content.trim()}\n`, data);
+  return stringifyFrontmatter(`\n${input.content.trim()}\n`, data);
 }
 
 /**

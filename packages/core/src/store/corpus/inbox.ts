@@ -14,7 +14,7 @@
 // the claimed name additionally prefixes the CLAIM time so the reaper can age a
 // claim from its filename alone — no mtime reliance (rename preserves mtime).
 
-import matter from "gray-matter";
+import { parseFrontmatter } from "../../safe-frontmatter.js";
 import { makeId } from "../../constants.js";
 import type { Vault } from "./vault.js";
 
@@ -126,7 +126,7 @@ export function serializeInboxItem(item: InboxItem): string {
 
 /** Parse an inbox submission; tolerant of hand edits (coerces a YAML Date back to ISO). */
 export function parseInboxItem(raw: string): InboxItem {
-  const { data, content } = matter(raw);
+  const { data, content } = parseFrontmatter(raw);
   const d = data as Record<string, unknown>;
   const createdRaw = d.created;
   const created = createdRaw instanceof Date ? createdRaw.toISOString() : String(createdRaw ?? "");
