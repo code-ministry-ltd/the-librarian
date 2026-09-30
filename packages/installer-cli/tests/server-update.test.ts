@@ -857,6 +857,44 @@ describe("server update — exact no-op and preserved configuration", () => {
     });
   });
 
+  it("carries LIBRARIAN_ALLOWED_HOSTS forward into the replacement's env-file", async () => {
+    await withTempHome(async (home) => {
+      const dir = deployDir(home);
+      fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+      writeDeployState(dir, {
+        containerName: "the-librarian",
+        host: "100.64.0.8",
+        dataVolume: "librarian_data",
+        dashboardPort: 3042,
+        ref: OLD_REF,
+        imageTag: `the-librarian:${OLD_REF}`,
+        imageSource: "source",
+        imageRef: `the-librarian:${OLD_REF}`,
+      });
+      writeDeployEnvFile(dir, {
+        agentToken: AGENT_TOKEN,
+        secretKey: MASTER_KEY,
+        allowedHosts: "lib.example.com",
+        host: "100.64.0.8",
+      });
+      const liveOptions = { host: "100.64.0.8", dashboardPort: 3042 };
+      const runner = scriptSuccessfulReplacement(
+        baseRunner(liveJson(liveOptions)),
+        home,
+        NEW_DIGEST,
+        liveOptions,
+      );
+      setDockerRunner(runner);
+
+      const result = await runCli(["server", "update", "--ref", NEW_REF], { home });
+
+      expect(result.exitCode).toBe(0);
+      expect(fs.readFileSync(envFile(home), "utf8")).toContain(
+        "LIBRARIAN_ALLOWED_HOSTS=lib.example.com\n",
+      );
+    });
+  });
+
   it("a preserved custom user and restart policy no-op on an immediate same-target update", async () => {
     await withTempHome(async (home) => {
       seedSource(home);

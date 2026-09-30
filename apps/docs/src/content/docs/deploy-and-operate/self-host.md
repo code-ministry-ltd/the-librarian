@@ -87,6 +87,21 @@ the host on a private/tailnet network **and** turn on owner login — see
 [Authentication & secrets](/deploy-and-operate/auth-and-secrets/). **Put both published
 ports behind TLS** (a reverse proxy) on any host reachable beyond loopback.
 
+### Reaching the dashboard by name (`--allowed-hosts`)
+
+While dashboard login is off, the server only answers to names that a web page
+cannot hijack (the "DNS rebinding" attack). IP addresses, `localhost`, Tailscale
+MagicDNS names (`*.ts.net`) and local-network names ending in `.local`, `.lan`,
+`.internal` or `.home.arpa` always work. If you open the dashboard by any other DNS
+name, such as a domain on a reverse proxy, list it:
+
+```sh
+librarian server up --allowed-hosts librarian.example.com
+```
+
+The list is saved with the deployment and kept across `up` and `update`;
+`--allowed-hosts ""` clears it. With owner login turned on, no list is needed.
+
 The `librarian server up` command deliberately keeps this established two-port
 default. Operators who need a single public HTTPS port can use the all-in-one image
 or Compose directly with the opt-in dashboard proxy; the complete recipe is in

@@ -713,6 +713,73 @@ describe("server up — the 0600 deploy env-file (ADR 0008 P4)", () => {
     });
   });
 
+  // Review 2026-09-29 #2: the server refuses unlisted DNS names where nothing else
+  // protects a request. The installer rewrites this file on every up/update, so the
+  // list must be a flag it owns and carries forward, not a hand edit it would erase.
+  it("--allowed-hosts writes a normalized LIBRARIAN_ALLOWED_HOSTS to the deploy env-file", async () => {
+    await withTempHome(async (home) => {
+      setDockerRunner(healthyRunner());
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(
+        ["server", "up", "--allowed-hosts", " Lib.Example.com, nas.home.example ,lib.example.com"],
+        { home, prompter },
+      );
+
+      expect(r.exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+        "LIBRARIAN_ALLOWED_HOSTS=lib.example.com,nas.home.example\n",
+      );
+    });
+  });
+
+  it("a re-run without --allowed-hosts keeps the saved list; an empty value clears it", async () => {
+    await withTempHome(async (home) => {
+      const deployDir = path.join(home, ".librarian", "server");
+      writeDeployEnvFile(deployDir, {
+        agentToken: "existing-agent-token",
+        secretKey: MASTER_KEY,
+        allowedHosts: "lib.example.com",
+        host: "127.0.0.1",
+      });
+      setDockerRunner(healthyRunner());
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      expect((await runCli(["server", "up"], { home, prompter })).exitCode).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).toContain(
+        "LIBRARIAN_ALLOWED_HOSTS=lib.example.com\n",
+      );
+
+      setDockerRunner(healthyRunner());
+      expect(
+        (await runCli(["server", "up", "--allowed-hosts", ""], { home, prompter })).exitCode,
+      ).toBe(0);
+      expect(fs.readFileSync(deployEnvOf(home), "utf8")).not.toContain("LIBRARIAN_ALLOWED_HOSTS");
+    });
+  });
+
+  it("--allowed-hosts refuses a URL or malformed name before building or starting", async () => {
+    await withTempHome(async (home) => {
+      const runner = healthyRunner();
+      setDockerRunner(runner);
+      stubSeams();
+      const prompter = new FakePrompter({ answers: { "~/.librarian/env": "n" } });
+
+      const r = await runCli(["server", "up", "--allowed-hosts", "https://lib.example.com"], {
+        home,
+        prompter,
+      });
+
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain("--allowed-hosts expects hostnames only");
+      expect(r.stderr).toContain("https://lib.example.com");
+      expect(streamedBuildArgs()).toBeUndefined();
+      expect(dockerRunArgs(runner)).toBeUndefined();
+    });
+  });
+
   it("refuses a weak env-supplied bootstrap claim secret before building or starting", async () => {
     await withTempHome(async (home) => {
       const runner = healthyRunner();

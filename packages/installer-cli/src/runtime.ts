@@ -285,6 +285,7 @@ async function runServerUpCommand(rest: string[], options: RuntimeOptions): Prom
         dashboardPort: flagString(flags["dashboard-port"]),
         dns: flags.dns,
         dnsFallback: flags["dns-fallback"],
+        allowedHosts: flagString(flags["allowed-hosts"]),
         enableBoot: flagBool(flags["enable-boot"]),
         yes: flagBool(flags.yes),
       },

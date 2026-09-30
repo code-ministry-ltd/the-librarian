@@ -231,12 +231,16 @@ async function performUpdate(
     current.env.get("LIBRARIAN_BOOTSTRAP_CLAIM_SECRET") ??
     persisted.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET ??
     undefined;
+  // The env-file is rewritten below; carry the DNS-rebinding allowlist forward.
+  const allowedHosts =
+    current.env.get("LIBRARIAN_ALLOWED_HOSTS") ?? persisted.LIBRARIAN_ALLOWED_HOSTS ?? undefined;
   const tokenIsFresh =
     !current.env.has("LIBRARIAN_AGENT_TOKEN") && !persisted.LIBRARIAN_AGENT_TOKEN;
   const stagedEnv = writeStagedDeployEnvFile(deployDir, {
     agentToken,
     secretKey,
     bootstrapClaimSecret,
+    allowedHosts,
     host: current.host,
   });
   const priorRecoveryEnv = `${stagedEnv}.previous`;
@@ -556,6 +560,7 @@ function hasExactHealthyConfiguration(
     "LIBRARIAN_SECRET_KEY",
     "LIBRARIAN_BOOTSTRAP_CLAIM_SECRET",
     "LIBRARIAN_ALLOW_NO_AUTH",
+    "LIBRARIAN_ALLOWED_HOSTS",
   ]) {
     if ((current.env.get(name) || undefined) !== (persisted[name] || undefined)) return false;
   }
@@ -1044,6 +1049,7 @@ function writePriorRecoveryEnv(file: string, previousEnv: Map<string, string>): 
     "LIBRARIAN_SECRET_KEY",
     "LIBRARIAN_BOOTSTRAP_CLAIM_SECRET",
     "LIBRARIAN_ALLOW_NO_AUTH",
+    "LIBRARIAN_ALLOWED_HOSTS",
   ];
   const lines: string[] = [];
   for (const name of names) {

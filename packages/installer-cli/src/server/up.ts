@@ -338,6 +338,12 @@ export interface UpOptions {
    */
   dnsFallback?: FlagValue | undefined;
   /**
+   * Raw `--allowed-hosts` value: extra DNS names the server and dashboard may be
+   * reached by (`LIBRARIAN_ALLOWED_HOSTS`), for the DNS-rebinding guard. Absent →
+   * keep the list already saved in the deploy env-file; `""` clears it.
+   */
+  allowedHosts?: string | undefined;
+  /**
    * Bind-mount a host directory at `/data` instead of a Docker named volume — so
    * the vault lives at a path you choose (back it up, put it on a specific disk,
    * copy it to another host). The container runs as the directory's owner
@@ -532,6 +538,11 @@ export interface DeployEnvInput {
    */
   bootstrapClaimSecret?: string | undefined;
   /**
+   * Normalized `LIBRARIAN_ALLOWED_HOSTS` (see {@link normalizeAllowedHosts}). The file
+   * is rewritten on every up/update, so the list is carried forward from it.
+   */
+  allowedHosts?: string | undefined;
+  /**
    * The resolved bind host — drives the loopback-only `LIBRARIAN_ALLOW_NO_AUTH`.
    * `127.0.0.1` → write `LIBRARIAN_ALLOW_NO_AUTH=true` (loopback no-auth bypass);
    * beyond localhost → omit it so /mcp requires the agent token (spec §6).
@@ -555,10 +566,12 @@ export interface DeployEnvInput {
 function writeDeployEnvFileAt(file: string, input: DeployEnvInput): string {
   const secretKey = input.secretKey?.trim() ?? "";
   const bootstrapClaimSecret = input.bootstrapClaimSecret ?? "";
+  const allowedHosts = input.allowedHosts ?? "";
   for (const [name, value] of [
     ["LIBRARIAN_AGENT_TOKEN", input.agentToken],
     ["LIBRARIAN_SECRET_KEY", secretKey],
     ["LIBRARIAN_BOOTSTRAP_CLAIM_SECRET", bootstrapClaimSecret],
+    ["LIBRARIAN_ALLOWED_HOSTS", allowedHosts],
   ] as const) {
     if (/[\r\n]/.test(value)) {
       throw new UpError(`Refusing to write ${name} containing a newline to the deploy env-file.`);
@@ -577,6 +590,9 @@ function writeDeployEnvFileAt(file: string, input: DeployEnvInput): string {
   }
   if (input.host === LOCALHOST) {
     lines.push("LIBRARIAN_ALLOW_NO_AUTH=true");
+  }
+  if (allowedHosts) {
+    lines.push(`LIBRARIAN_ALLOWED_HOSTS=${allowedHosts}`);
   }
   fs.writeFileSync(file, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
   // writeFileSync only applies `mode` on create; chmod unconditionally so a
@@ -616,6 +632,31 @@ export function readDeployEnvFile(deployDir: string): Record<string, string> {
     out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1);
   }
   return out;
+}
+
+const HOSTNAME =
+  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/**
+ * Normalize a raw `--allowed-hosts` value to the comma-separated, lower-cased,
+ * de-duplicated list `LIBRARIAN_ALLOWED_HOSTS` expects. Hostnames only: a URL, a
+ * port or a path is refused with a teaching error. `""` stays `""` (clear the list).
+ */
+export function normalizeAllowedHosts(raw: string): string {
+  const names: string[] = [];
+  for (const entry of raw.split(",")) {
+    const name = entry.trim().toLowerCase();
+    if (!name) continue;
+    if (!HOSTNAME.test(name)) {
+      throw new UpError(
+        `--allowed-hosts expects hostnames only, comma-separated (for example ` +
+          `"librarian.example.com,nas.example.org"); got '${entry.trim()}'. Leave out the ` +
+          "scheme, port and path.",
+      );
+    }
+    if (!names.includes(name)) names.push(name);
+  }
+  return names.join(",");
 }
 
 function validateBootstrapClaimSecret(secret: string): void {
@@ -670,6 +711,8 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
   // Validate before cloning/building so a weak operator credential fails fast
   // and never produces a container that immediately exits at boot.
   validateBootstrapClaimSecret(suppliedBootstrapClaimSecret ?? "");
+  const suppliedAllowedHosts =
+    options.allowedHosts === undefined ? undefined : normalizeAllowedHosts(options.allowedHosts);
 
   // Optional host data directory (bind-mount) instead of the named volume.
   // Mutually exclusive with --data-volume; resolved to an absolute path (docker
@@ -747,6 +790,11 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
         ? existingDeployEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET
         : suppliedBootstrapClaimSecret || undefined;
     validateBootstrapClaimSecret(bootstrapClaimSecret ?? "");
+    // Absent flag → keep the saved list (this file is rewritten below); "" clears it.
+    const allowedHosts =
+      suppliedAllowedHosts === undefined
+        ? existingDeployEnv.LIBRARIAN_ALLOWED_HOSTS || undefined
+        : suppliedAllowedHosts || undefined;
     const existingContainer = await inspectContainerPresence();
     if (existingContainer.exists) {
       if (target.imageSource !== "registry") throw existingContainerError([]);
@@ -762,6 +810,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
           dataDir,
           dashboardPort,
           bootstrapClaimSecret,
+          allowedHosts,
           dnsServers: dnsRequested ? dnsServers : undefined,
         },
       );
@@ -827,6 +876,7 @@ export async function runUp(options: UpOptions, deps: UpDeps): Promise<UpResult>
       agentToken,
       secretKey: masterKey,
       bootstrapClaimSecret,
+      allowedHosts,
       host,
     });
     const nextDeployState: Parameters<typeof writeDeployState>[1] = registryImage
@@ -1119,6 +1169,7 @@ interface DesiredDeploymentConfig {
   dataDir?: string | undefined;
   dashboardPort: number;
   bootstrapClaimSecret?: string | undefined;
+  allowedHosts?: string | undefined;
   /** When set (including `[]`), live HostConfig.Dns must match exactly. */
   dnsServers?: string[] | undefined;
 }
@@ -1293,6 +1344,7 @@ function registryDeploymentDrift(
     "LIBRARIAN_AGENT_TOKEN",
     "LIBRARIAN_SECRET_KEY",
     "LIBRARIAN_BOOTSTRAP_CLAIM_SECRET",
+    "LIBRARIAN_ALLOWED_HOSTS",
   ]) {
     const expected = persistedEnv[name];
     if ((liveEnv?.[name] || undefined) !== (expected || undefined)) envMatches = false;
@@ -1304,6 +1356,9 @@ function registryDeploymentDrift(
     (persistedEnv.LIBRARIAN_BOOTSTRAP_CLAIM_SECRET || undefined) !==
     (desired.bootstrapClaimSecret || undefined)
   ) {
+    envMatches = false;
+  }
+  if ((persistedEnv.LIBRARIAN_ALLOWED_HOSTS || undefined) !== (desired.allowedHosts || undefined)) {
     envMatches = false;
   }
   const expectedNoAuth = desired.host === LOCALHOST ? "true" : undefined;

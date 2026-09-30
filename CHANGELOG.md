@@ -9,7 +9,7 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.27.1] — 2026-09-29
+## [1.28.0] — 2026-09-30
 
 ### Security
 
@@ -28,10 +28,11 @@ changes from this point forward are catalogued here.
   internal admin listener (reading secrets and minting tokens), the dashboard
   while its authentication was off, and `/mcp` under the no-auth bypass. These now
   refuse any `Host` that a public DNS name could produce. `localhost`, IP
-  addresses, single-label names such as Docker service names, and local-network
-  names (`.local`, `.lan`, `.internal`, `.home.arpa`) keep working. List any other
-  name you use in the new `LIBRARIAN_ALLOWED_HOSTS` setting. Deployments where a
-  token or login protects the request are unaffected.
+  addresses, single-label names such as Docker service names, Tailscale MagicDNS
+  names (`*.ts.net`) and local-network names (`.local`, `.lan`, `.internal`,
+  `.home.arpa`) keep working. List any other name you use in the new
+  `LIBRARIAN_ALLOWED_HOSTS` setting (installer: `--allowed-hosts`). Deployments
+  where a token or login protects the request are unaffected.
 - **Browser extensions no longer get admin access.** Any
   `chrome-extension://` origin was accepted everywhere, including on the internal
   admin listener, which has no token. Any installed extension allowed to reach
@@ -52,8 +53,22 @@ changes from this point forward are catalogued here.
   redirects, as do the healthcheck and smoke scripts. `LIBRARIAN_GITHUB_REPO`
   must now be a plain `owner/repo`.
 
+### Upgrade note
+
+- **If your dashboard login is off and you open the dashboard by a domain name,
+  add that name to `LIBRARIAN_ALLOWED_HOSTS`** (with the installer:
+  `librarian server up --allowed-hosts librarian.example.com`). Otherwise the
+  dashboard answers with a 403 that names the setting. You need nothing if you
+  open it by `localhost`, an IP address or a Tailscale `*.ts.net` name, or if
+  owner login is on. The same applies to a server that runs without an agent
+  token and is reached by a domain name.
+
 ### Added
 
+- **`librarian server up --allowed-hosts <name,…>`** saves extra DNS names for the
+  DNS-rebinding guard in the deployment's env file. The installer rewrites that
+  file on every `up` and `update`, so the list is carried forward instead of a
+  hand edit being lost; `--allowed-hosts ""` clears it.
 - **Codebase review, 29/09/2026.** The full review and its work list live in
   `docs/review/2026-09-29/` (`codebase-review.md` and `todo.md`).
 
@@ -4747,7 +4762,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
-[1.27.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.27.0...v1.27.1
+[1.28.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.1...v1.27.0
 [1.26.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.0...v1.26.1
 [1.26.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.25.0...v1.26.0
