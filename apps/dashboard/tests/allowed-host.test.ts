@@ -13,16 +13,19 @@ describe("isAllowedHost", () => {
     "dashboard:3839",
     "nas.local:3839",
     "server.lan",
+    "box.tail1234.ts.net",
   ])("accepts %s", (host) => {
     expect(isAllowedHost(host, {})).toBe(true);
   });
 
-  it.each(["evil.example:3839", "127.0.0.1.nip.io:3839", "localhost.evil.example"])(
-    "refuses the rebindable public name %s",
-    (host) => {
-      expect(isAllowedHost(host, {})).toBe(false);
-    },
-  );
+  it.each([
+    "evil.example:3839",
+    "127.0.0.1.nip.io:3839",
+    "localhost.evil.example",
+    "ts.net.evil.example",
+  ])("refuses the rebindable public name %s", (host) => {
+    expect(isAllowedHost(host, {})).toBe(false);
+  });
 
   it("accepts names from LIBRARIAN_ALLOWED_HOSTS, LIBRARIAN_PUBLIC_URL and AUTH_URL", () => {
     const env = {

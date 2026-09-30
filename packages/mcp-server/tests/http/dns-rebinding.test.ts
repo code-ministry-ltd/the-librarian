@@ -40,17 +40,21 @@ describe("isAllowedHost", () => {
     "10.0.0.5:3840",
     "mcp-server:3840", // a docker-compose service name
     "nas.local:3840",
+    "box.tail1234.ts.net", // Tailscale MagicDNS: Tailscale, not an attacker, answers for ts.net
     "box.home.arpa",
   ])("accepts %s, which no public DNS name can rebind to", (host) => {
     expect(isAllowedHost(reqWithHost(host), config)).toBe(true);
   });
 
-  it.each(["evil.example:3840", "evil.example", "127.0.0.1.nip.io:3840", "localhost.evil.example"])(
-    "refuses the rebindable public name %s",
-    (host) => {
-      expect(isAllowedHost(reqWithHost(host), config)).toBe(false);
-    },
-  );
+  it.each([
+    "evil.example:3840",
+    "evil.example",
+    "127.0.0.1.nip.io:3840",
+    "localhost.evil.example",
+    "ts.net.evil.example",
+  ])("refuses the rebindable public name %s", (host) => {
+    expect(isAllowedHost(reqWithHost(host), config)).toBe(false);
+  });
 
   it("accepts a name listed in LIBRARIAN_ALLOWED_HOSTS, case-insensitively", () => {
     const listed = { ...config, allowedHosts: ["Librarian.Example.com"] };

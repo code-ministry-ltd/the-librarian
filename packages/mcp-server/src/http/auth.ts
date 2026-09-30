@@ -450,7 +450,8 @@ export function resolveAllowNoAuth(opts: {
  *
  *   - IP literals (the browser's origin is then the IP itself);
  *   - `localhost` and names under `.localhost`, `.local`, `.lan`, `.internal` and
- *     `.home.arpa`, which only a local resolver answers;
+ *     `.home.arpa`, which only a local resolver answers, and Tailscale's `.ts.net`,
+ *     whose DNS only Tailscale answers;
  *   - single-label names such as a docker-compose service (`mcp-server`), which
  *     public DNS cannot serve;
  *   - the configured bind host, LIBRARIAN_ALLOWED_HOSTS, and the hosts of
@@ -478,9 +479,10 @@ export function isAllowedHost(req: IncomingMessage, config: AuthConfig): boolean
 
 /**
  * Names only a local resolver answers (mDNS, the LAN router, reserved special-use
- * domains), so a rebinding attacker's public DNS can never serve them.
+ * domains), plus Tailscale MagicDNS (`*.ts.net`), whose DNS Tailscale alone controls.
+ * Rebinding needs an attacker who answers a name's DNS, so none of these can be rebound.
  */
-const LOCAL_SUFFIXES = [".localhost", ".local", ".lan", ".internal", ".home.arpa"];
+const LOCAL_SUFFIXES = [".localhost", ".local", ".lan", ".internal", ".home.arpa", ".ts.net"];
 
 function listedHostnames(config: AuthConfig): Set<string> {
   const names = new Set<string>([config.host.toLowerCase()]);

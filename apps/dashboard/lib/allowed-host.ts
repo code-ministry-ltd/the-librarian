@@ -9,14 +9,15 @@
 // http/auth.ts); this copy has no Node imports so it runs in edge middleware.
 //
 // Always allowed: IP literals, `localhost`, local-only names (`.localhost`, `.local`,
-// `.lan`, `.internal`, `.home.arpa`), and single-label names
+// `.lan`, `.internal`, `.home.arpa`), Tailscale's `.ts.net`, and single-label names
 // (a docker-compose service), none of which public DNS can stand in for. Also the
 // names in LIBRARIAN_ALLOWED_HOSTS and the hosts of LIBRARIAN_PUBLIC_URL / AUTH_URL.
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 // Names only a local resolver answers (mDNS, the LAN router, reserved special-use
-// domains), so a rebinding attacker's public DNS can never serve them.
-const LOCAL_SUFFIXES = [".localhost", ".local", ".lan", ".internal", ".home.arpa"];
+// domains), plus Tailscale MagicDNS (`*.ts.net`), whose DNS Tailscale alone controls.
+// Rebinding needs an attacker who answers a name's DNS, so none of these can be rebound.
+const LOCAL_SUFFIXES = [".localhost", ".local", ".lan", ".internal", ".home.arpa", ".ts.net"];
 
 type Env = Record<string, string | undefined>;
 

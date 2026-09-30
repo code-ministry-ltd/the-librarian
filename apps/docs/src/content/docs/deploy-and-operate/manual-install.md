@@ -273,9 +273,9 @@ add that exact origin to `LIBRARIAN_ALLOWED_ORIGINS`.
 Wherever nothing else protects a request, the server refuses any `Host` name that
 a web page could point at your machine through DNS rebinding. That covers the
 internal admin API, and the dashboard and `/mcp` while authentication is off.
-`localhost`, IP addresses, single-label names such as Docker service names, and
-local-network names ending in `.local`, `.lan`, `.internal` or `.home.arpa` always
-work. If you reach an unauthenticated dashboard or server by a DNS name,
+`localhost`, IP addresses, single-label names such as Docker service names,
+Tailscale MagicDNS names (`*.ts.net`), and local-network names ending in `.local`,
+`.lan`, `.internal` or `.home.arpa` always work. If you reach an unauthenticated dashboard or server by a DNS name,
 list it in `LIBRARIAN_ALLOWED_HOSTS` (comma-separated hostnames). The hosts of
 `LIBRARIAN_ALLOWED_ORIGINS`, `LIBRARIAN_PUBLIC_URL` and `AUTH_URL` are allowed
 automatically.
