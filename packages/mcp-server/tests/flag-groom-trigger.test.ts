@@ -2,7 +2,7 @@
 // the latest flag, but never more than 30 after the first, then run once.
 
 import { describe, expect, it, vi } from "vitest";
-import { createFlagGroomTrigger } from "../src/flag-groom-trigger.js";
+import { createFlagGroomTrigger } from "../dist/flag-groom-trigger.js";
 
 const MIN = 60_000;
 
