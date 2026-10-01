@@ -9,6 +9,22 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.29.1] — 2026-10-01
+
+### Fixed
+
+- **CI no longer fails at random while deleting a test vault.** Since git
+  2.47, every `git commit` starts `git maintenance run --auto` in the
+  background, and it keeps writing under `.git/` after the commit returns. A
+  test that deleted its temporary vault straight after its last commit could
+  race that process and fail with `ENOTEMPTY: rmdir … vault/.git`. This turned
+  `main` red after 1.29.0 even though the same code had passed on its PR. The
+  test runs and the smoke script now turn off automatic maintenance
+  (`maintenance.auto=false`, `gc.auto=0`) for every git process they start,
+  appending to any `GIT_CONFIG_*` settings already in the environment. The
+  same flake on a developer machine with git 2.47 or newer is gone too.
+  Internal only; nothing you install changes.
+
 ## [1.29.0] — 2026-10-01
 
 ### Added
@@ -4805,6 +4821,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.29.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.0...v1.29.1
 [1.29.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.1...v1.27.0

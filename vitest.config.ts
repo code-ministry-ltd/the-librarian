@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { GIT_NO_AUTO_MAINTENANCE } from "./test/git-test-env.mjs";
 
 // Root vitest config for cross-cutting tests that live at the repo
 // root (healthcheck, integrations). Per-package configs continue to
@@ -6,6 +7,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Background git maintenance races test-vault teardown (see the module).
+    env: GIT_NO_AUTO_MAINTENANCE,
     include: ["test/**/*.test.ts"],
     passWithNoTests: true,
     // Vite 5's SSR transformer drops the `node:` prefix when resolving

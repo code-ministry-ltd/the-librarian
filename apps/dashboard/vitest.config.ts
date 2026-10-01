@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { GIT_NO_AUTO_MAINTENANCE } from "../../test/git-test-env.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +18,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Background git maintenance races test-vault teardown (see the module).
+    env: GIT_NO_AUTO_MAINTENANCE,
     // The Server-Component renderToString tests run in plain Node; the
     // component-interaction tests under tests/components need a DOM.
     // Vitest 4 replaced environmentMatchGlobs with projects.

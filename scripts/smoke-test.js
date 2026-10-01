@@ -6,6 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createLibrarianStore } from "@librarian/core";
+import { GIT_NO_AUTO_MAINTENANCE } from "../test/git-test-env.mjs";
+
+// No background git maintenance racing the temp-dir teardown below (see the module).
+Object.assign(process.env, GIT_NO_AUTO_MAINTENANCE);
 
 // This smoke exercises the markdown vault: an in-process store plus spawned
 // stdio/HTTP servers (which inherit process.env). Markdown is the only backend.
