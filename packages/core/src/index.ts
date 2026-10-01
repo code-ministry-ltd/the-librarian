@@ -50,29 +50,18 @@ export {
   deterministicPrepass,
 } from "./grooming-prepass.js";
 export {
+  LEGACY_CORRECTION_RESOLUTION,
+  askCuratorAgain,
+  hasFlagsAwaitingCurator,
+  hasUnreviewedAgentFlag,
+  withdrawLegacyCorrectionProposals,
+} from "./grooming-flags.js";
+export {
   type CuratorPromptInput,
   CURATOR_PROMPT_VERSION,
   buildBaseCuratorPrompt,
   buildCuratorPrompt,
 } from "./curator-prompt.js";
-export {
-  type CorrectionFlagReason,
-  type MemoryCorrectionCandidateResult,
-  type MemoryCorrectionOutput,
-  type MemoryCorrectionSpan,
-  type ParsedMemoryCorrectionOutput,
-  type PreparedMemoryCorrectionInput,
-  type PreparedMemoryCorrectionResult,
-  buildMemoryCorrectionCandidate,
-  buildMemoryCorrectionMessages,
-  parseMemoryCorrectionOutput,
-  prepareMemoryCorrectionInput,
-} from "./memory-correction.js";
-export {
-  type ProcessMemoryCorrectionWorkOptions,
-  type ProcessMemoryCorrectionWorkResult,
-  processMemoryCorrectionWork,
-} from "./memory-correction-worker.js";
 export {
   type GroomingMemoryInput,
   type GroomingMemoryPatch,
@@ -664,12 +653,10 @@ export {
 } from "./store/corpus-index.js";
 export { type MemoryWriteVerdict, routeMemoryWrite } from "./store/memory-routing.js";
 export type {
-  CorrectionManualReviewReasonCode,
   Memory,
-  MemoryCorrectionProposalInput,
-  MemoryCorrectionProposalReview,
-  MemoryCorrectionWork,
-  MemoryCorrectionWorkItem,
+  MemoryFlag,
+  MemoryFlagReview,
+  MemoryFlagReviewOutcome,
   MemoryStore,
 } from "./store/memory-store.js";
 export {

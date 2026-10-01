@@ -14,7 +14,7 @@ import {
   createVault,
   serializeMemoryDocument,
 } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 let dataDir: string;
 
@@ -60,49 +60,6 @@ function setup(options: { now?: () => string; onWrite?: () => void } = {}) {
   return { vault, store, seed };
 }
 
-function createReadyCorrectionProposal(
-  store: ReturnType<typeof createMarkdownMemoryStore>,
-  seed: (over: Partial<Memory> & { id: string }) => Memory,
-) {
-  seed({ id: "source", title: "Fact", body: "Useful fact. Stale fact." });
-  const flagged = store.flagMemoryForCorrection({
-    id: "source",
-    reason: "The second claim is outdated.",
-    agent_id: "claude",
-    principal_id: "principal-1",
-    shelf_id: "shelf-1",
-  });
-  const work = flagged!.correction_work![0]!;
-  const claimed = store.claimMemoryCorrection({
-    id: "source",
-    snapshot_digest: work.snapshot_digest,
-  })!;
-  const source = store.getMemory("source")!;
-  const start = source.body.indexOf("Stale fact.");
-  const span = { start, end: start + "Stale fact.".length, quote: "Stale fact." };
-  const proposedBody = source.body.slice(0, span.start) + source.body.slice(span.end);
-  const proposal = store.createMemoryCorrectionProposal({
-    source_memory_id: source.id,
-    snapshot_digest: claimed.snapshot_digest,
-    source_digest: claimed.source_digest,
-    flags_digest: claimed.flags_digest,
-    claim_attempt: claimed.attempt_count,
-    shelf_id: "shelf-1",
-    proposed_body: proposedBody,
-    spans: [span],
-    confidence: 0.2,
-    rationale: "The second claim may be outdated.",
-    agent_id: "system-memory-curator",
-  })!;
-  store.updateMemoryCorrectionWork({
-    id: source.id,
-    snapshot_digest: claimed.snapshot_digest,
-    claim_attempt: claimed.attempt_count,
-    patch: { status: "proposal_pending", proposal_id: proposal.id },
-  });
-  return { proposal, source, work: claimed };
-}
-
 describe("markdown MemoryStore — updateMemory", () => {
   it("applies a whitelisted patch and bumps updated_at", () => {
     const { store, seed } = setup();
@@ -145,20 +102,6 @@ describe("markdown MemoryStore — updateMemory", () => {
     expect(updated!.is_global).toBe(false);
     expect(updated!.requires_approval).toBe(false);
     expect(updated!.curator_note).toBeNull();
-  });
-
-  it("keeps proposed correction metadata immutable outside its dedicated review path", () => {
-    const { store, seed } = setup();
-    const { proposal } = createReadyCorrectionProposal(store, seed);
-    const before = store.getMemory(proposal.id);
-
-    expect(() =>
-      store.updateMemory(proposal.id, { tags: ["unrelated"], applies_to: ["other"] }),
-    ).toThrow(/Flagged-correction proposals can only change through correction review/);
-    expect(store.getMemory(proposal.id)).toEqual(before);
-    expect(
-      store.inspectMemoryCorrectionProposal({ proposal_id: proposal.id, shelf_id: "shelf-1" }),
-    ).toMatchObject({ status: "ready" });
   });
 });
 
@@ -254,835 +197,126 @@ describe("markdown MemoryStore — flagMemory", () => {
   });
 });
 
-describe("markdown MemoryStore — flagged correction work", () => {
-  it("persists a flag and a digest-only pending work marker in one write", () => {
-    let writes = 0;
-    const { store, seed } = setup({ onWrite: () => writes++ });
-    seed({ id: "m", body: "Useful fact. Stale fact." });
-    writes = 0;
+describe("markdown MemoryStore — flag reviews and clearing (ADR 0013)", () => {
+  const curator = "system-memory-curator";
 
-    const flagged = store.flagMemoryForCorrection({
+  it("records the curator's review on each open agent flag without touching updated_at", () => {
+    const { store, seed } = setup({ now: () => "2026-07-02T00:00:00.000Z" });
+    seed({
       id: "m",
-      reason: "The stale fact is no longer true.",
-      agent_id: "codex",
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
+      flags: [
+        { agent_id: "codex", reason: "port changed", created_at: NOW },
+        { agent_id: curator, reason: "curator proposes archive: stale", created_at: NOW },
+      ],
     });
+    const review = {
+      outcome: "no_change" as const,
+      at: NOW,
+      run_id: "run_1",
+      rationale: "still true",
+    };
 
-    expect(writes).toBe(1);
-    expect(flagged!.flags).toHaveLength(1);
-    expect(flagged!.correction_work).toHaveLength(1);
-    const [work] = flagged!.correction_work!;
-    expect(work).toMatchObject({
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
-      status: "pending",
-      attempt_count: 0,
-      queued_at: NOW,
-    });
-    expect(work.snapshot_digest).toMatch(/^[a-f0-9]{64}$/);
-    expect(work.source_digest).toMatch(/^[a-f0-9]{64}$/);
-    expect(work.flags_digest).toMatch(/^[a-f0-9]{64}$/);
-    expect(JSON.stringify(work)).not.toContain("Useful fact");
-    expect(JSON.stringify(work)).not.toContain("Stale fact");
-    expect(JSON.stringify(work)).not.toContain("no longer true");
+    const reviewed = store.setFlagReview("m", review)!;
+
+    expect(reviewed.flags[0]!.review).toEqual(review);
+    expect(reviewed.flags[1]!.review).toBeUndefined(); // the curator's own archive flag
+    expect(reviewed.updated_at).toBe("2026-06-01T00:00:00.000Z");
+    // It survives a round trip through the document.
+    expect(store.getMemory("m")!.flags[0]!.review).toEqual(review);
   });
 
-  it("persists an explicit no-admin-scope outcome instead of queueing inaccessible work", () => {
+  it("onlyUnreviewed leaves flags that already carry a review alone", () => {
     const { store, seed } = setup();
-    seed({ id: "m" });
-
-    const flagged = store.flagMemoryForCorrection({
+    const declined = { outcome: "declined" as const, at: NOW };
+    seed({
       id: "m",
-      reason: "review this claim",
-      agent_id: "codex",
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
-      manual_review_reason_code: "no_admin_scope",
-    });
-
-    expect(flagged!.correction_work?.[0]).toMatchObject({
-      status: "manual_review",
-      reason_code: "no_admin_scope",
-    });
-    expect(store.listDueMemoryCorrections(NOW)).toEqual([]);
-  });
-
-  it("coalesces new flags into a fresh batch and cancels stale pending work", () => {
-    const { store, seed } = setup();
-    seed({ id: "m" });
-    store.flagMemoryForCorrection({
-      id: "m",
-      reason: "first",
-      agent_id: "codex",
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
-    });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "second",
-      agent_id: "claude",
-      principal_id: "principal-2",
-      shelf_id: "shelf-1",
-    });
-
-    expect(flagged!.flags).toHaveLength(2);
-    expect(flagged!.correction_work).toHaveLength(2);
-    expect(flagged!.correction_work?.map(({ status }) => status)).toEqual(["cancelled", "pending"]);
-    expect(flagged!.correction_work?.[0].reason_code).toBe("superseded_by_new_flag");
-  });
-
-  it("applies exact spans and resolves the reviewed flag batch in one write", () => {
-    let writes = 0;
-    const { store, seed } = setup({ onWrite: () => writes++ });
-    const source = "Keep. Stale. Useful.";
-    seed({ id: "m", body: source, tags: ["retained"] });
-    store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The middle claim is outdated.",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The same middle claim is stale.",
-      agent_id: "claude",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const work = flagged!.correction_work![1];
-    store.claimMemoryCorrection({
-      id: "m",
-      snapshot_digest: work!.snapshot_digest,
-      lease_ms: 1_000,
-      agent_id: "worker",
-    });
-    writes = 0;
-
-    const applied = store.applyMemoryCorrection({
-      id: "m",
-      snapshot_digest: work!.snapshot_digest,
-      claim_attempt: 1,
-      spans: [
-        { start: source.indexOf("Stale."), end: source.indexOf("Stale.") + 6, quote: "Stale." },
+      flags: [
+        { agent_id: "codex", reason: "old", created_at: NOW, review: declined },
+        { agent_id: "claude", reason: "new", created_at: NOW },
       ],
     });
 
-    expect(writes).toBe(1);
-    expect(applied!.body).toBe("Keep.  Useful.");
-    expect(applied!.tags).toEqual(["retained"]);
-    expect(applied!.status).toBe("active");
-    expect(applied!.flags).toEqual([]);
-    expect(applied!.correction_work![1]).toMatchObject({ status: "applied", applied_at: NOW });
+    const flags = store.setFlagReview(
+      "m",
+      { outcome: "proposed", at: NOW, proposal_id: "p1" },
+      { onlyUnreviewed: true },
+    )!.flags;
+
+    expect(flags[0]!.review).toEqual(declined);
+    expect(flags[1]!.review).toMatchObject({ outcome: "proposed", proposal_id: "p1" });
   });
 
-  it("refuses forged spans without changing the source or its flags", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", body: "Keep. Stale fact." });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The second sentence is outdated.",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const work = flagged!.correction_work![0];
-    store.claimMemoryCorrection({ id: "m", snapshot_digest: work!.snapshot_digest });
-
-    expect(
-      store.applyMemoryCorrection({
-        id: "m",
-        snapshot_digest: work!.snapshot_digest,
-        claim_attempt: 1,
-        spans: [{ start: 0, end: 4, quote: "fake" }],
-      }),
-    ).toBeNull();
-    expect(store.getMemory("m")!.body).toBe("Keep. Stale fact.");
-    expect(store.getMemory("m")!.flags).toHaveLength(1);
-    expect(store.getMemory("m")!.correction_work![0].status).toBe("processing");
-  });
-
-  it("does not apply a direct correction to a protected memory", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", body: "Keep. Stale fact.", requires_approval: true });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The second sentence is outdated.",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const work = flagged!.correction_work![0];
-    store.claimMemoryCorrection({ id: "m", snapshot_digest: work!.snapshot_digest });
-
-    expect(
-      store.applyMemoryCorrection({
-        id: "m",
-        snapshot_digest: work!.snapshot_digest,
-        claim_attempt: 1,
-        spans: [{ start: 6, end: 17, quote: "Stale fact." }],
-      }),
-    ).toBeNull();
-    expect(store.getMemory("m")!.body).toBe("Keep. Stale fact.");
-    expect(store.getMemory("m")!.flags).toHaveLength(1);
-    expect(store.getMemory("m")!.correction_work![0].status).toBe("processing");
-  });
-
-  it("fences off a worker whose expired lease was reclaimed", () => {
-    let currentTime = NOW;
-    const { store, seed } = setup({ now: () => currentTime });
-    seed({ id: "m", body: "source" });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "outdated",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const snapshot = flagged!.correction_work![0].snapshot_digest;
-    expect(
-      store.claimMemoryCorrection({
-        id: "m",
-        snapshot_digest: snapshot,
-        lease_ms: 1_000,
-        agent_id: "worker",
-      })?.attempt_count,
-    ).toBe(1);
-
-    currentTime = "2026-07-01T00:00:02.000Z";
-    expect(
-      store.claimMemoryCorrection({
-        id: "m",
-        snapshot_digest: snapshot,
-        lease_ms: 1_000,
-        agent_id: "worker",
-      })?.attempt_count,
-    ).toBe(2);
-    expect(
-      store.updateMemoryCorrectionWork({
-        id: "m",
-        snapshot_digest: snapshot,
-        claim_attempt: 1,
-        patch: { status: "manual_review", reason_code: "stale_worker" },
-      }),
-    ).toBeNull();
-    expect(
-      store.updateMemoryCorrectionWork({
-        id: "m",
-        snapshot_digest: snapshot,
-        claim_attempt: 2,
-        patch: { status: "manual_review", reason_code: "current_worker" },
-      }),
-    ).toMatchObject({ status: "manual_review", attempt_count: 2 });
-  });
-
-  it("recovers a processing marker with a missing lease", () => {
-    const { store, vault, seed } = setup();
-    seed({ id: "m", body: "source" });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "outdated",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const [queued] = flagged!.correction_work!;
-    const { lease_expires_at: _lease, ...withoutLease } = queued;
-    const memory = store.getMemory("m")!;
-    vault.writeText(
-      "memories/m.md",
-      serializeMemoryDocument({
-        ...memory,
-        correction_work: [{ ...withoutLease, status: "processing", attempt_count: 1 }],
-      }),
-    );
-
-    expect(store.listDueMemoryCorrections(NOW)).toHaveLength(1);
-    expect(
-      store.claimMemoryCorrection({
-        id: "m",
-        snapshot_digest: queued.snapshot_digest,
-        lease_ms: 1_000,
-        agent_id: "worker",
-      }),
-    ).toMatchObject({ status: "processing", attempt_count: 2 });
-  });
-
-  it("dismiss cancels active correction work in the same write that clears flags", () => {
-    let writes = 0;
-    const { store, seed } = setup({ onWrite: () => writes++ });
-    seed({ id: "m" });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "outdated",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const snapshot = flagged!.correction_work![0].snapshot_digest;
-    store.claimMemoryCorrection({
-      id: "m",
-      snapshot_digest: snapshot,
-      lease_ms: 1_000,
-      agent_id: "worker",
-    });
-    writes = 0;
-
-    const dismissed = store.resolveFlags("m", "dashboard");
-
-    expect(writes).toBe(1);
-    expect(dismissed!.flags).toEqual([]);
-    expect(dismissed!.correction_work![0]).toMatchObject({
-      status: "cancelled",
-      reason_code: "cancelled_by_dismiss",
-    });
-    expect(dismissed!.correction_work![0].lease_expires_at).toBeUndefined();
-  });
-
-  it("archives and resolves a flagged memory while cancelling work in one write", () => {
-    let writes = 0;
-    const { store, seed } = setup({ onWrite: () => writes++ });
-    seed({ id: "m" });
-    store.flagMemoryForCorrection({
-      id: "m",
-      reason: "outdated",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    writes = 0;
-
-    const archived = store.archiveFlaggedMemory("m", "dashboard");
-
-    expect(writes).toBe(1);
-    expect(archived!.status).toBe("archived");
-    expect(archived!.flags).toEqual([]);
-    expect(archived!.correction_work![0]).toMatchObject({
-      status: "cancelled",
-      reason_code: "cancelled_by_archive",
-    });
-  });
-
-  it("creates one source-and-flag-snapshot-bound single-target proposal", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", body: "Useful fact. Stale fact." });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The second claim is no longer true.",
-      agent_id: "codex",
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
-    });
-    const work = flagged!.correction_work![0]!;
-    const claimed = store.claimMemoryCorrection({
-      id: "m",
-      snapshot_digest: work.snapshot_digest,
-    })!;
-    const source = store.getMemory("m")!;
-    const start = source.body.indexOf("Stale fact.");
-    const span = { start, end: start + "Stale fact.".length, quote: "Stale fact." };
-    const proposedBody = source.body.slice(0, start) + source.body.slice(span.end);
-    const input = {
-      source_memory_id: "m",
-      snapshot_digest: claimed.snapshot_digest,
-      source_digest: claimed.source_digest,
-      flags_digest: claimed.flags_digest,
-      claim_attempt: claimed.attempt_count,
-      shelf_id: "shelf-1",
-      proposed_body: proposedBody,
-      spans: [span],
-      confidence: 0.4,
-      rationale: "The flagged statement may be outdated.",
-      agent_id: "system-memory-curator",
-    };
-
-    const proposal = store.createMemoryCorrectionProposal(input);
-    const reused = store.createMemoryCorrectionProposal(input);
-
-    expect(proposal).toMatchObject({
-      status: "proposed",
-      body: proposedBody.trim(),
-      curator_note: {
-        source: "flagged_correction",
-        proposed_action: "update",
-        supersedes: ["m"],
-        correction: {
-          source_memory_id: "m",
-          source_shelf_id: "shelf-1",
-          snapshot_digest: claimed.snapshot_digest,
-          source_digest: claimed.source_digest,
-          flags_digest: claimed.flags_digest,
-        },
-      },
-    });
-    expect(reused?.id).toBe(proposal?.id);
-    expect(
-      store.getMemoryCorrectionProposal({
-        source_memory_id: "m",
-        snapshot_digest: work.snapshot_digest,
-      })?.id,
-    ).toBe(proposal?.id);
-    expect(store.getMemory("m")).toMatchObject({
-      status: "active",
-      body: source.body,
-      flags: source.flags,
-    });
-  });
-
-  it("refuses correction proposals after source drift or for a forged replacement", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", body: "Useful fact. Stale fact." });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The second claim is stale.",
-      agent_id: "codex",
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
-    });
-    const work = flagged!.correction_work![0]!;
-    const claimed = store.claimMemoryCorrection({
-      id: "m",
-      snapshot_digest: work.snapshot_digest,
-    })!;
-    const source = store.getMemory("m")!;
-    const start = source.body.indexOf("Stale fact.");
-    const span = { start, end: start + "Stale fact.".length, quote: "Stale fact." };
-    const base = {
-      source_memory_id: "m",
-      snapshot_digest: claimed.snapshot_digest,
-      source_digest: claimed.source_digest,
-      flags_digest: claimed.flags_digest,
-      claim_attempt: claimed.attempt_count,
-      shelf_id: "shelf-1",
-      proposed_body: "forged replacement",
-      spans: [span],
-      confidence: 0.4,
-      rationale: "Outdated.",
-      agent_id: "system-memory-curator",
-    };
-
-    expect(store.createMemoryCorrectionProposal(base)).toBeNull();
-    store.updateMemory("m", { body: "Changed while model was working." });
-    expect(
-      store.createMemoryCorrectionProposal({
-        ...base,
-        proposed_body: source.body.slice(0, start) + source.body.slice(span.end),
-      }),
-    ).toBeNull();
-    expect(store.listMemories({ status: "proposed" }).total).toBe(0);
-  });
-
-  it("approves a correction proposal only on its reviewed shelf and finalizes source history", () => {
-    const { store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-
-    expect(
-      store.inspectMemoryCorrectionProposal({ proposal_id: proposal.id, shelf_id: "shelf-1" }),
-    ).toMatchObject({ status: "ready", source_memory_id: source.id, shelf_id: "shelf-1" });
-    expect(() => store.approveProposal(proposal.id)).toThrow(/exact-shelf correction review/);
-    expect(() => store.resolveProposal(proposal.id, "resolved_via_chat")).toThrow(
-      /approved or rejected directly/,
-    );
-
-    const approved = store.approveMemoryCorrectionProposal({
-      proposal_id: proposal.id,
-      shelf_id: "shelf-1",
-      agent_id: "dashboard-admin",
-    });
-
-    expect(approved).toMatchObject({ id: proposal.id, status: "active" });
-    expect(store.getMemory(proposal.id)?.requires_approval).toBe(false);
-    expect(store.getMemory(source.id)).toMatchObject({ status: "archived", flags: [] });
-    expect(store.getMemory(source.id)?.correction_work?.[0]).toMatchObject({
-      status: "applied",
-      proposal_id: proposal.id,
-      applied_at: NOW,
-    });
-  });
-
-  it("withdraws an older correction proposal when a newer flag snapshot is approved", () => {
-    const { store, seed } = setup();
-    const { proposal: earlierProposal } = createReadyCorrectionProposal(store, seed);
-    const flagged = store.flagMemoryForCorrection({
-      id: "source",
-      reason: "The newer flag identifies another outdated claim.",
-      agent_id: "codex",
-      principal_id: "principal-1",
-      shelf_id: "shelf-1",
-    })!;
-    const work = flagged.correction_work!.at(-1)!;
-    const claimed = store.claimMemoryCorrection({
-      id: "source",
-      snapshot_digest: work.snapshot_digest,
-    })!;
-    const source = store.getMemory("source")!;
-    const quote = "Stale fact.";
-    const start = source.body.indexOf(quote);
-    const span = { start, end: start + quote.length, quote };
-    const nextProposal = store.createMemoryCorrectionProposal({
-      source_memory_id: source.id,
-      snapshot_digest: claimed.snapshot_digest,
-      source_digest: claimed.source_digest,
-      flags_digest: claimed.flags_digest,
-      claim_attempt: claimed.attempt_count,
-      shelf_id: "shelf-1",
-      proposed_body: source.body.slice(0, span.start) + source.body.slice(span.end),
-      spans: [span],
-      confidence: 0.2,
-      rationale: "The stale claim remains incorrect.",
-      agent_id: "system-memory-curator",
-    })!;
-    store.updateMemoryCorrectionWork({
-      id: source.id,
-      snapshot_digest: claimed.snapshot_digest,
-      claim_attempt: claimed.attempt_count,
-      patch: { status: "proposal_pending", proposal_id: nextProposal.id },
-    });
-
-    const approved = store.approveMemoryCorrectionProposal({
-      proposal_id: nextProposal.id,
-      shelf_id: "shelf-1",
-      agent_id: "dashboard-admin",
-    });
-
-    expect(approved).toMatchObject({ id: nextProposal.id, status: "active" });
-    expect(store.getMemory(source.id)).toMatchObject({ status: "archived", flags: [] });
-    expect(store.getMemory(earlierProposal.id)).toMatchObject({
-      status: "archived",
-      curator_note: { resolution: `superseded_by_approval:${nextProposal.id}` },
-    });
-  });
-
-  it("blocks correction approval after source or proposal content drift", () => {
-    const { store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-    store.updateMemory(source.id, { body: "Changed after proposal creation." });
-
-    expect(
-      store.inspectMemoryCorrectionProposal({ proposal_id: proposal.id, shelf_id: "shelf-1" }),
-    ).toMatchObject({ status: "blocked", reason_code: "correction_content_drifted" });
-    expect(() =>
-      store.approveMemoryCorrectionProposal({ proposal_id: proposal.id, shelf_id: "shelf-1" }),
-    ).toThrow(/cannot be approved/);
-    expect(store.getMemory(source.id)).toMatchObject({
-      status: "active",
-      flags: [{ reason: expect.any(String) }],
-    });
-    expect(store.getMemory(proposal.id)?.status).toBe("proposed");
-  });
-
-  it("rejecting a correction proposal leaves the flagged source for manual review", () => {
-    const { store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-
-    expect(
-      store.rejectMemoryCorrectionProposal({
-        proposal_id: proposal.id,
-        shelf_id: "shelf-1",
-        agent_id: "dashboard-admin",
-      }),
-    ).toMatchObject({ status: "archived" });
-    expect(store.getMemory(source.id)).toMatchObject({
-      status: "active",
-      flags: [{ reason: expect.any(String) }],
-    });
-    expect(store.getMemory(source.id)?.correction_work?.[0]).toMatchObject({
-      status: "manual_review",
-      reason_code: "correction_proposal_rejected",
-      proposal_id: proposal.id,
-    });
-  });
-
-  it("recovers approval when the proposal write lands but source finalization is interrupted", () => {
-    const { vault, store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-    const originalWrite = vault.writeText.bind(vault);
-    let writes = 0;
-    const writeSpy = vi.spyOn(vault, "writeText").mockImplementation((relativePath, text) => {
-      writes += 1;
-      if (writes === 2) throw new Error("source write interrupted");
-      return originalWrite(relativePath, text);
-    });
-
-    expect(() =>
-      store.approveMemoryCorrectionProposal({
-        proposal_id: proposal.id,
-        shelf_id: "shelf-1",
-        agent_id: "dashboard-admin",
-      }),
-    ).toThrow("source write interrupted");
-    writeSpy.mockRestore();
-
-    expect(store.getMemory(proposal.id)).toMatchObject({
-      status: "active",
-      curator_note: { correction: { review_outcome: "approved", reviewed_at: NOW } },
-    });
-    expect(store.getMemory(source.id)).toMatchObject({
-      status: "active",
-      flags: [{ reason: expect.any(String) }],
-      correction_work: [{ status: "proposal_pending", proposal_id: proposal.id }],
-    });
-
-    const recoveredStore = createMarkdownMemoryStore({
-      vault: createVault({ dataDir }),
-      now: () => NOW,
-    });
-    expect(recoveredStore.listDueMemoryCorrections(NOW)).toHaveLength(1);
-    expect(
-      recoveredStore.reconcileMemoryCorrectionProposalResolution({
-        source_memory_id: source.id,
-        proposal_id: proposal.id,
-        snapshot_digest: source.correction_work![0]!.snapshot_digest,
-        shelf_id: "shelf-1",
-        agent_id: "system-memory-curator",
-      }),
-    ).toMatchObject({ status: "applied", applied_at: NOW });
-    expect(recoveredStore.getMemory(source.id)).toMatchObject({ status: "archived", flags: [] });
-  });
-
-  it("leaves an interrupted approval flagged for manual review if its source drifts before recovery", () => {
-    const { vault, store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-    const originalWrite = vault.writeText.bind(vault);
-    let writes = 0;
-    const writeSpy = vi.spyOn(vault, "writeText").mockImplementation((relativePath, text) => {
-      writes += 1;
-      if (writes === 2) throw new Error("source write interrupted");
-      return originalWrite(relativePath, text);
-    });
-
-    expect(() =>
-      store.approveMemoryCorrectionProposal({
-        proposal_id: proposal.id,
-        shelf_id: "shelf-1",
-        agent_id: "dashboard-admin",
-      }),
-    ).toThrow("source write interrupted");
-    writeSpy.mockRestore();
-    store.updateMemory(source.id, { body: "The source changed after approval was recorded." });
-
-    const recoveredStore = createMarkdownMemoryStore({
-      vault: createVault({ dataDir }),
-      now: () => NOW,
-    });
-    expect(
-      recoveredStore.reconcileMemoryCorrectionProposalResolution({
-        source_memory_id: source.id,
-        proposal_id: proposal.id,
-        snapshot_digest: source.correction_work![0]!.snapshot_digest,
-        shelf_id: "shelf-1",
-        agent_id: "system-memory-curator",
-      }),
-    ).toMatchObject({
-      status: "manual_review",
-      reason_code: "correction_proposal_resolution_drifted",
-    });
-    expect(recoveredStore.getMemory(source.id)).toMatchObject({
-      status: "active",
-      body: "The source changed after approval was recorded.",
-      flags: [{ reason: expect.any(String) }],
-    });
-  });
-
-  it("recovers rejection when the proposal write lands but source finalization is interrupted", () => {
-    const { vault, store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-    const originalWrite = vault.writeText.bind(vault);
-    let writes = 0;
-    const writeSpy = vi.spyOn(vault, "writeText").mockImplementation((relativePath, text) => {
-      writes += 1;
-      if (writes === 2) throw new Error("source write interrupted");
-      return originalWrite(relativePath, text);
-    });
-
-    expect(() =>
-      store.rejectMemoryCorrectionProposal({
-        proposal_id: proposal.id,
-        shelf_id: "shelf-1",
-        agent_id: "dashboard-admin",
-      }),
-    ).toThrow("source write interrupted");
-    writeSpy.mockRestore();
-
-    expect(store.getMemory(proposal.id)).toMatchObject({
-      status: "archived",
-      curator_note: { correction: { review_outcome: "rejected", reviewed_at: NOW } },
-    });
-    expect(store.getMemory(source.id)?.correction_work?.[0]?.status).toBe("proposal_pending");
-
-    const recoveredStore = createMarkdownMemoryStore({
-      vault: createVault({ dataDir }),
-      now: () => NOW,
-    });
-    expect(recoveredStore.listDueMemoryCorrections(NOW)).toHaveLength(1);
-    expect(
-      recoveredStore.reconcileMemoryCorrectionProposalResolution({
-        source_memory_id: source.id,
-        proposal_id: proposal.id,
-        snapshot_digest: source.correction_work![0]!.snapshot_digest,
-        shelf_id: "shelf-1",
-        agent_id: "system-memory-curator",
-      }),
-    ).toMatchObject({ status: "manual_review", reason_code: "correction_proposal_rejected" });
-    expect(recoveredStore.getMemory(source.id)).toMatchObject({
-      status: "active",
-      flags: [{ reason: expect.any(String) }],
-    });
-  });
-
-  it("refuses to approve after dismiss cancels the proposal's source snapshot", () => {
-    const { store, seed } = setup();
-    const { proposal, source } = createReadyCorrectionProposal(store, seed);
-    store.resolveFlags(source.id, "dashboard-admin");
-
-    expect(
-      store.inspectMemoryCorrectionProposal({ proposal_id: proposal.id, shelf_id: "shelf-1" }),
-    ).toMatchObject({ status: "blocked" });
-    expect(() =>
-      store.approveMemoryCorrectionProposal({ proposal_id: proposal.id, shelf_id: "shelf-1" }),
-    ).toThrow(/cannot be approved/);
-    expect(store.getMemory(source.id)).toMatchObject({
-      status: "active",
-      flags: [],
-      correction_work: [{ status: "cancelled", reason_code: "cancelled_by_dismiss" }],
-    });
-  });
-
-  it("reclaims only expired processing work and refuses a changed source snapshot", () => {
-    let currentTime = NOW;
-    const { store, seed } = setup({ now: () => currentTime });
-    seed({ id: "m", body: "original" });
-    const flagged = store.flagMemoryForCorrection({
-      id: "m",
-      reason: "outdated",
-      agent_id: "codex",
-      principal_id: "p",
-      shelf_id: "s",
-    });
-    const snapshot = flagged!.correction_work![0].snapshot_digest;
-
-    expect(
-      store.claimMemoryCorrection({
-        id: "m",
-        snapshot_digest: snapshot,
-        lease_ms: 1_000,
-        agent_id: "worker",
-      }),
-    ).toMatchObject({ status: "processing", attempt_count: 1 });
-    expect(store.listDueMemoryCorrections(NOW)).toEqual([]);
-
-    store.updateMemory("m", { body: "changed while inference was running" });
-    expect(
-      store.updateMemoryCorrectionWork({
-        id: "m",
-        snapshot_digest: snapshot,
-        claim_attempt: 1,
-        patch: { status: "manual_review" },
-      }),
-    ).toBeNull();
-    expect(store.getMemory("m")!.correction_work![0].status).toBe("processing");
-
-    currentTime = "2026-07-01T00:00:02.000Z";
-    expect(store.listDueMemoryCorrections(currentTime)).toHaveLength(1);
-    expect(
-      store.claimMemoryCorrection({
-        id: "m",
-        snapshot_digest: snapshot,
-        lease_ms: 1_000,
-        agent_id: "worker",
-      }),
-    ).toBeNull();
-    expect(store.getMemory("m")!.body).toBe("changed while inference was running");
-    expect(store.getMemory("m")!.correction_work![0].status).toBe("manual_review");
-  });
-});
-
-describe("markdown MemoryStore — reassessMemoryCorrection", () => {
-  function flagToManualReview(store: ReturnType<typeof createMarkdownMemoryStore>) {
-    return store.flagMemoryForCorrection({
-      id: "m",
-      reason: "The stale fact is no longer true.",
-      agent_id: "codex",
-      principal_id: "flagger",
-      shelf_id: "shelf-1",
-      manual_review_reason_code: "no_worker_scope",
-    })!;
-  }
-
-  it("re-queues finished manual-review work so the worker picks it up again", () => {
-    const { store, seed } = setup();
-    seed({ id: "m", body: "Useful fact. Stale fact." });
-    const flagged = flagToManualReview(store);
-    expect(store.listDueMemoryCorrections(NOW)).toEqual([]);
-
-    const reassessed = store.reassessMemoryCorrection({
-      id: "m",
-      shelf_id: "admin-shelf",
-      principal_id: "admin",
-      agent_id: "admin",
-    });
-
-    // Same body + flags → same snapshot, so the finished entry is replaced, not duplicated.
-    expect(reassessed!.correction_work).toHaveLength(1);
-    expect(reassessed!.correction_work![0]).toEqual({
-      snapshot_digest: flagged.correction_work![0]!.snapshot_digest,
-      source_digest: flagged.correction_work![0]!.source_digest,
-      flags_digest: flagged.correction_work![0]!.flags_digest,
-      principal_id: "flagger",
-      shelf_id: "shelf-1",
-      status: "pending",
-      attempt_count: 0,
-      queued_at: NOW,
-    });
-    expect(reassessed!.flags).toHaveLength(1);
-    expect(store.listDueMemoryCorrections(NOW)).toHaveLength(1);
-  });
-
-  it("queues work for a flag raised before targeted correction existed", () => {
+  it("a null review clears earlier outcomes so the curator looks again", () => {
     const { store, seed } = setup();
     seed({
       id: "m",
-      flags: [{ agent_id: "codex", reason: "old flag", created_at: NOW }],
+      flags: [
+        {
+          agent_id: "codex",
+          reason: "x",
+          created_at: NOW,
+          review: { outcome: "declined", at: NOW },
+        },
+      ],
     });
-
-    const reassessed = store.reassessMemoryCorrection({
-      id: "m",
-      shelf_id: "shelf-1",
-      principal_id: "admin",
-    });
-
-    expect(reassessed!.correction_work).toEqual([
-      expect.objectContaining({ principal_id: "admin", shelf_id: "shelf-1", status: "pending" }),
-    ]);
-  });
-
-  it("refuses while earlier correction work is still in flight", () => {
-    const { store, seed } = setup();
-    seed({ id: "m" });
-    store.flagMemoryForCorrection({
-      id: "m",
-      reason: "stale",
+    expect(store.setFlagReview("m", null)!.flags[0]).toEqual({
       agent_id: "codex",
-      principal_id: "flagger",
-      shelf_id: "shelf-1",
+      reason: "x",
+      created_at: NOW,
     });
-
-    expect(() =>
-      store.reassessMemoryCorrection({ id: "m", shelf_id: "shelf-1", principal_id: "admin" }),
-    ).toThrow(/already has correction work pending; wait for it to finish/);
+    expect(store.setFlagReview("ghost", null)).toBeNull();
   });
 
-  it("refuses a memory with no open flags and returns null for an unknown id", () => {
+  it("an update with clearAgentFlags clears agent flags in the same write and keeps the curator's", () => {
     const { store, seed } = setup();
-    seed({ id: "m" });
+    seed({
+      id: "m",
+      body: "Runs on port 80.",
+      flags: [
+        { agent_id: "codex", reason: "port changed", created_at: NOW },
+        { agent_id: curator, reason: "curator proposes archive: stale", created_at: NOW },
+      ],
+    });
 
-    expect(() =>
-      store.reassessMemoryCorrection({ id: "m", shelf_id: "shelf-1", principal_id: "admin" }),
-    ).toThrow(/has no open flags to re-assess/);
-    expect(
-      store.reassessMemoryCorrection({ id: "missing", shelf_id: "shelf-1", principal_id: "admin" }),
-    ).toBeNull();
+    const updated = store.updateMemory("m", { body: "Runs on port 8080." }, curator, {
+      clearAgentFlags: true,
+    })!;
+
+    expect(updated.body).toBe("Runs on port 8080.");
+    expect(updated.flags.map((flag) => flag.agent_id)).toEqual([curator]);
+  });
+
+  it("a plain update keeps the flags", () => {
+    const { store, seed } = setup();
+    seed({ id: "m", flags: [{ agent_id: "codex", reason: "x", created_at: NOW }] });
+    expect(store.updateMemory("m", { body: "new" })!.flags).toHaveLength(1);
+  });
+
+  it("rejecting a flag-fixing correction proposal marks the source's flags declined", () => {
+    const { store, seed } = setup();
+    seed({ id: "src", flags: [{ agent_id: "codex", reason: "wrong", created_at: NOW }] });
+    seed({
+      id: "fix",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: ["src"], resolves_flags: true },
+    });
+
+    store.approveProposal("fix", "reject");
+
+    expect(store.getMemory("src")!.flags[0]!.review).toMatchObject({ outcome: "declined" });
+    expect(store.getMemory("src")!.status).toBe("active");
+  });
+
+  it("rejecting an ordinary update proposal leaves the source's flags unreviewed", () => {
+    const { store, seed } = setup();
+    seed({ id: "src", flags: [{ agent_id: "codex", reason: "wrong", created_at: NOW }] });
+    seed({
+      id: "other",
+      status: "proposed",
+      curator_note: { proposed_action: "update", supersedes: ["src"] },
+    });
+    store.approveProposal("other", "reject");
+    expect(store.getMemory("src")!.flags[0]!.review).toBeUndefined();
   });
 });
 

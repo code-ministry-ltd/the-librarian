@@ -55,6 +55,8 @@ interface EvidenceItem {
   status: "active" | "proposed";
   title: string;
   body: string;
+  // The evidence body was cut or masked (ADR 0013), so a rewrite would lose text.
+  bodyIncomplete: boolean;
 }
 
 interface Gate {
@@ -84,6 +86,7 @@ export function validateOperations(
       status: "active",
       title: m.title,
       body: m.body,
+      bodyIncomplete: m.body_incomplete === true,
     });
   }
   for (const m of context.memory.proposedMemories) {
@@ -92,6 +95,7 @@ export function validateOperations(
       status: "proposed",
       title: m.title,
       body: m.body,
+      bodyIncomplete: m.body_incomplete === true,
     });
   }
   const gate: Gate = {
@@ -130,6 +134,17 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
     return reject("would change a slice-boundary field (visibility)");
   }
 
+  // 3b. Incomplete source — a body rewritten from a cut or masked evidence body
+  //     would silently drop the rest of the memory (ADR 0013). Applies to every
+  //     operation that writes a new body from its sources.
+  if (rewritesSourceBody(op)) {
+    for (const id of memoryIds) {
+      if (gate.items.get(id)?.bodyIncomplete) {
+        return reject("would rewrite a memory the curator could not see in full");
+      }
+    }
+  }
+
   // 4. Secret — never write secret-looking content.
   const newMemories = newMemoriesOf(op);
   if (newMemories.some(memoryHasSecret) || (op.type === "update" && patchHasSecret(op.patch))) {
@@ -155,6 +170,18 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
 
 function reject(reason: string): OperationOutcome {
   return { decision: "reject", reason };
+}
+
+function rewritesSourceBody(op: GroomingOperation): boolean {
+  switch (op.type) {
+    case "update":
+      return op.patch.body !== undefined;
+    case "merge":
+    case "split":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function referencedMemoryIds(op: GroomingOperation): string[] {

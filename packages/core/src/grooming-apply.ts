@@ -25,6 +25,7 @@ import type { GroomingMemoryPatch, GroomingOperation } from "./grooming-output.j
 import { redactSecrets } from "./grooming-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./grooming-validate.js";
 import type { RecordCurationOperationInput } from "./store/curation-store.js";
+import type { MemoryFlagReview } from "./store/memory-types.js";
 import { mergeMemory } from "./store/merge-memory.js";
 import { type SplitReplacement, splitMemory } from "./store/split-memory.js";
 
@@ -48,11 +49,23 @@ export interface ApplyStore {
     input: Record<string, unknown>,
     options?: Record<string, unknown>,
   ) => { memory: { id: string } };
-  updateMemory: (id: string, patch?: Record<string, unknown>, agent_id?: string) => unknown;
+  updateMemory: (
+    id: string,
+    patch?: Record<string, unknown>,
+    agent_id?: string,
+    options?: { clearAgentFlags?: boolean },
+  ) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
   // Archive proposals ride the flag-review queue (D13: archive never
   // auto-applies, and there is no replacement doc to file as a proposal).
   flagMemory: (id: string, reason: string, agent_id?: string) => unknown;
+  // Record what the curator did about a memory's open agent flags (ADR 0013).
+  // Optional so narrow test stores without flags stay valid.
+  setFlagReview?: (
+    id: string,
+    review: MemoryFlagReview | null,
+    options?: { onlyUnreviewed?: boolean; agent_id?: string },
+  ) => unknown;
   getMemory: (id: string) => StoredMemory | null;
   // Open proposals in the shelf this run writes to — read to suppress an exact
   // repeat (spec 072 D6). UNCAPPED on purpose: `listMemories` clamps at 200, and
@@ -104,11 +117,16 @@ export function applyOperations(
   };
 
   const summary: ApplySummary = { applied: 0, proposed: 0, skipped: 0, failed: 0 };
+  const flags = new FlagOutcomes(context);
   for (const { operation, outcome } of validated) {
     if (outcome.decision === "reject") {
       // A rejected op may have been rejected FOR its content (e.g. secrets), so
       // its payload is not persisted — only the value-free reason.
       record(deps, operation, "skipped", outcome.reason, [], {});
+      flags.note(
+        operation,
+        `The curator's change was refused by a safety check: it ${outcome.reason}.`,
+      );
       summary.skipped++;
       continue;
     }
@@ -123,6 +141,7 @@ export function applyOperations(
     });
     if (decision === "skip") {
       record(deps, operation, "skipped", operation.rationale, [], payload);
+      flags.note(operation, operation.rationale);
       summary.skipped++;
       continue;
     }
@@ -143,6 +162,7 @@ export function applyOperations(
             [],
             payload,
           );
+          flags.proposed(operation, undefined);
           summary.skipped++;
           continue;
         }
@@ -154,13 +174,16 @@ export function applyOperations(
         // flags are removed from the doc, so they no longer count as open.)
         if (operation.type === "archive" && targets.length === 0) {
           record(deps, operation, "skipped", "skipped: already flagged by curator", [], payload);
+          flags.proposed(operation, undefined);
           summary.skipped++;
           continue;
         }
         record(deps, operation, "proposed", operation.rationale, targets, payload);
+        flags.proposed(operation, targets[0]);
         summary.proposed++;
       } else {
         record(deps, operation, "applied", operation.rationale, applyOp(operation, exec), payload);
+        flags.applied(operation);
         summary.applied++;
       }
     } catch (error) {
@@ -169,10 +192,103 @@ export function applyOperations(
       // bug stays observable.
       deps.onError?.(error, operation);
       record(deps, operation, "failed", operation.rationale, [], payload);
+      flags.retryLater(operation);
       summary.failed++;
     }
   }
+  flags.write(deps);
   return summary;
+}
+
+/**
+ * What the curator did about each memory's open agent flags in this chunk (ADR
+ * 0013), so every flag it saw ends with a visible outcome:
+ *
+ * - an applied `resolves_flags` update cleared them (nothing to record);
+ * - a `resolves_flags` update or an archive went to review → `proposed`;
+ * - a failed write → left unreviewed, so the next groom tries again;
+ * - a memory it could not see in full → `too_long`;
+ * - anything else → `no_change`, with the curator's reason when it gave one.
+ */
+class FlagOutcomes {
+  private readonly flagged: Map<string, { incomplete: boolean }>;
+  private readonly settled = new Map<string, MemoryFlagReview["outcome"] | "cleared" | "retry">();
+  private readonly proposalIds = new Map<string, string>();
+  private readonly reasons = new Map<string, string>();
+
+  constructor(context: ValidationContext) {
+    this.flagged = new Map(
+      context.memory.activeMemories
+        .filter((m) => (m.open_flags ?? []).length > 0)
+        .map((m) => [m.id, { incomplete: m.body_incomplete === true }]),
+    );
+  }
+
+  note(op: GroomingOperation, reason: string): void {
+    for (const id of sourceMemoryIds(op)) {
+      if (this.flagged.has(id) && !this.reasons.has(id)) this.reasons.set(id, reason);
+    }
+  }
+
+  proposed(op: GroomingOperation, proposalId: string | undefined): void {
+    if (!fixesFlags(op)) return this.note(op, op.rationale);
+    for (const id of sourceMemoryIds(op)) {
+      if (!this.flagged.has(id)) continue;
+      this.settled.set(id, "proposed");
+      if (proposalId && op.type === "update") this.proposalIds.set(id, proposalId);
+    }
+  }
+
+  applied(op: GroomingOperation): void {
+    if (op.type === "update" && op.resolves_flags === true) {
+      this.settled.set(op.source_memory_id, "cleared");
+    } else {
+      this.note(op, op.rationale);
+    }
+  }
+
+  retryLater(op: GroomingOperation): void {
+    for (const id of sourceMemoryIds(op)) if (this.flagged.has(id)) this.settled.set(id, "retry");
+  }
+
+  write(deps: ApplyDeps): void {
+    const setFlagReview = deps.store.setFlagReview;
+    if (!setFlagReview) return;
+    const at = new Date().toISOString();
+    for (const [id, { incomplete }] of this.flagged) {
+      const settled = this.settled.get(id);
+      if (settled === "cleared" || settled === "retry") continue;
+      const outcome = settled ?? (incomplete ? "too_long" : "no_change");
+      const reason = this.reasons.get(id);
+      const proposalId = this.proposalIds.get(id);
+      const review: MemoryFlagReview = {
+        outcome,
+        at,
+        run_id: deps.runId,
+        ...(outcome === "no_change" && reason
+          ? { rationale: redactSecrets(reason).redacted.slice(0, 1_000) }
+          : {}),
+        ...(proposalId ? { proposal_id: proposalId } : {}),
+      };
+      try {
+        setFlagReview(id, review, { onlyUnreviewed: true, agent_id: deps.actorId });
+      } catch (error) {
+        // Bookkeeping only: an unrecorded outcome just means the next groom looks again.
+        deps.onError?.(error, {
+          type: "noop",
+          source_memory_ids: [id],
+          rationale: "",
+          confidence: 0,
+        });
+      }
+    }
+  }
+}
+
+// An operation that, if approved, deals with its sources' flags: an update that
+// says it fixes them, or an archive (the whole memory goes).
+function fixesFlags(op: GroomingOperation): boolean {
+  return (op.type === "update" && op.resolves_flags === true) || op.type === "archive";
 }
 
 // The memories an operation proposes to replace — the identity D6 dedups on.
@@ -222,7 +338,11 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
     case "create":
       return [createMemory(c, op.memory, []).id];
     case "update":
-      c.store.updateMemory(op.source_memory_id, op.patch, c.actorId);
+      // ADR 0013: an update that fixes the memory's open flags clears them in the
+      // same write; the curator's own archive flags stay.
+      c.store.updateMemory(op.source_memory_id, op.patch, c.actorId, {
+        clearAgentFlags: op.resolves_flags === true,
+      });
       return [op.source_memory_id];
     case "merge":
       // Auto-applied merge: spin up the merged replacement, then archive the
@@ -298,7 +418,7 @@ function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
           correctedMemory(existing, op.patch),
           [op.source_memory_id],
           opts,
-          provenance("update", op.rationale),
+          provenance("update", op.rationale, op.resolves_flags === true),
         ).id,
       ];
     }
@@ -344,9 +464,16 @@ type ProposedAction = "create" | "update" | "merge" | "split";
 interface Provenance {
   proposed_action: ProposedAction;
   rationale: string;
+  // ADR 0013: this update fixes the source's open flags. Rejecting it marks them
+  // declined so grooming stops re-proposing the same fix.
+  resolves_flags?: true;
 }
-function provenance(action: ProposedAction, rationale: string): Provenance {
-  return { proposed_action: action, rationale: redactSecrets(rationale).redacted };
+function provenance(action: ProposedAction, rationale: string, resolvesFlags = false): Provenance {
+  return {
+    proposed_action: action,
+    rationale: redactSecrets(rationale).redacted,
+    ...(resolvesFlags ? { resolves_flags: true as const } : {}),
+  };
 }
 
 // Build the createMemory `{ input, options }` for one memory the curator writes
@@ -385,6 +512,7 @@ function buildCreateCall(
     curatorNote.source = "grooming";
     curatorNote.proposed_action = prov.proposed_action;
     curatorNote.rationale = prov.rationale;
+    if (prov.resolves_flags) curatorNote.resolves_flags = true;
   }
   // Section 4d.3 — the curator emits requires_approval=true on
   // protected creates so the store can drop the legacy
@@ -457,7 +585,11 @@ function operationPayload(op: GroomingOperation): Record<string, unknown> {
     case "archive":
       return { source_memory_ids: op.source_memory_ids };
     case "update":
-      return { source_memory_id: op.source_memory_id, patch: op.patch };
+      return {
+        source_memory_id: op.source_memory_id,
+        patch: op.patch,
+        ...(op.resolves_flags === true ? { resolves_flags: true } : {}),
+      };
     case "merge":
       return { source_memory_ids: op.source_memory_ids, replacement: op.replacement };
     case "split":

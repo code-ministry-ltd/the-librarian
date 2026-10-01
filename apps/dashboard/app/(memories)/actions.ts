@@ -42,15 +42,26 @@ export async function createMemoryAction(form: FormData): Promise<ActionResult> 
   }
 }
 
-export async function updateMemoryAction(id: string, form: FormData): Promise<ActionResult> {
+// `resolveFlags` (ADR 0013): the Flagged page's Edit — the admin fixed what the
+// flags reported, so the server clears them in the same write.
+export async function updateMemoryAction(
+  id: string,
+  form: FormData,
+  options: { resolveFlags?: boolean } = {},
+): Promise<ActionResult> {
   try {
     const patch = {
       title: string(form, "title"),
       body: string(form, "body"),
       tags: tags(form, "tags"),
     } as UpdatePatch;
-    await serverTRPC.memories.update.mutate({ id, patch });
+    await serverTRPC.memories.update.mutate({
+      id,
+      patch,
+      ...(options.resolveFlags ? { resolve_flags: true } : {}),
+    });
     revalidatePath("/");
+    if (options.resolveFlags) revalidatePath("/flagged");
     return { ok: true };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
@@ -215,11 +226,11 @@ export async function resolveFlagAction(
   }
 }
 
-// "Re-assess" on the Flagged page: queue a fresh targeted-correction pass. The
-// server refuses with a teaching message while earlier work is still running.
-export async function reassessFlagAction(id: string, shelfId: string): Promise<ActionResult> {
+// "Ask the curator again" on the Flagged page (ADR 0013): forget the curator's
+// last review of the flags and queue a fresh look about 10 minutes later.
+export async function askCuratorAgainAction(id: string, shelfId: string): Promise<ActionResult> {
   try {
-    await serverTRPC.memories.reassessFlag.mutate({ id, shelf_id: shelfId });
+    await serverTRPC.memories.askCuratorAgain.mutate({ id, shelf_id: shelfId });
     revalidatePath("/flagged");
     return { ok: true };
   } catch (err) {

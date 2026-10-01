@@ -1,85 +1,102 @@
-// Flagged review queue: list every memory an agent has flagged for review,
-// surfacing its text, flag details, and correction-work status. Safe targeted
-// corrections run asynchronously; admins can dismiss flags, explicitly archive
-// the whole memory, or re-assess once earlier correction work has finished.
+// Flagged review queue: every memory an agent has flagged as wrong or outdated,
+// with its flags and what the curator did about them (ADR 0013). The curator
+// corrects flagged memories as part of grooming; this page shows the outcome and
+// gives the admin the manual fallbacks: edit the memory, ask the curator to look
+// again, dismiss the flags, or archive the whole memory.
 
 "use client";
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { canReassessCorrection, describeCorrectionReason } from "./correction-reasons";
+import { EditForm } from "./memory-detail-content";
 import { MemoryCard } from "./memory-card";
 import type { MemoryRow } from "./types";
-import { reassessFlagAction, resolveFlagAction } from "@/app/(memories)/actions";
+import {
+  askCuratorAgainAction,
+  resolveFlagAction,
+  updateMemoryAction,
+} from "@/app/(memories)/actions";
 import { Button } from "@/components/ui-v2/button";
 import { trpc } from "@/lib/trpc-client";
+
+// The curator's own actor id: its flags are archive proposals, not agent flags.
+const CURATOR_ACTOR = "system-memory-curator";
+
+type FlagReviewOutcome = "proposed" | "no_change" | "declined" | "too_long";
 
 interface MemoryFlag {
   agent_id: string;
   reason: string;
   created_at: string;
+  review?: {
+    outcome: FlagReviewOutcome;
+    at: string;
+    rationale?: string;
+    proposal_id?: string;
+  };
 }
 
 type FlaggedRow = MemoryRow & {
   flags?: MemoryFlag[];
   shelfWritable?: boolean;
-  correction_proposal?: { id: string } | null;
 };
 
-type CorrectionWork = NonNullable<MemoryRow["correction_work"]>[number];
-type CorrectionWorkStatus = CorrectionWork["status"];
+type Status =
+  | { kind: "waiting" }
+  | { kind: "archive_proposed" }
+  | { kind: FlagReviewOutcome; rationale?: string };
 
-const IN_FLIGHT: ReadonlySet<CorrectionWorkStatus> = new Set([
-  "pending",
-  "processing",
-  "proposal_pending",
-]);
+/**
+ * One status for the memory, from its agent flags: while any flag is still
+ * unreviewed the curator has work to do; otherwise the latest review decides.
+ */
+function statusOf(flags: MemoryFlag[]): Status {
+  const agentFlags = flags.filter((flag) => flag.agent_id !== CURATOR_ACTOR);
+  if (agentFlags.length === 0) return { kind: "archive_proposed" };
+  if (agentFlags.some((flag) => !flag.review)) return { kind: "waiting" };
+  const latest = agentFlags.map((flag) => flag.review!).reduce((a, b) => (a.at >= b.at ? a : b));
+  return latest.rationale
+    ? { kind: latest.outcome, rationale: latest.rationale }
+    : { kind: latest.outcome };
+}
 
-const CORRECTION_STATUS_MESSAGES: Partial<Record<CorrectionWorkStatus, string>> = {
-  pending: "Correction review is queued.",
-  processing: "Correction review is in progress.",
-  manual_review: "Automatic correction could not be applied; manual review is needed.",
-  applied: "A correction was applied, but this open flag still needs review.",
-  cancelled: "Correction work was cancelled; this flag still needs a human decision.",
-};
-
-function CorrectionWorkNotice({
-  work,
-  hasProposal,
-}: {
-  work: CorrectionWork | undefined;
-  hasProposal: boolean;
-}) {
-  const status = work?.status;
-  if (hasProposal) {
+function StatusNotice({ status }: { status: Status }) {
+  const text = (() => {
+    switch (status.kind) {
+      case "waiting":
+        return "Waiting for the curator. It reviews flagged memories about 10 minutes after a flag, while Grooming is turned on.";
+      case "archive_proposed":
+        return "The curator proposes archiving this whole memory.";
+      case "proposed":
+        return null; // rendered with a link below
+      case "no_change":
+        return status.rationale
+          ? `The curator reviewed this and made no change: “${status.rationale}”`
+          : "The curator reviewed this and made no change.";
+      case "declined":
+        return "You rejected the curator's correction. Edit the memory yourself, ask the curator again, dismiss the flags, or archive it.";
+      case "too_long":
+        return "This memory is too long for the curator to rewrite safely. Edit it yourself.";
+    }
+  })();
+  if (status.kind === "proposed") {
     return (
       <p role="status" className="mt-2 text-sm text-foreground/70">
-        A partial correction is waiting for approval; these flags remain open until then.{" "}
+        The curator proposed a correction; the flags close when you approve it.{" "}
         <Link href="/proposals" className="underline underline-offset-2">
           Review proposal
         </Link>
       </p>
     );
   }
-
-  if (status === "proposal_pending") {
-    return (
-      <p role="status" className="mt-2 text-sm text-foreground/70">
-        The correction proposal is being recovered; no review action is available yet.
-      </p>
-    );
-  }
-
-  if (!status) return null;
-  const message = CORRECTION_STATUS_MESSAGES[status];
-  const reason = status === "manual_review" ? describeCorrectionReason(work?.reason_code) : null;
-  return message ? (
+  return (
     <p role="status" className="mt-2 text-sm text-foreground/70">
-      {message}
-      {reason ? ` ${reason}` : null}
+      {text}
     </p>
-  ) : null;
+  );
 }
+
+const CAN_ASK_AGAIN: ReadonlySet<Status["kind"]> = new Set(["no_change", "declined", "too_long"]);
 
 export function FlaggedView() {
   const listQuery = trpc.memories.listFlagged.useQuery(undefined, {
@@ -88,22 +105,33 @@ export function FlaggedView() {
   });
   const memories = (listQuery.data?.memories ?? []) as FlaggedRow[];
   const [pending, startTransition] = useTransition();
+  const [editing, setEditing] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+
+  const settle = (id: string, result: { ok: true } | { ok: false; error: string }) =>
+    setActionErrors(({ [id]: _cleared, ...rest }) =>
+      result.ok ? rest : { ...rest, [id]: result.error },
+    );
 
   const resolve = (memory: FlaggedRow, action: "dismiss" | "archive") =>
     startTransition(async () => {
       if (!memory.shelfId) return;
-      await resolveFlagAction(memory.id, memory.shelfId, action);
+      settle(memory.id, await resolveFlagAction(memory.id, memory.shelfId, action));
       await listQuery.refetch();
     });
 
-  const reassess = (memory: FlaggedRow) =>
+  const askAgain = (memory: FlaggedRow) =>
     startTransition(async () => {
       if (!memory.shelfId) return;
-      const result = await reassessFlagAction(memory.id, memory.shelfId);
-      setActionErrors(({ [memory.id]: _cleared, ...rest }) =>
-        result.ok ? rest : { ...rest, [memory.id]: result.error },
-      );
+      settle(memory.id, await askCuratorAgainAction(memory.id, memory.shelfId));
+      await listQuery.refetch();
+    });
+
+  const saveEdit = (memory: FlaggedRow, form: FormData) =>
+    startTransition(async () => {
+      const result = await updateMemoryAction(memory.id, form, { resolveFlags: true });
+      settle(memory.id, result);
+      if (result.ok) setEditing(null);
       await listQuery.refetch();
     });
 
@@ -128,15 +156,26 @@ export function FlaggedView() {
     <ul className="flex flex-col gap-2">
       {memories.map((memory) => {
         const flags = memory.flags ?? [];
-        const correctionWork = memory.correction_work
-          ?.filter((work) => work.shelf_id === memory.shelfId)
-          .at(-1);
-        const hasProposal = Boolean(memory.correction_proposal);
-        const canReassess =
-          !hasProposal &&
-          !(correctionWork && IN_FLIGHT.has(correctionWork.status)) &&
-          canReassessCorrection(correctionWork?.reason_code);
+        const status = statusOf(flags);
+        const readOnly = !memory.shelfId || memory.shelfWritable === false;
         const actionError = actionErrors[memory.id];
+        if (editing === memory.id) {
+          return (
+            <li key={memory.id} className="border border-ink-hairline p-4">
+              <p className="mb-3 text-sm text-foreground/70">
+                Fix what the flags report. Saving closes the flags.
+              </p>
+              <EditForm
+                memory={memory}
+                pending={pending}
+                error={actionError ?? null}
+                submitLabel="Save and close flags"
+                onCancel={() => setEditing(null)}
+                onSubmit={(form) => saveEdit(memory, form)}
+              />
+            </li>
+          );
+        }
         return (
           <li key={memory.id}>
             <MemoryCard
@@ -151,25 +190,32 @@ export function FlaggedView() {
               ]}
               actions={
                 <>
-                  {canReassess ? (
+                  <Button
+                    variant="outline"
+                    disabled={pending || readOnly}
+                    onClick={() => setEditing(memory.id)}
+                  >
+                    Edit
+                  </Button>
+                  {CAN_ASK_AGAIN.has(status.kind) ? (
                     <Button
                       variant="outline"
-                      disabled={pending || !memory.shelfId || memory.shelfWritable === false}
-                      onClick={() => reassess(memory)}
+                      disabled={pending || readOnly}
+                      onClick={() => askAgain(memory)}
                     >
-                      Re-assess
+                      Ask the curator again
                     </Button>
                   ) : null}
                   <Button
                     variant="outline"
-                    disabled={pending || !memory.shelfId || memory.shelfWritable === false}
+                    disabled={pending || readOnly}
                     onClick={() => resolve(memory, "dismiss")}
                   >
                     Dismiss
                   </Button>
                   <Button
                     variant="destructive"
-                    disabled={pending || !memory.shelfId || memory.shelfWritable === false}
+                    disabled={pending || readOnly}
                     onClick={() => resolve(memory, "archive")}
                   >
                     Archive
@@ -177,7 +223,7 @@ export function FlaggedView() {
                 </>
               }
             >
-              <CorrectionWorkNotice work={correctionWork} hasProposal={hasProposal} />
+              <StatusNotice status={status} />
               {actionError ? (
                 <p role="alert" className="mt-2 text-sm text-destructive">
                   {actionError}

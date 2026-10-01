@@ -61,6 +61,12 @@ export interface GroomingTickOptions {
   caps?: RunCurationCaps;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
   buildClient?: (conn: ConsumerConnection, token: string) => LlmClient;
+  /**
+   * "flagged" runs the targeted flag groom (ADR 0013): only memories with
+   * unreviewed agent flags and their neighbours, recorded as trigger "flag" and
+   * never skipped by the input-hash idempotency (a flag is new work by definition).
+   */
+  focus?: "flagged";
 }
 
 export async function runGroomingTick(options: GroomingTickOptions): Promise<GroomingTickResult> {
@@ -108,7 +114,11 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
   // Build the LLM client ONCE and reuse it across every shelf pass (the client is
   // stateless per call); the caps/actor/addendum/threshold are the same for each shelf.
   const llmClient = buildClient(consumerConnection(llm), token);
-  const caps: RunCurationCaps = { maxMemories: config.maxMemoriesPerRun, ...options.caps };
+  const caps: RunCurationCaps = {
+    maxMemories: config.maxMemoriesPerRun,
+    ...options.caps,
+    ...(options.focus ? { focus: options.focus } : {}),
+  };
   const baseRun = {
     now: options.now ?? new Date(),
     llmClient,
@@ -119,8 +129,12 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
     // D-1); read it from there (fail-soft "" when the file is absent).
     promptAddendum: readJobAddendum(store, "grooming").content,
     model: { provider: llm.providerId, name: llm.model },
-    trigger: options.trigger ?? "schedule",
-    ...(options.bypassSkip !== undefined ? { bypassSkip: options.bypassSkip } : {}),
+    trigger: options.trigger ?? (options.focus === "flagged" ? "flag" : "schedule"),
+    ...(options.focus === "flagged"
+      ? { bypassSkip: true }
+      : options.bypassSkip !== undefined
+        ? { bypassSkip: options.bypassSkip }
+        : {}),
     // Bounded grooming runs (ADR 0005): the configured per-run memory cap
     // (curator.grooming.max_memories) flows into every run's evidence gather so a
     // single oversized slice can't exceed the LLM timeout. ADR 0005's budget is

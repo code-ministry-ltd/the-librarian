@@ -14,7 +14,6 @@
 // to a `keyof Memory` union at the call site rather than reopening the type.
 
 import type { MemoryStatus } from "../schemas/common.js";
-import type { MemoryCorrectionSpan } from "../memory-correction.js";
 
 /**
  * An agent's open flag against a memory (spec 047 / ADR 0006). A flag is a
@@ -27,58 +26,32 @@ export interface MemoryFlag {
   agent_id: string;
   reason: string;
   created_at: string;
+  /** The curator's latest review of this flag; absent until grooming has looked at it. */
+  review?: MemoryFlagReview;
 }
 
 /**
- * Server-owned work marker for one reviewed flag snapshot. It stores digests and
- * routing metadata only—never the source body or flag reasons—so recovery can
- * resume without copying private content into an operational queue.
+ * What the curator last did about a memory's open agent flags (ADR 0013). Set on
+ * each flag it reviewed, so the Flagged page can say what happened and grooming
+ * can leave already-reviewed flags alone until something changes.
+ *
+ * - `proposed`: a correction (or archive) is waiting on the Proposals page.
+ * - `no_change`: the curator reviewed the memory and changed nothing.
+ * - `declined`: a person rejected the curator's correction proposal.
+ * - `too_long`: the memory is too long for the curator to rewrite safely.
+ *
+ * An applied correction clears the flags instead of recording an outcome.
  */
-export type MemoryCorrectionWorkStatus =
-  "pending" | "processing" | "proposal_pending" | "manual_review" | "applied" | "cancelled";
-export type CorrectionManualReviewReasonCode =
-  "no_admin_scope" | "no_worker_scope" | "custom_router_unverified";
+export type MemoryFlagReviewOutcome = "proposed" | "no_change" | "declined" | "too_long";
 
-export interface MemoryCorrectionWork {
-  snapshot_digest: string;
-  source_digest: string;
-  flags_digest: string;
-  principal_id: string;
-  shelf_id: string;
-  status: MemoryCorrectionWorkStatus;
-  attempt_count: number;
-  queued_at: string;
-  next_attempt_at?: string;
-  lease_expires_at?: string;
-  applied_at?: string;
+export interface MemoryFlagReview {
+  outcome: MemoryFlagReviewOutcome;
+  at: string;
+  run_id?: string;
+  /** The curator's (redacted) reason, for `no_change`. */
+  rationale?: string;
+  /** The waiting proposal, for `proposed` corrections. */
   proposal_id?: string;
-  reason_code?: string;
-}
-
-export interface MemoryCorrectionWorkItem {
-  memory_id: string;
-  work: MemoryCorrectionWork;
-}
-
-export interface MemoryCorrectionProposalReview {
-  source_memory_id: string | null;
-  shelf_id: string;
-  status: "ready" | "blocked";
-  reason_code?: string;
-}
-
-export interface MemoryCorrectionProposalInput {
-  source_memory_id: string;
-  snapshot_digest: string;
-  source_digest: string;
-  flags_digest: string;
-  claim_attempt: number;
-  shelf_id: string;
-  proposed_body: string;
-  spans: readonly MemoryCorrectionSpan[];
-  confidence: number;
-  rationale: string;
-  agent_id: string;
 }
 
 export interface Memory {
@@ -93,8 +66,6 @@ export interface Memory {
   // Default []. A non-empty list soft-demotes the memory in recall but never
   // changes its status.
   flags: MemoryFlag[];
-  /** Durable targeted-correction work/history; absent on memories with no new work. */
-  correction_work?: MemoryCorrectionWork[];
   title: string;
   body: string;
   confidence: string;
@@ -156,7 +127,15 @@ export interface MemoryStore {
     id: string,
     patch?: Record<string, unknown>,
     agent_id?: string,
-    options?: { allowProtected?: boolean },
+    options?: {
+      allowProtected?: boolean;
+      /**
+       * Clear the open agent flags in the same write (ADR 0013): an applied curator
+       * correction, or a person's manual edit, has dealt with them. The curator's own
+       * archive flags are kept: they are a separate proposal.
+       */
+      clearAgentFlags?: boolean;
+    },
   ) => Memory | null;
   bulkUpdateMemory: (input: { ids: string[]; patch: { agent_id?: string }; agent_id?: string }) => {
     transaction_id: string;
@@ -168,8 +147,8 @@ export interface MemoryStore {
   countMemoriesByAgentId: () => { agent_id: string; count: number }[];
   listMemoryIdsByAgentId: (agentId: string) => string[];
   archiveMemory: (id: string, agent_id?: string) => Memory | null;
-  // Dashboard action: archive the whole target, clear its flags, and cancel
-  // correction work in the same memory-document persist.
+  // Dashboard action: archive the whole target and clear its flags in the same
+  // memory-document persist.
   archiveFlaggedMemory: (id: string, agent_id?: string) => Memory | null;
   // The narrow inverse of archiveMemory (spec 044 D-5b): restore an archived
   // memory to Active (idempotent on an already-active row). Drives admin unmerge.
@@ -184,86 +163,15 @@ export interface MemoryStore {
   // (route-to-review, never archive). `agent_id` is the calling agent,
   // resolved server-side. Fail-soft: unknown id → null.
   flagMemory: (id: string, reason: string, agent_id?: string) => Memory | null;
-  // Atomically persist an agent flag with a digest-only targeted-correction marker.
-  flagMemoryForCorrection: (input: {
-    id: string;
-    reason: string;
-    agent_id: string;
-    principal_id: string;
-    shelf_id: string;
-    manual_review_reason_code?: CorrectionManualReviewReasonCode;
-  }) => Memory | null;
-  // Admin "Re-assess": queue fresh correction work for the memory's current flags
-  // once earlier work has finished (manual review, cancelled, or applied). Unknown id → null.
-  reassessMemoryCorrection: (input: {
-    id: string;
-    shelf_id: string;
-    principal_id: string;
-    agent_id?: string;
-  }) => Memory | null;
-  // Enumerate pending/expired work and terminal proposal outcomes awaiting source reconciliation.
-  listDueMemoryCorrections: (at?: string) => MemoryCorrectionWorkItem[];
-  // Claim pending/due work or reclaim an expired lease; attempts are bounded.
-  claimMemoryCorrection: (input: {
-    id: string;
-    snapshot_digest: string;
-    lease_ms?: number;
-    agent_id?: string;
-  }) => MemoryCorrectionWork | null;
-  // Update only the currently fenced claim after rechecking its source/flag snapshot.
-  updateMemoryCorrectionWork: (input: {
-    id: string;
-    snapshot_digest: string;
-    claim_attempt: number;
-    patch: Pick<MemoryCorrectionWork, "status"> &
-      Partial<
-        Pick<
-          MemoryCorrectionWork,
-          "next_attempt_at" | "lease_expires_at" | "proposal_id" | "reason_code"
-        >
-      >;
-    agent_id?: string;
-  }) => MemoryCorrectionWork | null;
-  // Apply server-validated exact spans only if the source, flags, and lease still match.
-  applyMemoryCorrection: (input: {
-    id: string;
-    snapshot_digest: string;
-    claim_attempt: number;
-    spans: readonly MemoryCorrectionSpan[];
-    agent_id?: string;
-  }) => Memory | null;
-  /** Targeted lookup by exact source + reviewed flag snapshot, uncapped and shelf-local. */
-  getMemoryCorrectionProposal: (input: {
-    source_memory_id: string;
-    snapshot_digest: string;
-  }) => Memory | null;
-  /** Synchronous snapshot-checked get-or-create of one single-target correction proposal. */
-  createMemoryCorrectionProposal: (input: MemoryCorrectionProposalInput) => Memory | null;
-  /** Validate the correction-only baseline against this exact shelf and current source snapshot. */
-  inspectMemoryCorrectionProposal: (input: {
-    proposal_id: string;
-    shelf_id: string;
-  }) => MemoryCorrectionProposalReview | null;
-  /** Approve a correction proposal only when its exact-shelf source/flags/content baseline is current. */
-  approveMemoryCorrectionProposal: (input: {
-    proposal_id: string;
-    shelf_id: string;
-    agent_id?: string;
-  }) => Memory | null;
-  /** Reject a correction proposal and leave its source available for manual review. */
-  rejectMemoryCorrectionProposal: (input: {
-    proposal_id: string;
-    shelf_id: string;
-    agent_id?: string;
-  }) => Memory | null;
-  /** Reconcile a durable terminal proposal outcome after a crash between proposal/source writes. */
-  reconcileMemoryCorrectionProposalResolution: (input: {
-    source_memory_id: string;
-    proposal_id?: string;
-    snapshot_digest: string;
-    shelf_id: string;
-    agent_id?: string;
-  }) => MemoryCorrectionWork | null;
+  // Record (or, with `review: null`, clear) the curator's review outcome on every
+  // open agent flag (ADR 0013). `onlyUnreviewed` leaves flags that already carry a
+  // review alone. Bookkeeping only: it does not bump `updated_at`, so it never
+  // re-arms grooming's input hash. Unknown id → null.
+  setFlagReview: (
+    id: string,
+    review: MemoryFlagReview | null,
+    options?: { onlyUnreviewed?: boolean; agent_id?: string },
+  ) => Memory | null;
   // Clear every open flag on a memory — the dashboard's adjudication
   // primitive. Status is left untouched. Fail-soft: unknown id → null.
   resolveFlags: (id: string, agent_id?: string) => Memory | null;

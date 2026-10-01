@@ -722,83 +722,62 @@ describe("ProposalCard — actor display footer (spec 068)", () => {
   });
 });
 
-describe("ProposalCard — flagged correction review", () => {
-  const correctionRow = (
-    correctionReview: NonNullable<ProposalReviewRow["correctionReview"]> = {
-      source_memory_id: "mem_source",
-      shelf_id: "shelf-1",
-      status: "ready",
-    },
-  ) =>
+describe("ProposalCard — a curator fix for a flagged memory (ADR 0013)", () => {
+  const fixRow = () =>
     row({
       action: "update",
-      source: "flagged_correction",
-      rationale: "Remove the outdated claim only.",
+      source: "grooming",
+      rationale: "The flag says deploys moved to Thursdays.",
       proposal: memory({
-        id: "mem_correction",
-        title: "Account",
-        body: "Keep the useful fact.",
-        curator_note: { source: "flagged_correction", proposed_action: "update" },
+        id: "mem_fix",
+        title: "Atlas",
+        body: "Deploys go out every Thursday.",
+        curator_note: {
+          source: "grooming",
+          proposed_action: "update",
+          supersedes: ["mem_source"],
+          resolves_flags: true,
+        },
       }),
       targets: [
         memory({
           id: "mem_source",
           status: "active",
-          title: "Account",
-          body: "Keep the useful fact. Old claim.",
+          title: "Atlas",
+          body: "Deploys go out every Tuesday.",
           flags: [
             {
               agent_id: "scribe",
-              reason: "The second claim is outdated.",
+              reason: "Deploys moved to Thursdays.",
               created_at: "2026-06-02T00:00:00.000Z",
             },
           ],
         }),
       ],
-      diff: "--- a\\n+++ b\\n@@ -1 +1 @@\\n-Keep the useful fact. Old claim.\\n+Keep the useful fact.",
-      correctionReview,
+      diff: "--- a\n+++ b\n@@ -1 +1 @@\n-Deploys go out every Tuesday.\n+Deploys go out every Thursday.",
     });
 
-  it("shows the flags and explains the explicit approval outcome", () => {
-    render(<ProposalCard row={correctionRow()} />);
+  it("shows the flags it fixes and what approving and rejecting do", () => {
+    render(<ProposalCard row={fixRow()} />);
 
-    expect(screen.getByRole("region", { name: "Flagged correction review" })).toHaveTextContent(
-      "The second claim is outdated.",
-    );
-    expect(screen.getByRole("region", { name: "Flagged correction review" })).toHaveTextContent(
-      /archives the flagged source/,
-    );
-    expect(screen.getByRole("button", { name: "Approve correction" })).toBeEnabled();
+    const region = screen.getByRole("region", { name: "Fixes a flagged memory" });
+    expect(region).toHaveTextContent("Deploys moved to Thursdays.");
+    expect(region).toHaveTextContent(/closes the flags/);
+    expect(region).toHaveTextContent(/keeps the original/);
   });
 
-  it("approves through the exact-shelf action and omits generic discuss/teach paths", async () => {
-    render(<ProposalCard row={correctionRow()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Approve correction" }));
-
-    await waitFor(() =>
-      expect(approveProposalAction).toHaveBeenCalledWith("mem_correction", "shelf-1"),
-    );
-    expect(screen.queryByRole("button", { name: "Discuss this proposal" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Reject & make an example" })).toBeNull();
-  });
-
-  it("blocks approval on a stale baseline but leaves exact-shelf rejection available", async () => {
-    render(
-      <ProposalCard
-        row={correctionRow({
-          source_memory_id: "mem_source",
-          shelf_id: "shelf-1",
-          status: "blocked",
-          reason_code: "correction_content_drifted",
-        })}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Approve correction" })).toBeDisabled();
+  it("is approved and rejected like any other proposal", async () => {
+    render(<ProposalCard row={fixRow()} />);
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
-    await waitFor(() =>
-      expect(rejectProposalAction).toHaveBeenCalledWith("mem_correction", "shelf-1"),
-    );
+    await waitFor(() => expect(rejectProposalAction).toHaveBeenCalledWith("mem_fix", "shelf-1"));
+    expect(screen.getByRole("button", { name: "Discuss this proposal" })).toBeInTheDocument();
+  });
+
+  it("an ordinary update proposal shows no flag section", () => {
+    const plain = fixRow();
+    plain.proposal = { ...plain.proposal, curator_note: { source: "grooming" } };
+    render(<ProposalCard row={plain} />);
+    expect(screen.queryByRole("region", { name: "Fixes a flagged memory" })).toBeNull();
   });
 });
 

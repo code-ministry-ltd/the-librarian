@@ -30,7 +30,7 @@
 // Imports the compiled artifact (../dist), like per-surface-role.test.ts.
 
 import type { AddressInfo } from "node:net";
-import { type SerialScheduler, writeChronicleConfig } from "@librarian/core";
+import { type SerialScheduler, writeChronicleConfig, writeGroomingConfig } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
 import type { PluginRoute } from "../dist/http/routes.js";
@@ -140,9 +140,6 @@ function makeRuntime(
   return {
     schedulers,
     store,
-    drainCorrectionWork: async () => {
-      order.push("correction.drain");
-    },
     publicServer: makeListener("public", order),
     internalServer: makeListener("internal", order),
     publicBind: { port: 3838, host: "127.0.0.1" },
@@ -158,11 +155,10 @@ const SCHEDULER_NAMES = [
   "grooming",
   "chronicle",
   "transcript",
-  "correction",
+  "flag-groom",
 ] as const;
 
-// Base options with every configurable poller OFF; targeted correction recovery
-// remains registered so durable markers are scanned on startup.
+// Base options with every configurable poller OFF.
 function baseOptions(dataDir: string): LibrarianServerOptions {
   return {
     dataDir,
@@ -194,9 +190,8 @@ describe("createLibrarianServer — handle shape (spec 060 SC 1)", () => {
         expect(typeof server.start).toBe("function");
         expect(typeof server.stop).toBe("function");
         expect(server.store).toBeDefined();
-        // Correction recovery is always registered, even with other pollers off.
-        expect(server.internals.schedulers).toHaveLength(1);
-        expect(server.internals.schedulers[0]?.isStarted()).toBe(false);
+        // Every poller is off, so no scheduler is registered.
+        expect(server.internals.schedulers).toHaveLength(0);
       } finally {
         server.store.close();
       }
@@ -208,10 +203,10 @@ describe("createLibrarianServer — handle shape (spec 060 SC 1)", () => {
   it("internals.schedulers lists exactly the enabled schedulers", () => {
     const dataDir = makeTempDir();
     try {
-      // Only the backup timer is > 0 ⇒ backup plus correction recovery.
+      // Only the backup timer is > 0 ⇒ only the backup scheduler.
       const server = createLibrarianServer({ ...baseOptions(dataDir), backupTickMs: 60_000 });
       try {
-        expect(server.internals.schedulers.length).toBe(2);
+        expect(server.internals.schedulers.length).toBe(1);
       } finally {
         server.store.close();
       }
@@ -233,7 +228,7 @@ describe("createLibrarianServer — handle shape (spec 060 SC 1)", () => {
           dayOfWeek: "monday",
           scheduleTime: "00:00",
         });
-        expect(server.internals.schedulers).toHaveLength(2);
+        expect(server.internals.schedulers).toHaveLength(1);
 
         await server.internals.schedulers[0]!.runNow();
 
@@ -270,7 +265,7 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "grooming.start",
       "chronicle.start",
       "transcript.start",
-      "correction.start",
+      "flag-groom.start",
       "public.banner",
     ]);
     // Exactly once each: a double start(), or a start outside the public listen
@@ -297,8 +292,7 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "grooming.stop",
       "chronicle.stop",
       "transcript.stop",
-      "correction.stop",
-      "correction.drain",
+      "flag-groom.stop",
       "store.flushRefusals",
       "store.close",
       "public.close",
@@ -401,16 +395,15 @@ describe("createLibrarianServer — factory seam e2e (spec 060 seam wiring)", ()
       routes: [publicRoute, internalRoute],
     };
 
-    // One configurable scheduler enabled (a 60s poll, so it never actually fires during the test),
-    // plus the always-registered correction recovery scheduler.
+    // One configurable scheduler enabled (a 60s poll, so it never actually fires during the test).
     const server = createLibrarianServer({
       ...baseOptions(dataDir),
       backupTickMs: 60_000,
       plugins: [plugin],
     });
 
-    // BEFORE start(): the scheduler pair exists but is not started.
-    expect(server.internals.schedulers).toHaveLength(2);
+    // BEFORE start(): the scheduler exists but is not started.
+    expect(server.internals.schedulers).toHaveLength(1);
     expect(server.internals.schedulers[0]?.isStarted()).toBe(false);
 
     let stopped = false;
@@ -472,46 +465,65 @@ describe("createLibrarianServer — factory seam e2e (spec 060 seam wiring)", ()
   });
 });
 
-describe("HTTP flagged-memory correction wake", () => {
-  it("wakes the durable correction worker after flag_memory persists its marker", async () => {
+describe("HTTP flag_memory and the targeted flag groom (ADR 0013)", () => {
+  async function flagOverHttp(server: ReturnType<typeof createLibrarianServer>, id: string) {
+    const publicPort = await listeningPort(server.internals.publicServer);
+    const response = await fetch(`http://127.0.0.1:${publicPort}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "flag_memory", arguments: { memory_id: id, reason: "this is outdated" } },
+      }),
+    });
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as { result: { content: { text: string }[] } };
+    return result.result.content[0]?.text ?? "";
+  }
+
+  it("records the flag and says the curator will review it when grooming is on", async () => {
     const dataDir = makeTempDir();
-    const server = createLibrarianServer(baseOptions(dataDir));
+    const server = createLibrarianServer({ ...baseOptions(dataDir), groomingPollMs: 60_000 });
+    writeGroomingConfig(server.store, { enabled: true });
     const { memory } = server.store.createMemory({
       agent_id: "claude",
       title: "Old fact",
       body: "This fact is outdated.",
     });
-
     try {
       server.start();
-      const publicPort = await listeningPort(server.internals.publicServer);
-      const response = await fetch(`http://127.0.0.1:${publicPort}/mcp`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "flag_memory",
-            arguments: { memory_id: memory.id, reason: "this is outdated" },
-          },
-        }),
-      });
-      expect(response.status).toBe(200);
-      const result = (await response.json()) as {
-        result: { content: { text: string }[] };
-      };
-      expect(result.result.content[0]?.text).toMatch(/targeted correction review was queued/i);
-
-      await expect
-        .poll(() => server.store.getMemory(memory.id)?.correction_work?.at(-1)?.status)
-        .toBe("manual_review");
-      expect(server.store.getMemory(memory.id)?.correction_work?.at(-1)).toMatchObject({
-        reason_code: "grooming_disabled",
-      });
+      expect(await flagOverHttp(server, memory.id)).toMatch(/curator will review this memory/i);
+      expect(server.store.getMemory(memory.id)?.flags).toHaveLength(1);
+      // The grooming timer and the targeted flag groom's timer are both registered.
+      expect(server.internals.schedulers).toHaveLength(2);
     } finally {
       await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("withdraws a retired correction worker's open proposal at boot and keeps the flag", () => {
+    const dataDir = makeTempDir();
+    const seeded = createLibrarianServer(baseOptions(dataDir));
+    const source = seeded.store.createMemory({ agent_id: "claude", title: "Fact", body: "Old." });
+    seeded.store.flagMemory(source.memory.id, "outdated", "claude");
+    const legacy = seeded.store.createMemory(
+      { agent_id: "system-memory-curator", title: "Fact", body: "New." },
+      {
+        requires_approval: true,
+        curator_note: { source: "flagged_correction", supersedes: [source.memory.id] },
+      },
+    );
+    seeded.store.close();
+
+    const server = createLibrarianServer(baseOptions(dataDir));
+    try {
+      expect(server.store.getMemory(legacy.memory.id)?.status).toBe("archived");
+      expect(server.store.getMemory(source.memory.id)?.flags).toHaveLength(1);
+    } finally {
+      server.store.close();
       cleanupTempDir(dataDir);
     }
   });

@@ -65,20 +65,15 @@ export function ProposalCard({
   // lack the key, and `unknown` (nothing recorded to compare) must never block.
   const driftedMemories = (row.drift?.sources ?? []).filter((s) => s.drifted);
   const isDrifted = row.drift?.status === "drifted";
-  const isCorrection = source === "flagged_correction" || row.correctionReview !== undefined;
+  // ADR 0013: a curator update meant to fix its source's open flags. Approving it
+  // closes them; rejecting it marks them declined on the Flagged page.
+  const fixesFlags = proposal.curator_note?.resolves_flags === true;
   const shelfId = proposal.shelfId ?? "";
   const shelfCanWrite = Boolean(shelfId) && proposal.shelfWritable !== false;
-  /** No correction activation without a current exact-shelf baseline; Reject remains available. */
-  const approvalBlocked =
-    pending ||
-    isDrifted ||
-    !shelfCanWrite ||
-    (isCorrection && row.correctionReview?.status !== "ready");
+  const approvalBlocked = pending || isDrifted || !shelfCanWrite;
 
   const badge = proposalBadge({ action, targetCount: targets.length });
-  const approveLabel = isCorrection
-    ? "Approve correction"
-    : approveConsequenceLabel({ action, targetCount: targets.length });
+  const approveLabel = approveConsequenceLabel({ action, targetCount: targets.length });
 
   const run = (fn: () => Promise<unknown>) =>
     startTransition(async () => {
@@ -213,16 +208,16 @@ export function ProposalCard({
 
       <MemoryTags tags={proposal.tags} />
 
-      {isCorrection ? (
+      {fixesFlags ? (
         <section
-          aria-label="Flagged correction review"
+          aria-label="Fixes a flagged memory"
           className="flex flex-col gap-2 border border-ink-hairline bg-foreground/[0.02] p-3"
         >
-          <SectionLabel>Flagged correction</SectionLabel>
+          <SectionLabel>Fixes a flagged memory</SectionLabel>
           <p className="text-sm leading-relaxed text-foreground/75">
-            This proposal removes only the claims identified for correction. Approval activates the
-            corrected copy and archives the flagged source; rejection keeps the source active and
-            flagged for manual review.
+            The curator wrote this correction to address the flags below. Approving it replaces the
+            flagged memory and closes the flags; rejecting it keeps the original and leaves the
+            flags on the Flagged page.
           </p>
           {targets[0]?.flags?.length ? (
             <ul className="flex flex-col gap-1.5">
@@ -239,17 +234,6 @@ export function ProposalCard({
           ) : (
             <p className="text-sm text-foreground/60">No open flags remain on the source.</p>
           )}
-          {row.correctionReview?.status !== "ready" ? (
-            <p role="alert" className="text-sm text-destructive">
-              The source, flags, or proposal changed after this correction was prepared. Reject this
-              proposal or review the flagged source manually.
-            </p>
-          ) : null}
-          {!shelfCanWrite ? (
-            <p role="status" className="text-sm text-foreground/60">
-              This shelf is not writable by the current administrator.
-            </p>
-          ) : null}
         </section>
       ) : null}
 
@@ -404,11 +388,7 @@ export function ProposalCard({
             {approveLabel}
           </Button>
         )}
-        {/* Proposal-scoped chat (F5/D4) is unavailable for flagged-correction
-            proposals, which have a dedicated exact-shelf review path. */}
-        {!isCorrection ? (
-          <DiscussProposalButton proposalId={proposal.id} proposalTitle={proposal.title} />
-        ) : null}
+        <DiscussProposalButton proposalId={proposal.id} proposalTitle={proposal.title} />
         {/* Teach loop entry point (F4): intake-sourced only in v1 (scenario F —
             grooming rejections don't teach yet). Plain Reject stays untouched
             beside it — teaching is the explicit affordance, never a side

@@ -47,6 +47,11 @@ export interface RunCurationCaps {
    * `chunkSize` caps each CALL. Default 30.
    */
   chunkSize?: number;
+  /**
+   * "flagged": the targeted flag groom (ADR 0013) — only flagged memories and
+   * their neighbours. A run with nothing flagged makes no model call.
+   */
+  focus?: "flagged";
 }
 
 export interface RunCurationOptions {
@@ -84,7 +89,10 @@ export async function runCuration(
   const memory = store.gatherMemoryEvidence(slice, {
     maxMemories: caps.maxMemories ?? DEFAULT_MAX_MEMORIES,
     ...(caps.maxBodyChars !== undefined ? { maxBodyChars: caps.maxBodyChars } : {}),
+    ...(caps.focus !== undefined ? { focus: caps.focus } : {}),
   });
+  // A targeted flag groom with nothing flagged has no work: no run, no model call.
+  if (caps.focus === "flagged" && memory.activeMemories.length === 0) return null;
 
   // §10.2 idempotency: skip if an identical completed apply-run exists, unless a
   // manual/maintenance trigger explicitly bypasses. Checked BEFORE creating a run

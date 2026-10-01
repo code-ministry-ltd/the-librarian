@@ -16,9 +16,16 @@
 import { parseFrontmatter, stringifyFrontmatter } from "../../safe-frontmatter.js";
 import { z } from "zod";
 import { IsoTimestampSchema } from "../../schemas/common.js";
-import type { Memory, MemoryCorrectionWork } from "../memory-store.js";
+import type { Memory, MemoryFlag } from "../memory-store.js";
 
-const Sha256DigestSchema = z.string().regex(/^[0-9a-f]{64}$/);
+// The curator's latest review of a flag (ADR 0013).
+const FlagReviewSchema = z.object({
+  outcome: z.enum(["proposed", "no_change", "declined", "too_long"]),
+  at: IsoTimestampSchema,
+  run_id: z.string().min(1).optional(),
+  rationale: z.string().optional(),
+  proposal_id: z.string().min(1).optional(),
+});
 
 const MemoryFrontmatterSchema = z.object({
   id: z.string().min(1),
@@ -45,35 +52,14 @@ const MemoryFrontmatterSchema = z.object({
         agent_id: z.string(),
         reason: z.string(),
         created_at: IsoTimestampSchema,
+        // ADR 0013. An unreadable review is dropped rather than failing the whole
+        // memory: the flag itself is what matters, and grooming re-reviews it.
+        review: FlagReviewSchema.optional().catch(undefined),
       }),
     )
     .default([]),
-  correction_work: z
-    .array(
-      z.object({
-        snapshot_digest: Sha256DigestSchema,
-        source_digest: Sha256DigestSchema,
-        flags_digest: Sha256DigestSchema,
-        principal_id: z.string().min(1),
-        shelf_id: z.string().min(1),
-        status: z.enum([
-          "pending",
-          "processing",
-          "proposal_pending",
-          "manual_review",
-          "applied",
-          "cancelled",
-        ]),
-        attempt_count: z.number().int().min(0).max(3),
-        queued_at: IsoTimestampSchema,
-        next_attempt_at: IsoTimestampSchema.optional(),
-        lease_expires_at: IsoTimestampSchema.optional(),
-        applied_at: IsoTimestampSchema.optional(),
-        proposal_id: z.string().min(1).optional(),
-        reason_code: z.string().min(1).optional(),
-      }),
-    )
-    .optional(),
+  // `correction_work` (ADR 0012, retired by ADR 0013) is no longer in the schema:
+  // z.object strips it on read, so a legacy marker vanishes on the next write.
   is_global: z.boolean(),
   requires_approval: z.boolean(),
   created_at: IsoTimestampSchema,
@@ -99,7 +85,7 @@ export function serializeMemoryDocument(memory: Memory): string {
     applies_to: memory.applies_to ?? [],
     supersedes: memory.supersedes ?? [],
     conflicts_with: memory.conflicts_with ?? [],
-    flags: memory.flags ?? [],
+    flags: (memory.flags ?? []).map(serializeFlag),
     is_global: memory.is_global ?? false,
     requires_approval: memory.requires_approval ?? false,
     created_at: memory.created_at,
@@ -109,9 +95,6 @@ export function serializeMemoryDocument(memory: Memory): string {
   // mutation has touched serialises byte-for-byte as before — the golden fixture is unmoved
   // by T4, and only regenerates in T5 where the cycle gains an attributed update/archive.
   if (memory.updated_by !== undefined) frontmatter.updated_by = memory.updated_by;
-  if (memory.correction_work && memory.correction_work.length > 0) {
-    frontmatter.correction_work = memory.correction_work.map(serializeCorrectionWork);
-  }
   frontmatter.curator_note = memory.curator_note ?? null;
   return stringifyFrontmatter(memory.body.trim(), frontmatter);
 }
@@ -128,32 +111,18 @@ export function parseMemoryDocument(raw: string): Memory {
   }
   // `updated_by` is optional: under exactOptionalPropertyTypes it must be OMITTED when
   // absent, never set to `undefined` (which zod's `.optional()` yields for a missing key).
-  const { updated_by, correction_work, ...rest } = result.data;
-  const normalizedCorrectionWork = correction_work?.map((work): MemoryCorrectionWork => {
-    const { next_attempt_at, lease_expires_at, applied_at, proposal_id, reason_code, ...required } =
-      work;
-    return {
-      ...required,
-      ...(next_attempt_at !== undefined ? { next_attempt_at } : {}),
-      ...(lease_expires_at !== undefined ? { lease_expires_at } : {}),
-      ...(applied_at !== undefined ? { applied_at } : {}),
-      ...(proposal_id !== undefined ? { proposal_id } : {}),
-      ...(reason_code !== undefined ? { reason_code } : {}),
-    };
-  });
+  const { updated_by, flags, ...rest } = result.data;
   return {
     ...rest,
+    flags: flags.map(normalizeFlag),
     requires_approval: rest.requires_approval && !isResolvedProposal(rest),
     body: content.trim(),
     ...(updated_by !== undefined ? { updated_by } : {}),
-    ...(normalizedCorrectionWork !== undefined
-      ? { correction_work: normalizedCorrectionWork }
-      : {}),
   };
 }
 
 // A reviewed proposal: it carries the curator_note every proposal path stamps
-// (intake, grooming, flagged correction, dashboard move) but is no longer
+// (intake, grooming, dashboard move) but is no longer
 // proposed. Its requires_approval was the "awaiting review" marker, not a
 // protection. Approval used to leave it set, so every accepted proposal became
 // protected forever and forced every later curator change to it back into
@@ -164,22 +133,43 @@ function isResolvedProposal(doc: { status: string; curator_note: unknown }): boo
   return doc.status !== "proposed" && doc.curator_note !== null;
 }
 
-function serializeCorrectionWork(work: MemoryCorrectionWork): Record<string, unknown> {
+// Optional keys are OMITTED when absent (exactOptionalPropertyTypes), and a flag
+// with no review serialises exactly as it did before ADR 0013.
+type ParsedFlag = Omit<MemoryFlag, "review"> & {
+  review?:
+    | {
+        outcome: NonNullable<MemoryFlag["review"]>["outcome"];
+        at: string;
+        run_id?: string | undefined;
+        rationale?: string | undefined;
+        proposal_id?: string | undefined;
+      }
+    | undefined;
+};
+
+function normalizeFlag(flag: ParsedFlag): MemoryFlag {
+  const { review, ...base } = flag;
+  if (!review) return base;
+  const { run_id, rationale, proposal_id, ...required } = review;
   return {
-    snapshot_digest: work.snapshot_digest,
-    source_digest: work.source_digest,
-    flags_digest: work.flags_digest,
-    principal_id: work.principal_id,
-    shelf_id: work.shelf_id,
-    status: work.status,
-    attempt_count: work.attempt_count,
-    queued_at: work.queued_at,
-    ...(work.next_attempt_at !== undefined ? { next_attempt_at: work.next_attempt_at } : {}),
-    ...(work.lease_expires_at !== undefined ? { lease_expires_at: work.lease_expires_at } : {}),
-    ...(work.applied_at !== undefined ? { applied_at: work.applied_at } : {}),
-    ...(work.proposal_id !== undefined ? { proposal_id: work.proposal_id } : {}),
-    ...(work.reason_code !== undefined ? { reason_code: work.reason_code } : {}),
+    ...base,
+    review: {
+      ...required,
+      ...(run_id !== undefined ? { run_id } : {}),
+      ...(rationale !== undefined ? { rationale } : {}),
+      ...(proposal_id !== undefined ? { proposal_id } : {}),
+    },
   };
+}
+
+function serializeFlag(flag: MemoryFlag): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    agent_id: flag.agent_id,
+    reason: flag.reason,
+    created_at: flag.created_at,
+  };
+  if (flag.review) out.review = normalizeFlag(flag).review;
+  return out;
 }
 
 function coerceDates(data: Record<string, unknown>): Record<string, unknown> {

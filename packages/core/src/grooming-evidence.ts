@@ -50,6 +50,11 @@ export interface GroomingMemoryRecord {
    * Optional so non-flag-aware sources stay valid.
    */
   hasOpenCuratorFlag?: boolean;
+  /**
+   * The open agent flags the curator has not reviewed yet (ADR 0013), oldest
+   * first. Raw (pre-redaction) reasons; gatherMemoryEvidence redacts them.
+   */
+  openFlags?: { reason: string; flaggedAt: string }[];
 }
 
 /**
@@ -84,6 +89,13 @@ export interface GroomingMemorySource {
   ): GroomingMemoryRecord[];
   /** Archived memories for the slice (with archive metadata), newest-first, ≤ limit. */
   selectTombstones(slice: EvidenceSlice, limit: number): GroomingTombstoneRecord[];
+  /**
+   * The targeted flag groom's memories (ADR 0013): up to `maxFlagged` active
+   * memories with unreviewed agent flags, each followed by up to `neighbours`
+   * related active memories, with no repeats. Optional: a source without it
+   * yields an empty targeted run.
+   */
+  selectFlagFocus?(maxFlagged: number, neighbours: number): GroomingMemoryRecord[];
 }
 
 export interface MemoryEvidenceCaps {
@@ -91,6 +103,16 @@ export interface MemoryEvidenceCaps {
   maxMemories: number;
   /** Max chars for a memory body before truncation. Default 4000. */
   maxBodyChars?: number;
+  /**
+   * Max chars for a FLAGGED memory's body (ADR 0013). Default 20000: the curator
+   * may rewrite a flagged memory, so it must see the whole of it.
+   */
+  maxFlaggedBodyChars?: number;
+  /**
+   * "flagged" gathers the targeted flag groom's evidence instead of the
+   * newest-first slice: flagged memories plus their neighbours, no proposals.
+   */
+  focus?: "flagged";
 }
 
 export interface MemoryEvidenceItem {
@@ -110,6 +132,12 @@ export interface MemoryEvidenceItem {
   // this memory (review F2) — the prompt tells the model to noop instead of
   // re-proposing. Omitted when false, to keep the evidence JSON lean.
   has_open_curator_flag?: true;
+  // ADR 0013: the agent flags the curator should act on, redacted. Omitted when none.
+  open_flags?: { reason: string; flagged_at: string }[];
+  // Present (and true) when `body` is not the whole stored body: it was cut at the
+  // length bound or had secret-looking text masked. The curator must not rewrite
+  // a memory it can't see whole; validation rejects such an operation.
+  body_incomplete?: true;
 }
 
 export interface TombstoneItem {
@@ -138,6 +166,11 @@ export interface MemoryEvidenceBundle {
 }
 
 const DEFAULT_MAX_BODY_CHARS = 4000;
+const DEFAULT_MAX_FLAGGED_BODY_CHARS = 20_000;
+/** Flagged memories per targeted run, so each group fits one model call (ADR 0013). */
+export const FLAG_FOCUS_MAX_FLAGGED = 5;
+/** Related memories shown alongside each flagged one (ADR 0013). */
+export const FLAG_FOCUS_NEIGHBOURS = 5;
 const TRUNCATION_MARKER = " …[truncated]";
 
 /** Running totals threaded through redaction/truncation so the bundle can report them. */
@@ -151,8 +184,33 @@ export function gatherMemoryEvidence(
   slice: EvidenceSlice,
   caps: MemoryEvidenceCaps,
 ): MemoryEvidenceBundle {
-  const maxBodyChars = caps.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS;
+  const bodyChars: BodyLimits = {
+    plain: caps.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS,
+    flagged: Math.max(
+      caps.maxBodyChars ?? DEFAULT_MAX_BODY_CHARS,
+      caps.maxFlaggedBodyChars ?? DEFAULT_MAX_FLAGGED_BODY_CHARS,
+    ),
+  };
   const stats: GatherStats = { redactionCount: 0, truncatedFields: false };
+
+  if (caps.focus === "flagged") {
+    // The targeted flag groom: flagged memories with their neighbours, and the
+    // tombstones so a correction can't resurrect archived content. Proposals are
+    // left out (the apply layer still refuses to re-file one already pending).
+    const focus = source.selectFlagFocus?.(FLAG_FOCUS_MAX_FLAGGED, FLAG_FOCUS_NEIGHBOURS) ?? [];
+    const remaining = Math.max(0, caps.maxMemories - focus.length);
+    const tombstoneRows = source.selectTombstones(slice, remaining + 1);
+    const tombstonesTaken = tombstoneRows.slice(0, remaining);
+    return {
+      slice,
+      activeMemories: focus.map((rec) => toItem(rec, "active", bodyChars, stats)),
+      proposedMemories: [],
+      tombstones: tombstonesTaken.map((rec) => toTombstone(rec, stats)),
+      truncatedMemories: tombstoneRows.length > tombstonesTaken.length,
+      truncatedFields: stats.truncatedFields,
+      redactionCount: stats.redactionCount,
+    };
+  }
 
   // Fetch one past the budget per status so we can detect (not just apply) the cap.
   const limit = caps.maxMemories + 1;
@@ -175,8 +233,8 @@ export function gatherMemoryEvidence(
 
   return {
     slice,
-    activeMemories: activeTaken.map((rec) => toItem(rec, "active", maxBodyChars, stats)),
-    proposedMemories: proposedTaken.map((rec) => toItem(rec, "proposed", maxBodyChars, stats)),
+    activeMemories: activeTaken.map((rec) => toItem(rec, "active", bodyChars, stats)),
+    proposedMemories: proposedTaken.map((rec) => toItem(rec, "proposed", bodyChars, stats)),
     tombstones: tombstonesTaken.map((rec) => toTombstone(rec, stats)),
     truncatedMemories,
     truncatedFields: stats.truncatedFields,
@@ -184,16 +242,27 @@ export function gatherMemoryEvidence(
   };
 }
 
+interface BodyLimits {
+  plain: number;
+  flagged: number;
+}
+
 function toItem(
   rec: GroomingMemoryRecord,
   status: "active" | "proposed",
-  maxBodyChars: number,
+  limits: BodyLimits,
   stats: GatherStats,
 ): MemoryEvidenceItem {
+  const flags = rec.openFlags ?? [];
+  const redactedBody = redactSecrets(rec.body);
+  stats.redactionCount += redactedBody.count;
+  const maxChars = flags.length > 0 ? limits.flagged : limits.plain;
+  const body = truncate(redactedBody.redacted, maxChars, stats);
+  const incomplete = redactedBody.count > 0 || body !== redactedBody.redacted;
   return {
     id: rec.id,
     title: redact(rec.title, stats),
-    body: truncate(redact(rec.body, stats), maxBodyChars, stats),
+    body,
     agentId: rec.agentId,
     status,
     createdAt: rec.createdAt,
@@ -201,6 +270,15 @@ function toItem(
     requiresApproval: rec.requiresApproval,
     isGlobal: rec.isGlobal,
     ...(rec.hasOpenCuratorFlag === true ? { has_open_curator_flag: true as const } : {}),
+    ...(flags.length > 0
+      ? {
+          open_flags: flags.map((flag) => ({
+            reason: redact(flag.reason, stats),
+            flagged_at: flag.flaggedAt,
+          })),
+        }
+      : {}),
+    ...(incomplete ? { body_incomplete: true as const } : {}),
   };
 }
 

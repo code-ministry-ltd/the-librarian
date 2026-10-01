@@ -13,7 +13,7 @@ import {
   createInertBootstrapClaimHandle,
 } from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
-import type { MemoryCorrectionWakeRequest, ToolRegistry } from "../mcp/tool.js";
+import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
 import type { ActorDisplayProvider, GuardedAuthProvider } from "../plugin.js";
 import { appRouter } from "../trpc/router.js";
@@ -63,7 +63,7 @@ export interface HttpServerOptions {
   /** Optional actor-display resolver delivered to the internal tRPC context. */
   actorDisplayProvider?: ActorDisplayProvider;
   /** Post-persist wake callback for durable flagged-correction work. */
-  wakeMemoryCorrection?: (request: MemoryCorrectionWakeRequest) => void;
+  onMemoryFlagged?: () => void;
 }
 
 export function createHttpServer(options: HttpServerOptions): http.Server {
@@ -81,7 +81,7 @@ export function createHttpServer(options: HttpServerOptions): http.Server {
     // when a provider was actually supplied, so the default handler is byte-identical.
     ...(options.authProvider ? { authProvider: options.authProvider } : {}),
     ...(options.actorDisplayProvider ? { actorDisplayProvider: options.actorDisplayProvider } : {}),
-    ...(options.wakeMemoryCorrection ? { wakeMemoryCorrection: options.wakeMemoryCorrection } : {}),
+    ...(options.onMemoryFlagged ? { onMemoryFlagged: options.onMemoryFlagged } : {}),
   });
   const server = http.createServer((req, res) => {
     // A client that disconnects mid-response makes the next `res`/socket write

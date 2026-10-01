@@ -26,6 +26,30 @@ import type { Memory } from "./store/memory-store.js";
 /** The minimal memory read surface the vault curator source needs. */
 export interface GroomingVaultMemoryReader {
   listAll(filters?: Record<string, unknown>): Memory[];
+  /** Keyword recall, used to find a flagged memory's neighbours (ADR 0013). */
+  searchMemories?(input?: Record<string, unknown>): Memory[];
+}
+
+// Bounds on what one flag can put in front of the model (ADR 0013). flag_memory
+// already caps a reason at 2,000 characters; this also covers hand-edited docs.
+const MAX_FLAGS_SHOWN = 10;
+const MAX_FLAG_REASON_CHARS = 2_000;
+
+// The agent flags grooming should act on: not the curator's own archive flags,
+// and not ones it already reviewed (those wait for a new flag, an edit, or a
+// person asking it to look again).
+function unreviewedAgentFlags(memory: Memory): { reason: string; flaggedAt: string }[] {
+  return (memory.flags ?? [])
+    .filter((flag) => flag.agent_id !== SYSTEM_ACTOR_IDS.memoryCurator && !flag.review)
+    .slice(0, MAX_FLAGS_SHOWN)
+    .map((flag) => ({
+      reason: flag.reason.slice(0, MAX_FLAG_REASON_CHARS),
+      flaggedAt: flag.created_at,
+    }));
+}
+
+function hasUnreviewedAgentFlag(memory: Memory): boolean {
+  return unreviewedAgentFlags(memory).length > 0;
 }
 
 // updated_at DESC, with id DESC as a deterministic tiebreak. The curator's
@@ -38,7 +62,14 @@ function byUpdatedDesc(a: Memory, b: Memory): number {
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
 
+// Oldest unreviewed agent flag first, so a long-waiting flag is never starved.
+function cmpFirstFlag(a: Memory, b: Memory): number {
+  const first = (m: Memory) => unreviewedAgentFlags(m)[0]?.flaggedAt ?? "";
+  return first(a) < first(b) ? -1 : first(a) > first(b) ? 1 : 0;
+}
+
 function toRecord(memory: Memory): GroomingMemoryRecord {
+  const openFlags = unreviewedAgentFlags(memory);
   return {
     id: memory.id,
     title: String(memory.title ?? ""),
@@ -54,6 +85,7 @@ function toRecord(memory: Memory): GroomingMemoryRecord {
     hasOpenCuratorFlag: (memory.flags ?? []).some(
       (flag) => flag.agent_id === SYSTEM_ACTOR_IDS.memoryCurator,
     ),
+    ...(openFlags.length > 0 ? { openFlags } : {}),
   };
 }
 
@@ -84,8 +116,16 @@ export function createVaultGroomingMemorySource(
     predicate: (memory: Memory) => boolean,
     limit: number,
     map: (memory: Memory) => T,
+    pinFlagged = false,
   ): T[] {
-    return reader.listAll({}).filter(predicate).sort(byUpdatedDesc).slice(0, limit).map(map);
+    // ADR 0013: a scheduled or manual groom puts memories with unreviewed agent
+    // flags first, so a flag is never starved by the newest-first cap.
+    const order = pinFlagged
+      ? (a: Memory, b: Memory) =>
+          Number(hasUnreviewedAgentFlag(b)) - Number(hasUnreviewedAgentFlag(a)) ||
+          byUpdatedDesc(a, b)
+      : byUpdatedDesc;
+    return reader.listAll({}).filter(predicate).sort(order).slice(0, limit).map(map);
   }
 
   // The single global slice matches every memory, so the slice descriptor is
@@ -95,12 +135,51 @@ export function createVaultGroomingMemorySource(
     status: "active" | "proposed",
     limit: number,
   ): GroomingMemoryRecord[] {
-    return selectNewest((m) => m.status === status, limit, toRecord);
+    return selectNewest((m) => m.status === status, limit, toRecord, status === "active");
   }
 
   function selectTombstones(_slice: EvidenceSlice, limit: number): GroomingTombstoneRecord[] {
     return selectNewest((m) => m.status === MemoryStatus.Archived, limit, toTombstoneRecord);
   }
 
-  return { listSlices, selectMemories, selectTombstones };
+  // The targeted flag groom (ADR 0013): the oldest-flagged memories first, each
+  // followed by the active memories recall ranks closest to it (searched by its
+  // title and flag reasons), so the curator can see what is true now.
+  function selectFlagFocus(maxFlagged: number, neighbours: number): GroomingMemoryRecord[] {
+    const active = reader.listAll({}).filter((m) => m.status === MemoryStatus.Active);
+    const flagged = active
+      .filter(hasUnreviewedAgentFlag)
+      .sort((a, b) => cmpFirstFlag(a, b) || byUpdatedDesc(a, b))
+      .slice(0, maxFlagged);
+    const seen = new Set<string>();
+    const out: GroomingMemoryRecord[] = [];
+    const take = (memory: Memory) => {
+      if (seen.has(memory.id)) return;
+      seen.add(memory.id);
+      out.push(toRecord(memory));
+    };
+    for (const memory of flagged) take(memory);
+    if (!reader.searchMemories) return out;
+    for (const memory of flagged) {
+      const query = [memory.title, ...unreviewedAgentFlags(memory).map((flag) => flag.reason)].join(
+        " ",
+      );
+      let related: Memory[] = [];
+      try {
+        related = reader.searchMemories({
+          query,
+          status: MemoryStatus.Active,
+          limit: neighbours + 1,
+        });
+      } catch {
+        // Neighbours are context, not a precondition: the flagged memory still runs.
+      }
+      for (const neighbour of related.filter((m) => m.id !== memory.id).slice(0, neighbours)) {
+        take(neighbour);
+      }
+    }
+    return out;
+  }
+
+  return { listSlices, selectMemories, selectTombstones, selectFlagFocus };
 }

@@ -19,7 +19,7 @@
 
 import {
   type LibrarianStore,
-  type MemoryCorrectionWork,
+  type MemoryFlagReview,
   type Principal,
   type ProposalDrift,
   type Shelf,
@@ -28,6 +28,7 @@ import {
   MemoryMoveUnsafePathError,
   MemoryNotFoundForPrincipalError,
   ShelfNotWritableError,
+  askCuratorAgain,
   type SplitReplacement,
   augmentBody,
   driftedSources,
@@ -64,7 +65,8 @@ export interface MemoryShape {
   // Open agent flags routing this memory to review (spec 047 / ADR 0006).
   // Surfaced so the dashboard's flagged-review queue can show the reason +
   // flagger for each open flag.
-  flags: { agent_id: string; reason: string; created_at: string }[];
+  // `review` is the curator's latest outcome for the flag (ADR 0013).
+  flags: { agent_id: string; reason: string; created_at: string; review?: MemoryFlagReview }[];
   title: string;
   body: string;
   confidence: string;
@@ -75,8 +77,6 @@ export interface MemoryShape {
   shelfId?: string;
   shelfLabel?: string;
   shelfWritable?: boolean;
-  correction_work?: MemoryCorrectionWork[];
-  correction_proposal?: MemoryShape | null;
   [key: string]: unknown;
 }
 
@@ -116,6 +116,10 @@ const UpdateMemoryInputSchema = z.object({
   id: z.string().min(1),
   patch: MemoryPatchSchema,
   agent_id: z.string().optional(),
+  // ADR 0013: the Flagged page's Edit sets this — the person fixed what the
+  // flags reported, so they are cleared in the same write. Other edits leave
+  // flags alone.
+  resolve_flags: z.boolean().optional(),
 });
 
 const ArchiveMemoryInputSchema = z.object({
@@ -133,7 +137,8 @@ const ResolveFlagInputSchema = z.object({
   agent_id: z.string().optional(),
 });
 
-const ReassessFlagInputSchema = z.object({
+// "Ask the curator again" on the Flagged page (ADR 0013).
+const AskCuratorAgainInputSchema = z.object({
   id: z.string().min(1),
   shelf_id: z.string().min(1),
 });
@@ -351,10 +356,6 @@ function exactWritableShelfForPrincipal(
   }
 }
 
-function isFlaggedCorrectionProposal(note: Record<string, unknown> | null | undefined): boolean {
-  return note?.source === "flagged_correction" || Object.hasOwn(note ?? {}, "correction");
-}
-
 function enrichMove(
   store: LibrarianStore,
   principal: Principal,
@@ -475,16 +476,6 @@ function adminCreateCall(
  * stable `proposal.agent_id`; declaring it here prevents inference from
  * erasing the field on the provider-absent return branch.
  */
-export interface CorrectionHistoryRow {
-  source_memory_id: string;
-  title: string;
-  shelf_id: string;
-  shelf_label: string | null;
-  applied_at: string;
-  outcome: "direct_apply" | "proposal_approved";
-  proposal_id: string | null;
-}
-
 export interface ProposalReviewRow {
   proposal: MemoryShape;
   action: string | null;
@@ -494,12 +485,6 @@ export interface ProposalReviewRow {
   diff: string | null;
   plan: ReviewPlan | null;
   move: ReviewMove | null;
-  correctionReview?: {
-    source_memory_id: string | null;
-    shelf_id: string;
-    status: "ready" | "blocked";
-    reason_code?: string;
-  };
   // Whether the memories this proposal supersedes have changed since it was
   // drafted (spec 072 SC 5). `drifted` refuses approve; `unknown` (a legacy row
   // with no recorded digests) never does.
@@ -537,32 +522,19 @@ export const memoriesRouter = router({
   listFlagged: adminProcedure.query(({ ctx }) => {
     const { memories } = ctx.store.listMemoriesForPrincipal(ctx.principal, {
       has_open_flags: true,
+      status: "active",
       limit: 200,
     });
     const rows: MemoryShape[] = [];
     for (const row of /* SAFETY: this query is principal-scoped; each id is re-resolved in its shelf below. */ memories as unknown as MemoryShape[]) {
       const located = locateMemoryForPrincipal(ctx.store, ctx.principal, row.id);
       if (!located) continue;
-      const shelfStore = ctx.store.forShelf(located.shelf, ctx.principal);
-      const pendingWork = (located.memory.correction_work ?? [])
-        .filter((work) => work.status === "proposal_pending" && work.shelf_id === located.shelf.id)
-        .at(-1);
-      // SAFETY: the id was located in the principal's validated recall shelves, then the
-      // correction proposal lookup is confined to that exact shelf-scoped store.
-      const correctionProposal = pendingWork
-        ? // SAFETY: this lookup is bound to the source id + snapshot and runs on the exact shelf store.
-          (shelfStore.getMemoryCorrectionProposal({
-            source_memory_id: located.memory.id,
-            snapshot_digest: pendingWork.snapshot_digest,
-          }) as unknown as MemoryShape | null)
-        : null;
       rows.push({
         ...located.memory,
         shelfId: located.shelf.id,
         ...(located.shelf.label !== undefined ? { shelfLabel: located.shelf.label } : {}),
         shelfWritable:
           exactWritableShelfForPrincipal(ctx.store, ctx.principal, located.shelf.id) !== null,
-        correction_proposal: correctionProposal,
       });
     }
     return { memories: rows, total: rows.length };
@@ -596,23 +568,11 @@ export const memoriesRouter = router({
         const located = locateMemoryForPrincipal(ctx.store, ctx.principal, listedProposal.id);
         if (!located) return [];
         const proposal = located.memory;
-        const shelfStore = ctx.store.forShelf(located.shelf, ctx.principal);
         const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
         const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
         const source = typeof note.source === "string" ? note.source : null;
         const rationale = typeof note.rationale === "string" ? note.rationale : null;
-        const isCorrection = isFlaggedCorrectionProposal(note);
-        const correctionReview = isCorrection
-          ? shelfStore.inspectMemoryCorrectionProposal({
-              proposal_id: proposal.id,
-              shelf_id: located.shelf.id,
-            })
-          : undefined;
         const readMemory = (id: string): MemoryShape | null => {
-          if (isCorrection) {
-            // SAFETY: correction source reads must remain in the proposal's exact shelf.
-            return shelfStore.getMemory(id) as unknown as MemoryShape | null;
-          }
           // SAFETY: principal-scoped lookup refuses ids outside the caller's validated recall set.
           return ctx.store.getMemoryForPrincipal(
             ctx.principal,
@@ -629,7 +589,7 @@ export const memoriesRouter = router({
         const [singleTarget] = targets;
         const diff =
           targets.length === 1 && singleTarget ? unifiedMemoryDiff(singleTarget, proposal) : null;
-        const plan = isCorrection ? null : enrichPlan(note, action, readMemory);
+        const plan = enrichPlan(note, action, readMemory);
         const move = enrichMove(ctx.store, ctx.principal, note, action);
         const drift = proposalDrift(note, readMemory);
 
@@ -650,7 +610,6 @@ export const memoriesRouter = router({
             plan,
             move,
             drift,
-            ...(correctionReview ? { correctionReview } : {}),
           },
         ];
       },
@@ -667,37 +626,6 @@ export const memoriesRouter = router({
       return actorDisplay === undefined ? row : { ...row, actorDisplay };
     });
   }),
-
-  correctionHistory: adminProcedure.query(
-    ({ ctx }): { corrections: CorrectionHistoryRow[]; total: number } => {
-      const nowMs = Date.now();
-      const cutoffMs = nowMs - 30 * 24 * 60 * 60 * 1_000;
-      const corrections: CorrectionHistoryRow[] = [];
-      for (const shelf of ctx.store.shelvesForPrincipal(ctx.principal)) {
-        const shelfStore = ctx.store.forShelf(shelf, ctx.principal);
-        for (const memory of shelfStore.listAll()) {
-          for (const work of memory.correction_work ?? []) {
-            if (work.status !== "applied" || work.shelf_id !== shelf.id || !work.applied_at)
-              continue;
-            const appliedAtMs = Date.parse(work.applied_at);
-            if (!Number.isFinite(appliedAtMs) || appliedAtMs < cutoffMs || appliedAtMs > nowMs)
-              continue;
-            corrections.push({
-              source_memory_id: memory.id,
-              title: memory.title,
-              shelf_id: shelf.id,
-              shelf_label: shelf.label ?? null,
-              applied_at: work.applied_at,
-              outcome: work.proposal_id ? "proposal_approved" : "direct_apply",
-              proposal_id: work.proposal_id ?? null,
-            });
-          }
-        }
-      }
-      corrections.sort((a, b) => b.applied_at.localeCompare(a.applied_at));
-      return { corrections: corrections.slice(0, 200), total: corrections.length };
-    },
-  ),
 
   aggregates: adminProcedure.query(({ ctx }) => ctx.store.getAggregates()),
 
@@ -843,24 +771,13 @@ export const memoriesRouter = router({
   // body-supplied `input.agent_id` (spec 064 F3): the store's `agent_id` param on these verbs is
   // the audit actor, and a body field must not forge the "who". (An owner CHANGE rides `patch`.)
   update: adminProcedure.input(UpdateMemoryInputSchema).mutation(({ ctx, input }) => {
-    const located = locateMemoryForPrincipal(ctx.store, ctx.principal, input.id);
-    if (
-      located?.memory.status === "proposed" &&
-      isFlaggedCorrectionProposal(located.memory.curator_note)
-    ) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          "Flagged-correction proposals are immutable while under review; use the correction approve or reject action.",
-      });
-    }
     return /* SAFETY: updateMemory throws for missing ids; validated patch + principal actor preserve the Memory DTO. */ rethrowAsNotFound(
       () =>
         ctx.store.updateMemory(
           input.id,
           input.patch as Record<string, unknown>,
           ctx.principal.actorId,
-          { allowProtected: true },
+          { allowProtected: true, clearAgentFlags: input.resolve_flags === true },
         ),
       "Memory not found",
     ) as unknown as MemoryShape;
@@ -877,7 +794,7 @@ export const memoriesRouter = router({
 
   // Adjudicate one flagged memory on the exact shelf shown in the review row.
   // Whole-memory archival remains an explicit human action; archive/dismiss each
-  // resolve flags and cancel correction work through one scoped store write.
+  // resolve the flags through one scoped store write.
   resolveFlag: adminProcedure.input(ResolveFlagInputSchema).mutation(({ ctx, input }) => {
     const shelf = exactWritableShelfForPrincipal(ctx.store, ctx.principal, input.shelf_id);
     if (!shelf) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
@@ -890,29 +807,26 @@ export const memoriesRouter = router({
     return /* SAFETY: the null-checked result is read/written only in the exact writable shelf above. */ result as unknown as MemoryShape;
   }),
 
-  // "Re-assess" on the Flagged page: queue a fresh targeted-correction pass over
-  // the memory's current flags on the exact writable shelf shown in the row. The
-  // correction worker picks it up on its next poll and re-checks every gate.
-  reassessFlag: adminProcedure.input(ReassessFlagInputSchema).mutation(({ ctx, input }) => {
+  // "Ask the curator again" on the Flagged page (ADR 0013): forget the curator's
+  // last review of this memory's flags (no change, declined, too long) and arm the
+  // targeted flag groom, on the exact writable shelf shown in the row.
+  askCuratorAgain: adminProcedure.input(AskCuratorAgainInputSchema).mutation(({ ctx, input }) => {
     const shelf = exactWritableShelfForPrincipal(ctx.store, ctx.principal, input.shelf_id);
     if (!shelf) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
     const shelfStore = ctx.store.forShelf(shelf, ctx.principal);
-    let result;
-    try {
-      result = shelfStore.reassessMemoryCorrection({
-        id: input.id,
-        shelf_id: shelf.id,
-        principal_id: ctx.principal.actorId,
-        agent_id: ctx.principal.actorId,
-      });
-    } catch (err) {
+    if (!askCuratorAgain(shelfStore, input.id, ctx.principal.actorId)) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: err instanceof Error ? err.message : String(err),
+        message:
+          "This memory has no agent flags to look at again. It may have been corrected, dismissed, or archived already; refresh the Flagged page.",
       });
     }
-    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Memory not found" });
-    return /* SAFETY: the null-checked result is read/written only in the exact writable shelf above. */ result as unknown as MemoryShape;
+    try {
+      ctx.onMemoryFlagged?.();
+    } catch {
+      // The reset is durable; the next groom picks the flags up anyway.
+    }
+    return { queued: true };
   }),
 
   // Admin merge (spec 044 D-5a): collapse N sources into one target OUTSIDE a
@@ -1065,13 +979,6 @@ export const memoriesRouter = router({
       });
     }
     const note = (proposal.curator_note ?? {}) as Record<string, unknown>;
-    if (isFlaggedCorrectionProposal(note)) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          "Flagged corrections must be reviewed through the exact-shelf approval or rejection action.",
-      });
-    }
     const action = typeof note.proposed_action === "string" ? note.proposed_action : null;
     const targetId = typeof note.guessed_target_id === "string" ? note.guessed_target_id : null;
     const plannedAddition =
@@ -1242,12 +1149,6 @@ export const memoriesRouter = router({
   resolveViaChat: adminProcedure.input(IdInputSchema).mutation(({ ctx, input }) => {
     const proposal = ctx.store.getMemoryForPrincipal(ctx.principal, input.id);
     if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-    if (isFlaggedCorrectionProposal(proposal.curator_note)) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Flagged corrections must be approved or rejected through exact-shelf review.",
-      });
-    }
     return /* SAFETY: the guarded principal-scoped resolver returns its proposal row or a mapped not-found error. */ rethrowAsNotFound(
       () =>
         ctx.store.resolveProposalForPrincipal(
@@ -1265,43 +1166,6 @@ export const memoriesRouter = router({
     const proposal = proposalLocation?.memory ?? null;
     if (!proposal || !proposalLocation) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-    }
-    const note = proposal.curator_note as Record<string, unknown> | null | undefined;
-    if (isFlaggedCorrectionProposal(note)) {
-      const shelfId = input.shelf_id;
-      if (!shelfId || shelfId !== proposalLocation.shelf.id) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      }
-      const shelf = exactWritableShelfForPrincipal(ctx.store, ctx.principal, shelfId);
-      if (!shelf) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      const shelfStore = ctx.store.forShelf(shelf, ctx.principal);
-      const exactProposal = shelfStore.getMemory(input.id);
-      if (!exactProposal || exactProposal.status !== "proposed") {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      }
-      if (input.patch && Object.keys(input.patch).length > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "A flagged-correction proposal cannot be altered while approving it.",
-        });
-      }
-      const review = shelfStore.inspectMemoryCorrectionProposal({
-        proposal_id: exactProposal.id,
-        shelf_id: shelf.id,
-      });
-      if (!review || review.status !== "ready") {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `This correction proposal can no longer be approved (${review?.reason_code ?? "not_a_correction_proposal"}); review the current flagged source instead.`,
-        });
-      }
-      const approved = shelfStore.approveMemoryCorrectionProposal({
-        proposal_id: exactProposal.id,
-        shelf_id: shelf.id,
-        agent_id: ctx.principal.actorId,
-      });
-      if (!approved) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      return /* SAFETY: the correction store verified source/flags/content snapshots on this exact shelf. */ approved as unknown as MemoryShape;
     }
     if (proposal.status !== "proposed") {
       throw new TRPCError({
@@ -1382,32 +1246,12 @@ export const memoriesRouter = router({
       });
     }
     const agentId = input.agent_id ?? ctx.principal.actorId;
-    let rejected: ReturnType<LibrarianStore["getMemory"]>;
-    if (isFlaggedCorrectionProposal(proposal.curator_note)) {
-      const shelfId = input.shelf_id;
-      if (!shelfId || shelfId !== proposalLocation.shelf.id) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      }
-      const shelf = exactWritableShelfForPrincipal(ctx.store, ctx.principal, shelfId);
-      if (!shelf) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      const shelfStore = ctx.store.forShelf(shelf, ctx.principal);
-      const exactProposal = shelfStore.getMemory(input.id);
-      if (!exactProposal || exactProposal.status !== "proposed") {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-      }
-      rejected = shelfStore.rejectMemoryCorrectionProposal({
-        proposal_id: exactProposal.id,
-        shelf_id: shelf.id,
-        agent_id: ctx.principal.actorId,
-      });
-    } else {
-      rejected = rethrowAsNotFound(
-        () => ctx.store.approveProposalForPrincipal(ctx.principal, input.id, "reject", {}, agentId),
-        "Proposal not found",
-      );
-    }
+    const rejected = rethrowAsNotFound(
+      () => ctx.store.approveProposalForPrincipal(ctx.principal, input.id, "reject", {}, agentId),
+      "Proposal not found",
+    );
     if (!rejected) throw new TRPCError({ code: "NOT_FOUND", message: "Proposal not found" });
-    return /* SAFETY: rejection was applied by the correction-only exact shelf or principal-scoped store above. */ rejected as unknown as MemoryShape;
+    return /* SAFETY: rejection was applied by the principal-scoped store above. */ rejected as unknown as MemoryShape;
   }),
 
   // spec 065 SC 7: member tier + principal-scoped in the same change — delegates to 062's

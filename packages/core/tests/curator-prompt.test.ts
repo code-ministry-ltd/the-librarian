@@ -169,8 +169,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v5.13 prompt version (v5.13 adds the intake routing and content audit)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v5.13");
+  it("pins the v6.0 prompt version (v6.0 makes grooming correct flagged memories, ADR 0013)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v6.0");
   });
 });
 

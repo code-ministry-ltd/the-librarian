@@ -1023,8 +1023,12 @@ describe("tRPC unmerge / reverse-a-groom (spec 044 D-5b)", () => {
 // active, while archive archives it before clearing flags. Admin-gated.
 describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
   interface FlaggedRow extends MemoryRow {
-    flags: { agent_id: string; reason: string; created_at: string }[];
-    correction_work?: { shelf_id: string; status: string }[];
+    flags: {
+      agent_id: string;
+      reason: string;
+      created_at: string;
+      review?: { outcome: string; rationale?: string };
+    }[];
   }
 
   it("memories.listFlagged returns only memories with open flags, carrying their flags", async () => {
@@ -1050,18 +1054,20 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     }
   });
 
-  it("memories.listFlagged includes correction status for flagged rows", async () => {
+  it("memories.listFlagged carries the curator's review outcome and leaves archived memories out", async () => {
     const dataDir = makeTempDir();
-    const flagged = seedMemory(dataDir, { title: "Correction status" });
+    const reviewed = seedMemory(dataDir, { title: "Reviewed" });
+    const archived = seedMemory(dataDir, { title: "Archived since" });
     const store = createLibrarianStore({ dataDir });
     try {
-      store.flagMemoryForCorrection({
-        id: flagged.id,
-        reason: "outdated",
-        agent_id: "scribe",
-        principal_id: "scribe",
-        shelf_id: "main",
+      store.flagMemory(reviewed.id, "outdated", "scribe");
+      store.setFlagReview(reviewed.id, {
+        outcome: "no_change",
+        at: "2026-10-01T00:00:00.000Z",
+        rationale: "Still accurate.",
       });
+      store.flagMemory(archived.id, "outdated", "scribe");
+      store.archiveMemory(archived.id);
     } finally {
       store.close();
     }
@@ -1071,9 +1077,11 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
         server,
         "memories.listFlagged",
       );
-      const work = data.memories[0]?.correction_work?.at(-1);
-      expect(work?.shelf_id).toBe("main");
-      expect(["pending", "processing", "manual_review"]).toContain(work?.status);
+      expect(data.memories.map((m) => m.id)).toEqual([reviewed.id]);
+      expect(data.memories[0]!.flags[0]!.review).toMatchObject({
+        outcome: "no_change",
+        rationale: "Still accurate.",
+      });
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
@@ -1157,31 +1165,37 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
     }
   });
 
-  it("memories.reassessFlag queues a fresh correction pass for the memory's open flags", async () => {
+  it("memories.askCuratorAgain clears the curator's last review so it looks again", async () => {
     const dataDir = makeTempDir();
     const m = seedMemory(dataDir, { title: "Needs another look" });
-    flagMemory(dataDir, m.id, "one line is outdated", "scribe");
+    const store = createLibrarianStore({ dataDir });
+    try {
+      store.flagMemory(m.id, "one line is outdated", "scribe");
+      store.setFlagReview(m.id, { outcome: "declined", at: "2026-10-01T00:00:00.000Z" });
+    } finally {
+      store.close();
+    }
     const server = await startHttpServer({ dataDir });
     try {
-      const result = await trpcPost<FlaggedRow>(server, "memories.reassessFlag", {
+      const result = await trpcPost<{ queued: boolean }>(server, "memories.askCuratorAgain", {
         id: m.id,
         shelf_id: "main",
       });
-      expect(result.status).toBe("active");
-      expect(result.flags).toHaveLength(1);
-      expect(result.correction_work?.at(-1)).toMatchObject({ shelf_id: "main", status: "pending" });
+      expect(result).toEqual({ queued: true });
+      const data = await trpcGet<{ memories: FlaggedRow[] }>(server, "memories.listFlagged");
+      expect(data.memories[0]!.flags[0]!.review).toBeUndefined();
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);
     }
   });
 
-  it("memories.reassessFlag explains why a memory with no open flags cannot be re-assessed", async () => {
+  it("memories.askCuratorAgain explains why an unflagged memory cannot be looked at again", async () => {
     const dataDir = makeTempDir();
     const m = seedMemory(dataDir, { title: "Clean fact" });
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/memories.reassessFlag`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/memories.askCuratorAgain`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -1191,7 +1205,32 @@ describe("tRPC flagged-memory review queue (spec 048 PR-2)", () => {
       });
       expect(response.status).toBe(400);
       const json = (await response.json()) as TrpcErr;
-      expect(json.error?.message).toMatch(/has no open flags to re-assess/);
+      expect(json.error?.message).toMatch(/has no agent flags to look at again/);
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+
+  it("memories.update with resolve_flags clears the flags in the same write; a plain edit keeps them", async () => {
+    const dataDir = makeTempDir();
+    const fixed = seedMemory(dataDir, { title: "Fixed by hand" });
+    const tagged = seedMemory(dataDir, { title: "Only retagged" });
+    flagMemory(dataDir, fixed.id, "port changed", "scribe");
+    flagMemory(dataDir, tagged.id, "port changed", "scribe");
+    const server = await startHttpServer({ dataDir });
+    try {
+      await trpcPost<MemoryRow>(server, "memories.update", {
+        id: fixed.id,
+        patch: { body: "Runs on port 9090." },
+        resolve_flags: true,
+      });
+      await trpcPost<MemoryRow>(server, "memories.update", {
+        id: tagged.id,
+        patch: { tags: ["infra"] },
+      });
+      expect(openFlagCount(dataDir, fixed.id)).toBe(0);
+      expect(openFlagCount(dataDir, tagged.id)).toBe(1);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

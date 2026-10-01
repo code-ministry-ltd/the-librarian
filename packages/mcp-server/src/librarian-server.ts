@@ -29,6 +29,7 @@ import {
   createSerialScheduler,
   defaultVaultRouter,
   findLegacyScheduleKeys,
+  hasFlagsAwaitingCurator,
   isIntakeEnabled,
   isIntakeSweepDue,
   migrateCuratorAddendum,
@@ -39,19 +40,21 @@ import {
   readLastIntakeSweepAt,
   runBackupTick,
   runScheduledChronicle,
+  runGroomingTick,
   runIntakeTick,
   runScheduledGrooming,
   runTranscriptSweepTick,
   seedPrimer,
   validateShelfSet,
   verifyAgentToken,
+  withdrawLegacyCorrectionProposals,
   writeLastIntakeSweepAt,
 } from "@librarian/core";
 import type { AuthConfig } from "./http/auth.js";
 import { assertPluginRoutes } from "./http/routes.js";
 import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
-import { createMemoryCorrectionRuntime } from "./memory-correction-runtime.js";
+import { createFlagGroomTrigger } from "./flag-groom-trigger.js";
 import {
   type ActorDisplayProvider,
   type GuardedAuthProvider,
@@ -289,9 +292,8 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // The store construction site — the vaultRouter provider seam's delivery point (spec 062 T1,
   // discharging spec 060 review residual 2). The resolved router (above) is threaded INTO
   // createLibrarianStore; with none supplied, the store defaults to `defaultVaultRouter` and is
-  // byte-identical. The correction runtime reads the stored router to enumerate and revalidate
-  // exact source/reviewer shelves. exactOptionalProperty-
-  // Types: only add the key when a plugin supplied one, so the default path stays byte-identical.
+  // byte-identical. exactOptionalPropertyTypes: only add the key when a plugin supplied one, so
+  // the default path stays byte-identical.
   let refusalLogErrorReported = false;
   const store = createLibrarianStore({
     secretKey,
@@ -309,7 +311,24 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     },
     ...(vaultRouter ? { vaultRouter } : {}),
   });
-  const memoryCorrectionRuntime = createMemoryCorrectionRuntime(store);
+  // ADR 0013: a flag asks the curator to look again. The trigger debounces bursts
+  // of flags into one targeted groom (flag_memory calls noteFlag); its timer is
+  // created below with the other schedulers.
+  const flagGroomTrigger = createFlagGroomTrigger({
+    runFlagGroom: () => runGroomingTick({ store, focus: "flagged" }),
+    hasPending: () => hasFlagsAwaitingCurator(store),
+    onError: (error) => logger.error({ err: error }, "targeted flag groom failed"),
+  });
+  // One-time upgrade from the retired ADR 0012 correction worker: withdraw its open
+  // proposals so their flags go back to the curator. Idempotent and fail-soft.
+  try {
+    const withdrawn = withdrawLegacyCorrectionProposals(store);
+    if (withdrawn > 0) {
+      logger.info({ withdrawn }, "withdrew flagged-correction proposals from the retired worker");
+    }
+  } catch (error) {
+    logger.error({ err: error }, "could not withdraw legacy flagged-correction proposals");
+  }
 
   const auth: AuthConfig = {
     // No longer a network gate (ADR 0008 P3) — only the dashboard auth-enable
@@ -347,7 +366,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   const providerDelivery = {
     ...(guardedAuthProvider ? { authProvider: guardedAuthProvider } : {}),
     ...(actorDisplayProvider ? { actorDisplayProvider } : {}),
-    wakeMemoryCorrection: memoryCorrectionRuntime.wake,
+    onMemoryFlagged: flagGroomTrigger.noteFlag,
   };
   const publicServer = createHttpServer({
     store,
@@ -606,6 +625,18 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     }
   }
 
+  // The targeted flag groom's timer (ADR 0013): a cheap due-check every minute.
+  // It follows the grooming timer's switch, so LIBRARIAN_GROOMING_TICK_MS=0 turns
+  // off automatic flag grooming too.
+  const flagGroomScheduler =
+    groomingPollMs > 0
+      ? createSerialScheduler({
+          task: () => flagGroomTrigger.tick(),
+          intervalMs: 60_000,
+          onError: (error) => logger.error({ err: error }, "targeted flag groom tick failed"),
+        })
+      : null;
+
   const transcriptSweepScheduler =
     transcriptSweepTickMs > 0
       ? createSerialScheduler({
@@ -615,7 +646,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
-  // The load-bearing scheduler set: backup/intake/grooming/chronicle/transcript/correction
+  // The load-bearing scheduler set: backup/intake/grooming/chronicle/transcript/flag-groom
   // order, with interval-disabled pollers excluded. start()/stop() iterate this,
   // preserving today's `?.start()` / `?.stop()` semantics (a null scheduler is a
   // no-op) exactly (ADR 0008 shutdown parity, spec 060 SC 3).
@@ -625,7 +656,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     groomingScheduler,
     chronicleScheduler,
     transcriptSweepScheduler,
-    memoryCorrectionRuntime.scheduler,
+    flagGroomScheduler,
   ].filter((scheduler): scheduler is SerialScheduler => scheduler !== null);
 
   const onInternalListening = (): void => {
@@ -677,9 +708,15 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         .runNow()
         .catch((error) => logger.error({ err: error }, "transcript settle-sweep boot scan failed"));
     }
-    void memoryCorrectionRuntime.scheduler
-      .runNow()
-      .catch(() => logger.error("targeted memory correction recovery scan failed"));
+    // Flags left waiting by a previous run (or by the upgrade above) get a
+    // targeted groom after the usual quiet period.
+    if (flagGroomScheduler) {
+      try {
+        if (hasFlagsAwaitingCurator(store)) flagGroomTrigger.noteFlag();
+      } catch (error) {
+        logger.error({ err: error }, "flag groom boot scan failed");
+      }
+    }
     // Honest banner (plan 046 T7/D-6): report each job's LIVE enable state read at
     // log time (not a static boot value), and word it as the two distinct jobs.
     logger.info(
@@ -700,7 +737,6 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   const runtime: ServerRuntime = {
     schedulers,
     store,
-    drainCorrectionWork: memoryCorrectionRuntime.drain,
     publicServer,
     internalServer,
     publicBind: { port, host },
@@ -756,8 +792,6 @@ interface HttpListener {
 export interface ServerRuntime {
   /** Live schedulers in start/stop order, nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
-  /** Stop correction claims and drain its active model/store work before store closure. */
-  readonly drainCorrectionWork: () => Promise<void>;
   /** The store whose `close()` must run AFTER the schedulers stop and BEFORE the listeners close. */
   readonly store: Pick<LibrarianStore, "close" | "flushRefusals">;
   readonly publicServer: HttpListener;
@@ -810,7 +844,6 @@ export async function stopRuntime(runtime: ServerRuntime): Promise<void> {
   // Stop the job timers before closing the store — a tick writes through the same
   // store, so neither must fire after store.close().
   for (const scheduler of runtime.schedulers) scheduler.stop();
-  await runtime.drainCorrectionWork();
   // A finite token-bucket overflow has no later refusal to trigger its counted
   // `dropped` row. Drain accepted writes and materialise that row before the
   // process closes the store — but never let a wedged volume park shutdown: the

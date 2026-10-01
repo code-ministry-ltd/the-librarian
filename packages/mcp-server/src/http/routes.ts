@@ -53,7 +53,7 @@ import {
 import type { AnyRouter } from "@trpc/server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { handleMcpPayload } from "../mcp/rpc.js";
-import type { MemoryCorrectionWakeRequest, ToolRegistry } from "../mcp/tool.js";
+import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
 import type { ActorDisplayProvider, GuardedAuthProvider, LibrarianPlugin } from "../plugin.js";
 import { createContextFactory } from "../trpc/context.js";
@@ -124,7 +124,7 @@ export interface RouteDeps {
   /** Optional actor-display resolver delivered to the internal tRPC context. */
   actorDisplayProvider?: ActorDisplayProvider;
   /** Post-persist wake callback for durable flagged-correction work. */
-  wakeMemoryCorrection?: (request: MemoryCorrectionWakeRequest) => void;
+  onMemoryFlagged?: () => void;
 }
 
 /**
@@ -149,7 +149,7 @@ interface RouteContext {
    * always `await`ed.
    */
   provider: AuthProvider;
-  wakeMemoryCorrection?: (request: MemoryCorrectionWakeRequest) => void;
+  onMemoryFlagged?: () => void;
 }
 
 /**
@@ -288,6 +288,7 @@ export function createRouteHandler(
           // internal surface consults the SAME identity seam (spec 061 T4, SC 7).
           ...(deps.authProvider ? { authProvider: deps.authProvider } : {}),
           ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
+          ...(deps.onMemoryFlagged ? { onMemoryFlagged: deps.onMemoryFlagged } : {}),
         })
       : [];
 
@@ -303,7 +304,7 @@ export function createRouteHandler(
         toolRegistry,
         provider,
         surface,
-        ...(deps.wakeMemoryCorrection ? { wakeMemoryCorrection: deps.wakeMemoryCorrection } : {}),
+        ...(deps.onMemoryFlagged ? { onMemoryFlagged: deps.onMemoryFlagged } : {}),
         path: url.pathname,
       };
 
@@ -377,6 +378,8 @@ function createInternalRoutes(deps: {
   authProvider?: GuardedAuthProvider;
   /** Optional actor-display resolver (spec 068). */
   actorDisplayProvider?: ActorDisplayProvider;
+  /** Arms the targeted flag groom (ADR 0013): "Ask the curator again" on the Flagged page. */
+  onMemoryFlagged?: () => void;
 }): readonly InternalRoute[] {
   // The tRPC context factory resolves the internal-surface principal through the SAME provider
   // seam the request paths use (spec 061 T4, SC 7): the guarded plugin provider when supplied,
@@ -390,6 +393,7 @@ function createInternalRoutes(deps: {
         bootstrapClaim: deps.bootstrapClaim,
         authProvider: deps.authProvider,
         ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
+        ...(deps.onMemoryFlagged ? { onMemoryFlagged: deps.onMemoryFlagged } : {}),
       })
     : createContextFactory({
         store: deps.store,
@@ -397,6 +401,7 @@ function createInternalRoutes(deps: {
         secretKey: deps.secretKey,
         bootstrapClaim: deps.bootstrapClaim,
         ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
+        ...(deps.onMemoryFlagged ? { onMemoryFlagged: deps.onMemoryFlagged } : {}),
       });
   const trpcHandler = createHTTPHandler({
     router: deps.trpcRouter,
@@ -681,7 +686,7 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
     payload,
     {
       principal: authed.principal,
-      ...(ctx.wakeMemoryCorrection ? { wakeMemoryCorrection: ctx.wakeMemoryCorrection } : {}),
+      ...(ctx.onMemoryFlagged ? { onMemoryFlagged: ctx.onMemoryFlagged } : {}),
     },
     ctx.toolRegistry,
   );

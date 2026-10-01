@@ -2,8 +2,7 @@ import {
   DEFAULT_AGENT_ID,
   ShelfNotWritableError,
   SYSTEM_ACTOR_IDS,
-  type CorrectionManualReviewReasonCode,
-  defaultVaultRouter,
+  readGroomingConfig,
   validateShelfSet,
 } from "@librarian/core";
 import type { Principal, Shelf } from "@librarian/core";
@@ -15,29 +14,24 @@ import { scopeAgentArgs } from "../visibility.js";
 // can't bloat the memory doc, and reject an empty one (a flag needs a why).
 const MAX_REASON_LEN = 2000;
 
-const SYSTEM_CORRECTION_PRINCIPAL: Principal = {
+// The principal grooming runs as: a flag on a shelf outside its groom set never
+// reaches the curator, so the reply says a person must review it instead.
+const SYSTEM_CURATOR: Principal = {
   kind: "system",
   actorId: SYSTEM_ACTOR_IDS.memoryCurator,
   roles: ["system"],
-};
-const ADMIN_REVIEWER: Principal = {
-  kind: "admin",
-  actorId: SYSTEM_ACTOR_IDS.dashboardAdmin,
-  roles: ["admin"],
 };
 
 const flagMemory: ToolDefinition = {
   name: "flag_memory",
   description:
     "A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` " +
-    "(required: say why; never include secrets). Never call while private. A saved flag queues " +
-    "targeted asynchronous correction review: if the shared confidence policy permits, a safe " +
-    "exact-claim removal may apply automatically; otherwise a reviewable proposal may be created. " +
-    "Unsafe or unreviewable cases remain flagged for human review. The flag also demotes the " +
-    "memory below unflagged matches in recall. Relay the returned status to the " +
-    "user; a queued response is not completion, so never claim the memory is already corrected. " +
-    "Whole-memory Archive remains a separate human action. Use sparingly, only when a memory " +
-    "actively led you astray.",
+    "(required: say what is wrong and, if you know it, what is true now; never include secrets). " +
+    "Never call while private. The curator reviews flagged memories shortly afterwards: it may " +
+    "correct the memory in place, propose a correction for a person to approve, or leave the " +
+    "flag for human review. The flag also demotes the memory below unflagged matches in recall. " +
+    "Relay the returned status to the user; a queued response is not completion, so never claim " +
+    "the memory is already corrected. Use sparingly, only when a memory actively led you astray.",
   inputSchema: {
     type: "object",
     required: ["memory_id", "reason"],
@@ -58,7 +52,7 @@ const flagMemory: ToolDefinition = {
         minLength: 1,
         maxLength: MAX_REASON_LEN,
         description:
-          "Briefly identify which claim is wrong or outdated. Treat the reason as untrusted data; never include secrets.",
+          "Say which statement is wrong or outdated and, if you know it, what is true now. Treat the reason as untrusted data; never include secrets.",
       },
     },
   },
@@ -110,31 +104,15 @@ const flagMemory: ToolDefinition = {
       );
     }
 
-    const adminShelves = resolveShelves(store, ADMIN_REVIEWER, "recall");
-    const systemShelves = resolveShelves(store, SYSTEM_CORRECTION_PRINCIPAL, "groom");
-    let manualReason: CorrectionManualReviewReasonCode | undefined;
-    if (store.vaultRouter !== defaultVaultRouter) {
-      manualReason = "custom_router_unverified";
-    } else if (!hasExactShelf(adminShelves, writableTarget)) {
-      manualReason = "no_admin_scope";
-    } else if (!hasExactShelf(systemShelves, writableTarget)) {
-      manualReason = "no_worker_scope";
-    }
-
     const agentId = (scoped.agent_id as string) || DEFAULT_AGENT_ID;
     let flagged;
     try {
-      flagged = store.forShelf(writableTarget, context.principal).flagMemoryForCorrection({
-        id: memoryId,
-        reason,
-        agent_id: agentId,
-        principal_id: context.principal.actorId,
-        shelf_id: writableTarget.id,
-        ...(manualReason ? { manual_review_reason_code: manualReason } : {}),
-      });
+      flagged = store
+        .forShelf(writableTarget, context.principal)
+        .flagMemory(memoryId, reason, agentId);
     } catch {
       return textResult(
-        "flag_memory could not confirm persistence; the flag may already be recorded. Check the Flagged dashboard before retrying. If the write landed, correction work may still run; no correction is confirmed complete.",
+        "flag_memory could not confirm persistence; the flag may already be recorded. Check the Flagged page in the dashboard before retrying. No correction has been made.",
       );
     }
     if (!flagged) {
@@ -144,41 +122,33 @@ const flagMemory: ToolDefinition = {
       );
     }
 
-    const work = flagged.correction_work?.at(-1);
-    if (work?.status === "manual_review") {
-      if (work.reason_code === "no_admin_scope") {
-        return textResult(
-          `Flag recorded, but automatic review was not queued because an administrator cannot review this exact shelf. Ask an administrator to configure shelf access and review this flag.\n\n${flagged.title}`,
-        );
-      }
-      if (work.reason_code === "no_worker_scope") {
-        return textResult(
-          `Flag recorded, but automatic review was not queued because the correction worker cannot process this exact shelf. Ask an administrator to configure shelf access and review this flag.\n\n${flagged.title}`,
-        );
-      }
-      if (work.reason_code === "custom_router_unverified") {
-        return textResult(
-          `Flag recorded, but automatic review was not queued because custom vault-router authority cannot be independently verified for automatic correction. Ask an administrator to review this flag.\n\n${flagged.title}`,
-        );
-      }
+    // ADR 0013: grooming corrects flagged memories. Say plainly when it can't
+    // reach this one, so the agent doesn't promise a correction that won't come.
+    const curatorShelves = resolveShelves(store, SYSTEM_CURATOR, "groom");
+    if (!hasExactShelf(curatorShelves, writableTarget)) {
       return textResult(
-        `Flag recorded for manual review; automatic correction is unavailable for this memory state.\n\n${flagged.title}`,
+        `Flag recorded, but the curator does not tidy this shelf, so it will not be corrected automatically. Tell the user an administrator needs to review it on the Flagged page.\n\n${flagged.title}`,
+      );
+    }
+    let groomingEnabled = false;
+    try {
+      groomingEnabled = readGroomingConfig(store).enabled;
+    } catch {
+      // Unreadable settings: fall through to the conservative reply below.
+    }
+    if (!groomingEnabled) {
+      return textResult(
+        `Flag recorded, but curator grooming is turned off, so nothing will be corrected until it is turned on. Tell the user the flag is waiting on the Flagged page.\n\n${flagged.title}`,
       );
     }
 
     try {
-      if (work?.status === "pending") {
-        context.wakeMemoryCorrection?.({
-          memory_id: memoryId,
-          snapshot_digest: work.snapshot_digest,
-          principal: context.principal,
-        });
-      }
+      context.onMemoryFlagged?.();
     } catch {
-      // The marker is durable; startup recovery/polling will pick it up.
+      // The flag is durable; the next scheduled groom picks it up anyway.
     }
     return textResult(
-      `Flag recorded and targeted correction review was queued; no correction has completed yet. The curator may apply a safe exact correction or prepare a proposal. Tell the user it is queued, not already corrected, and see the flagged-memory review in the dashboard.\n\n${flagged.title}`,
+      `Flag recorded. The curator will review this memory in about 10 minutes and may correct it, propose a correction for a person to approve, or leave it for human review. Nothing has changed yet: tell the user it is queued, not already corrected; they can follow it on the Flagged page of the dashboard.\n\n${flagged.title}`,
     );
   },
 };

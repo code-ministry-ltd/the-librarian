@@ -34,7 +34,7 @@ export interface DispatchContext {
   /** @deprecated supply `principal` instead — legacy token-bound id. */
   agentId?: string | undefined;
   /** Post-persist wake for a durable flagged-correction work marker. */
-  wakeMemoryCorrection?: ToolContext["wakeMemoryCorrection"];
+  onMemoryFlagged?: ToolContext["onMemoryFlagged"];
 }
 
 export async function dispatchMcp(
@@ -118,7 +118,7 @@ function toToolContext(context: DispatchContext): ToolContext {
     principal,
     role: principal.roles.includes("admin") ? "admin" : "agent",
     agentId: principal.boundActorId,
-    ...(context.wakeMemoryCorrection ? { wakeMemoryCorrection: context.wakeMemoryCorrection } : {}),
+    ...(context.onMemoryFlagged ? { onMemoryFlagged: context.onMemoryFlagged } : {}),
   };
 }
 

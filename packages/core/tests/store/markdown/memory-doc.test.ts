@@ -112,29 +112,55 @@ describe("memory <-> document mapping", () => {
     expect(parsed.flags).toEqual([]);
   });
 
-  it("round-trips correction work metadata without storing bodies or flag reasons", () => {
-    const correction_work = [
-      {
-        snapshot_digest: "a".repeat(64),
-        source_digest: "b".repeat(64),
-        flags_digest: "c".repeat(64),
-        principal_id: "codex",
-        shelf_id: "main",
-        status: "pending",
-        attempt_count: 0,
-        queued_at: NOW,
-      },
-    ];
-    const withWork = { ...memory, correction_work } as Memory;
-    const serialized = serializeMemoryDocument(withWork);
+  it("drops the retired correction_work marker from a legacy document (ADR 0013)", () => {
+    const legacy = serializeMemoryDocument(memory).replace(
+      /^curator_note:/m,
+      [
+        "correction_work:",
+        "  - snapshot_digest: " + "a".repeat(64),
+        "    status: manual_review",
+        "curator_note:",
+      ].join("\n"),
+    );
+    expect(legacy).toContain("correction_work:");
 
-    expect(serialized).toContain("correction_work:");
-    expect(serialized).not.toContain("private-flag-reason");
-    expect(parseMemoryDocument(serialized)).toEqual(withWork);
+    const parsed = parseMemoryDocument(legacy);
+
+    expect(parsed).toEqual(memory);
+    expect(serializeMemoryDocument(parsed)).not.toContain("correction_work:");
   });
 
-  it("keeps correction metadata absent from legacy memories with no work", () => {
-    expect(serializeMemoryDocument(memory)).not.toContain("correction_work:");
-    expect(parseMemoryDocument(serializeMemoryDocument(memory))).toEqual(memory);
+  it("round-trips a flag's review outcome, and a flag without one is unchanged", () => {
+    const reviewed = {
+      ...memory,
+      flags: [
+        {
+          agent_id: "codex",
+          reason: "outdated",
+          created_at: NOW,
+          review: { outcome: "no_change" as const, at: NOW, run_id: "run_1", rationale: "fine" },
+        },
+        { agent_id: "claude", reason: "also", created_at: NOW },
+      ],
+    };
+    expect(parseMemoryDocument(serializeMemoryDocument(reviewed))).toEqual(reviewed);
+  });
+
+  it("drops an unreadable flag review instead of rejecting the memory", () => {
+    const raw = serializeMemoryDocument({
+      ...memory,
+      flags: [
+        {
+          agent_id: "codex",
+          reason: "x",
+          created_at: NOW,
+          review: { outcome: "no_change", at: NOW },
+        },
+      ],
+    }).replace("outcome: no_change", "outcome: bogus");
+    expect(raw).toContain("outcome: bogus");
+    expect(parseMemoryDocument(raw).flags).toEqual([
+      { agent_id: "codex", reason: "x", created_at: NOW },
+    ]);
   });
 });

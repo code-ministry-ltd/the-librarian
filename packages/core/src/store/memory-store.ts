@@ -2,13 +2,9 @@
 // from this old path so importers don't change. The concrete store is
 // `createMarkdownMemoryStore`.
 export type {
-  CorrectionManualReviewReasonCode,
   Memory,
-  MemoryCorrectionProposalInput,
-  MemoryCorrectionProposalReview,
-  MemoryCorrectionWork,
-  MemoryCorrectionWorkItem,
-  MemoryCorrectionWorkStatus,
   MemoryFlag,
+  MemoryFlagReview,
+  MemoryFlagReviewOutcome,
   MemoryStore,
 } from "./memory-types.js";

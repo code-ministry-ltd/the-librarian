@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The flagged review queue is a client view: it reads the queue from
-// trpc.memories.listFlagged and adjudicates each row through the
-// resolveFlagAction server action. Both are mocked so this stays a fast
-// component-only check — no QueryClient/TRPC provider, no real server.
+// trpc.memories.listFlagged, shows what the curator did about each memory's
+// flags (ADR 0013), and adjudicates rows through server actions. Both are
+// mocked so this stays a fast component-only check — no QueryClient/TRPC
+// provider, no real server.
 const refetch = vi.fn();
 let queryState: {
   data?: { memories: unknown[] };
@@ -24,14 +25,26 @@ vi.mock("@/lib/trpc-client", () => ({
 }));
 
 const resolveFlagAction = vi.fn().mockResolvedValue({ ok: true });
-const reassessFlagAction = vi.fn().mockResolvedValue({ ok: true });
+const askCuratorAgainAction = vi.fn().mockResolvedValue({ ok: true });
+const updateMemoryAction = vi.fn().mockResolvedValue({ ok: true });
 vi.mock("@/app/(memories)/actions", () => ({
   resolveFlagAction: (id: string, shelfId: string, action: "dismiss" | "archive") =>
     resolveFlagAction(id, shelfId, action),
-  reassessFlagAction: (id: string, shelfId: string) => reassessFlagAction(id, shelfId),
+  askCuratorAgainAction: (id: string, shelfId: string) => askCuratorAgainAction(id, shelfId),
+  updateMemoryAction: (id: string, form: FormData, options: unknown) =>
+    updateMemoryAction(id, form, options),
 }));
+// The shared edit form lives beside the detail view, whose other imports need a
+// TRPC provider; only the form is used here.
+vi.mock("@/app/curator/actions", () => ({}));
 
 const { FlaggedView } = await import("@/components/memories/flagged-view");
+
+const FLAG = {
+  agent_id: "scribe",
+  reason: "the deploy script was replaced",
+  created_at: "2026-06-02T00:00:00.000Z",
+};
 
 function flaggedRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,22 +56,27 @@ function flaggedRow(overrides: Record<string, unknown> = {}) {
     updated_at: "2026-06-01T00:00:00.000Z",
     shelfId: "shelf-1",
     shelfWritable: true,
-    flags: [
-      {
-        agent_id: "scribe",
-        reason: "the deploy script was replaced",
-        created_at: "2026-06-02T00:00:00.000Z",
-      },
-    ],
+    flags: [FLAG],
     ...overrides,
   };
+}
+
+function reviewed(review: Record<string, unknown>) {
+  return flaggedRow({
+    flags: [{ ...FLAG, review: { at: "2026-06-03T00:00:00.000Z", ...review } }],
+  });
+}
+
+function showing(row: unknown) {
+  queryState = { data: { memories: [row] }, isLoading: false, isError: false };
 }
 
 beforeEach(() => {
   refetch.mockReset();
   resolveFlagAction.mockReset().mockResolvedValue({ ok: true });
-  reassessFlagAction.mockReset().mockResolvedValue({ ok: true });
-  queryState = { data: { memories: [flaggedRow()] }, isLoading: false, isError: false };
+  askCuratorAgainAction.mockReset().mockResolvedValue({ ok: true });
+  updateMemoryAction.mockReset().mockResolvedValue({ ok: true });
+  showing(flaggedRow());
 });
 
 describe("FlaggedView", () => {
@@ -72,171 +90,81 @@ describe("FlaggedView", () => {
     expect(screen.queryByRole("button", { name: "Filter by tag deployment" })).toBeNull();
   });
 
-  it("shows when correction work is queued", () => {
-    queryState = {
-      data: {
-        memories: [flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status: "pending" }] })],
-      },
-      isLoading: false,
-      isError: false,
-    };
+  it("says the curator has not looked yet while a flag is unreviewed", () => {
     render(<FlaggedView />);
-    expect(screen.getByRole("status")).toHaveTextContent("Correction review is queued.");
+    expect(screen.getByRole("status")).toHaveTextContent(/Waiting for the curator/);
+    expect(screen.queryByRole("button", { name: "Ask the curator again" })).toBeNull();
   });
 
-  it("shows when correction work needs manual review", () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status: "manual_review" }] }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
+  it("links to the proposal when the curator proposed a correction", () => {
+    showing(reviewed({ outcome: "proposed", proposal_id: "mem_fix" }));
     render(<FlaggedView />);
-    expect(screen.getByRole("status")).toHaveTextContent(/manual review is needed/i);
-  });
-
-  it("explains in plain English why automatic correction stopped", () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({
-            correction_work: [
-              {
-                shelf_id: "shelf-1",
-                status: "manual_review",
-                reason_code: "quote_not_standalone_claim",
-              },
-            ],
-          }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
-    render(<FlaggedView />);
-    expect(screen.getByRole("status")).toHaveTextContent(/isn't a complete sentence or list item/);
-  });
-
-  it("names an unrecognised reason code rather than hiding it", () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({
-            correction_work: [
-              { shelf_id: "shelf-1", status: "manual_review", reason_code: "brand_new_code" },
-            ],
-          }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
-    render(<FlaggedView />);
-    expect(screen.getByRole("status")).toHaveTextContent(/brand_new_code/);
-  });
-
-  it("re-assesses a memory whose correction needs manual review and refetches the queue", async () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status: "manual_review" }] }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
-    render(<FlaggedView />);
-    fireEvent.click(screen.getByRole("button", { name: "Re-assess" }));
-    await waitFor(() => expect(reassessFlagAction).toHaveBeenCalledWith("mem_1", "shelf-1"));
-    await waitFor(() => expect(refetch).toHaveBeenCalled());
-  });
-
-  it("shows the server's explanation when a re-assess is refused", async () => {
-    reassessFlagAction.mockResolvedValue({
-      ok: false,
-      error: "Memory mem_1 already has correction work pending; wait for it to finish.",
-    });
-    render(<FlaggedView />);
-    fireEvent.click(screen.getByRole("button", { name: "Re-assess" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/wait for it to finish/);
-  });
-
-  it("does not offer Re-assess while correction work is still queued or running", () => {
-    for (const status of ["pending", "processing"]) {
-      queryState = {
-        data: { memories: [flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status }] })] },
-        isLoading: false,
-        isError: false,
-      };
-      const { unmount } = render(<FlaggedView />);
-      expect(screen.queryByRole("button", { name: "Re-assess" })).not.toBeInTheDocument();
-      unmount();
-    }
-  });
-
-  it("does not offer Re-assess after the correction proposal was rejected", () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({
-            correction_work: [
-              {
-                shelf_id: "shelf-1",
-                status: "manual_review",
-                reason_code: "correction_proposal_rejected",
-              },
-            ],
-          }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
-    render(<FlaggedView />);
-    expect(screen.queryByRole("button", { name: "Re-assess" })).not.toBeInTheDocument();
-  });
-
-  it("links a pending correction proposal from the flagged row", () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({
-            correction_work: [{ shelf_id: "shelf-1", status: "proposal_pending" }],
-            correction_proposal: { id: "proposal-1" },
-          }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
-    render(<FlaggedView />);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "A partial correction is waiting for approval",
-    );
+    expect(screen.getByRole("status")).toHaveTextContent(/proposed a correction/);
     expect(screen.getByRole("link", { name: "Review proposal" })).toHaveAttribute(
       "href",
       "/proposals",
     );
   });
 
-  it("does not offer proposal approval while a missing proposal is being recovered", () => {
-    queryState = {
-      data: {
-        memories: [
-          flaggedRow({ correction_work: [{ shelf_id: "shelf-1", status: "proposal_pending" }] }),
-        ],
-      },
-      isLoading: false,
-      isError: false,
-    };
+  it("shows the curator's reason when it made no change, and offers to ask again", async () => {
+    showing(reviewed({ outcome: "no_change", rationale: "Still accurate." }));
     render(<FlaggedView />);
     expect(screen.getByRole("status")).toHaveTextContent(
-      "The correction proposal is being recovered; no review action is available yet.",
+      "The curator reviewed this and made no change: “Still accurate.”",
     );
-    expect(screen.queryByRole("link", { name: "Review proposal" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ask the curator again" }));
+    await waitFor(() => expect(askCuratorAgainAction).toHaveBeenCalledWith("mem_1", "shelf-1"));
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
+  });
+
+  it.each([
+    ["declined", /You rejected the curator's correction/],
+    ["too_long", /too long for the curator to rewrite safely/],
+  ])("explains a %s outcome", (outcome, text) => {
+    showing(reviewed({ outcome }));
+    render(<FlaggedView />);
+    expect(screen.getByRole("status")).toHaveTextContent(text);
+    expect(screen.getByRole("button", { name: "Ask the curator again" })).toBeInTheDocument();
+  });
+
+  it("explains a curator archive proposal", () => {
+    showing(
+      flaggedRow({
+        flags: [
+          {
+            agent_id: "system-memory-curator",
+            reason: "curator proposes archive: obsolete",
+            created_at: "2026-06-02T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    render(<FlaggedView />);
+    expect(screen.getByRole("status")).toHaveTextContent(/proposes archiving this whole memory/);
+  });
+
+  it("Edit saves the admin's fix and closes the flags", async () => {
+    render(<FlaggedView />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByDisplayValue("Deploy with the old script."), {
+      target: { value: "Deploy with the new script." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save and close flags" }));
+    await waitFor(() =>
+      expect(updateMemoryAction).toHaveBeenCalledWith("mem_1", expect.any(FormData), {
+        resolveFlags: true,
+      }),
+    );
+    const form = updateMemoryAction.mock.calls[0]![1] as FormData;
+    expect(form.get("body")).toBe("Deploy with the new script.");
+  });
+
+  it("disables every action on a read-only shelf", () => {
+    showing(flaggedRow({ shelfWritable: false }));
+    render(<FlaggedView />);
+    for (const name of ["Edit", "Dismiss", "Archive"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
   });
 
   it("shows the empty state when nothing is flagged", () => {
@@ -261,5 +189,13 @@ describe("FlaggedView", () => {
       expect(resolveFlagAction).toHaveBeenCalledWith("mem_1", "shelf-1", "archive"),
     );
     await waitFor(() => expect(refetch).toHaveBeenCalled());
+  });
+
+  it("surfaces an action error on the card", async () => {
+    askCuratorAgainAction.mockResolvedValue({ ok: false, error: "No agent flags to look at." });
+    showing(reviewed({ outcome: "no_change" }));
+    render(<FlaggedView />);
+    fireEvent.click(screen.getByRole("button", { name: "Ask the curator again" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("No agent flags to look at.");
   });
 });

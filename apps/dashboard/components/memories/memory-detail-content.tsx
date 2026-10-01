@@ -137,18 +137,21 @@ export function MemoryDetailContent({ memory, onClose, onMutated }: Props) {
   );
 }
 
-function EditForm({
+/** The memory edit form; also used by the Flagged page's Edit (ADR 0013). */
+export function EditForm({
   memory,
   pending,
   error,
   onCancel,
   onSubmit,
+  submitLabel = "Save",
 }: {
-  memory: MemoryRow;
+  memory: Pick<MemoryRow, "title" | "body" | "tags">;
   pending: boolean;
   error: string | null;
   onCancel: () => void;
   onSubmit: (form: FormData) => void;
+  submitLabel?: string;
 }) {
   return (
     <form action={onSubmit} className="flex flex-col gap-4 text-sm">
@@ -178,7 +181,7 @@ function EditForm({
       ) : null}
       <div className="flex gap-2">
         <Button type="submit" variant="primary" disabled={pending}>
-          {pending ? "Saving…" : "Save"}
+          {pending ? "Saving…" : submitLabel}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel

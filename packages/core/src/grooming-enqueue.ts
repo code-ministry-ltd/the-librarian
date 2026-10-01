@@ -43,7 +43,7 @@ import { runCuration } from "./grooming-worker.js";
 // internal code; post_intake = the spec 043 D-A threshold trigger (a groom enqueued
 // after an intake sweep crosses curator.grooming.trigger_threshold). No
 // agent-reachable trigger exists.
-export type GroomingTrigger = "schedule" | "manual" | "maintenance" | "post_intake";
+export type GroomingTrigger = "schedule" | "manual" | "maintenance" | "post_intake" | "flag";
 
 // A run still "running" past this age is treated as a crashed-worker lock and
 // reclaimed. Set well above the worst-case run time so a live run is never

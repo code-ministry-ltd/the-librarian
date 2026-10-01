@@ -58,6 +58,11 @@ export interface TrpcContext {
   buildChatClient?: BuildChatClient;
   /** Optional display-name resolver supplied by a build-time plugin (spec 068). */
   actorDisplayProvider?: ActorDisplayProvider;
+  /**
+   * Arms the curator's targeted flag groom (ADR 0013) after "Ask the curator
+   * again". Absent outside the HTTP server; the flags then wait for the next groom.
+   */
+  onMemoryFlagged?: () => void;
 }
 
 export interface TrpcContextDeps {
@@ -77,6 +82,8 @@ export interface TrpcContextDeps {
   authProvider?: GuardedAuthProvider;
   /** Optional display-name resolver threaded unchanged to response mappers. */
   actorDisplayProvider?: ActorDisplayProvider;
+  /** Arms the targeted flag groom (ADR 0013). */
+  onMemoryFlagged?: () => void;
 }
 
 /**
@@ -107,6 +114,7 @@ function buildTrpcContext(
     bootstrapClaim: deps.bootstrapClaim,
     ...(deps.buildChatClient ? { buildChatClient: deps.buildChatClient } : {}),
     ...(deps.actorDisplayProvider ? { actorDisplayProvider: deps.actorDisplayProvider } : {}),
+    ...(deps.onMemoryFlagged ? { onMemoryFlagged: deps.onMemoryFlagged } : {}),
   };
 }
 

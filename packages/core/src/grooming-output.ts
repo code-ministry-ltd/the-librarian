@@ -65,6 +65,9 @@ const UpdateSchema = z.strictObject({
   type: z.literal("update"),
   source_memory_id: z.string().min(1),
   patch: GroomingMemoryPatchSchema,
+  // ADR 0013: true when this update fixes EVERY open flag on the memory. An
+  // applied one clears the flags; a proposed one clears them on approval.
+  resolves_flags: z.boolean().optional(),
   rationale,
   confidence,
 });
