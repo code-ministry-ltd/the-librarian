@@ -41,3 +41,6 @@ ORCHESTRATE-NOTES-*.md
 # pointer) with no .gitmodules, which breaks submodule-aware checkouts like
 # Cloudflare Pages' build clone.
 /.claude/worktrees/
+
+# Node compile cache written by builds
+node-compile-cache/

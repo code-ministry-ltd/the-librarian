@@ -49,6 +49,12 @@ changes from this point forward are catalogued here.
   `/toggle-private` templates, and the Hermes and Pi adapters carry the same
   wording. The tool's inputs are unchanged.
 
+### Security
+
+- **Patched devalue again.** New advisories against devalue up to 5.9.2 (three
+  high-severity, pulled in by the docs site through Astro) failed the production
+  dependency audit. The override now forces 5.9.3.
+
 ### Fixed
 
 - **Grooming never rewrites a memory it could not read in full.** Bodies over
