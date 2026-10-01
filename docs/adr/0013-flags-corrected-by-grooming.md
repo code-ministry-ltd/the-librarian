@@ -64,9 +64,14 @@ grooming mode demands that a stale fact keep its arc ("was A; now B").
 - The correction **just fixes the text**. No "was A; now B" arc is written into
   the memory; the vault's git history is the record of what it used to say. The
   grooming mode's "keep the arc… never a silent deletion" line is replaced
-  accordingly.
+  accordingly. So is the shared HISTORY value ("When new information supersedes
+  old, keep the arc"). History stays worth recording when it is itself the
+  subject of a memory (a deliberately reversed decision, say), but a correction
+  no longer keeps the arc by default.
 - This applies to unflagged memories too. Routine grooming may fix a statement
-  contradicted by newer evidence in the same way.
+  contradicted by newer evidence in the same way, under the same threshold.
+- Intake follows the same rule: a `supersede` replacement states the current
+  facts without a "was A; now B" arc.
 - An `update` that addresses open flags sets a new field, `resolves_flags: true`.
   It must address every open flag on that memory, the same all-or-nothing rule as
   ADR 0012: addressing only some of the flags is not allowed.
@@ -189,16 +194,16 @@ grooming mode demands that a stale fact keep its arc ("was A; now B").
   the Flagged page) and nothing is corrected automatically. This matches today,
   where the correction worker also needs the Grooming model.
 
-## Open questions
+## Resolved questions
 
-1. **Intake supersede.** Intake's `supersede` still tells the model to "carry the
-   arc forward". Should intake also just fix the text, for consistency, or keep
-   the arc because intake handles a single fresh submission?
-2. **Debounce and neighbours.** Are 10 minutes and 5 related memories the right
-   defaults? Should either be a setting, or fixed values?
-3. **Unflagged corrections and the threshold.** Should a correction that no flag
-   asked for need a higher confidence than the shared threshold, or is one
-   threshold enough?
+1. **Intake supersede also just fixes the text.** Intake's `supersede` no longer
+   asks the model to "carry the arc forward". A replacement body states the current
+   facts; git history keeps the old version. Curator corrections then behave the
+   same way whichever job makes them.
+2. **Debounce and neighbours:** still open (see §1 for the proposed defaults).
+3. **One threshold for every correction.** A correction nobody flagged follows the
+   same D13 auto-apply threshold as any other `update`: at or above it, it applies;
+   below it, it becomes a proposal. There is no extra bar for unflagged corrections.
 
 ## Plan
 
@@ -210,7 +215,8 @@ One PR, MINOR release:
    - `resolves_flags` on `update`, with apply and approve clearing flags;
    - flag review outcomes;
    - the `flag` trigger with targeted slices, and pinning in scheduled runs;
-   - prompt changes and the `CURATOR_PROMPT_VERSION` bump.
+   - prompt changes (grooming and intake supersede) and the
+     `CURATOR_PROMPT_VERSION` bump.
 2. Retire the ADR 0012 worker, runtime, store methods, frontmatter and proposal
    paths. Add the boot migration from §7.
 3. Dashboard: Flagged page status view, Edit, Ask the curator again; remove
