@@ -1,6 +1,6 @@
 # ADR 0013 — Flagged memories are corrected by grooming, not a separate worker
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-01
 - **Supersedes:** ADR 0012 (flagged-memory partial correction)
 - **Related:** ADR 0006 (agent-facing MCP surface), D13 (the one apply rule), ADR 0007 (private mode)
@@ -30,13 +30,14 @@ grooming mode demands that a stale fact keep its arc ("was A; now B").
 
 - `flag_memory` records the flag and nothing else. It no longer creates correction
   work.
-- A new grooming trigger, `flag`, arms a **targeted groom** after a short debounce
-  (default 10 minutes, so a burst of flags shares one run). It follows the pattern
+- A new grooming trigger, `flag`, arms a **targeted groom** 10 minutes after the
+  latest pending flag, and never later than 30 minutes after the first, so a
+  burst of flags shares one run. It follows the pattern
   of the `post_intake` trigger: a debounce window, and it fires only while grooming
   is enabled.
 - A targeted groom runs over a small slice:
   - the flagged memories;
-  - the active memories that recall ranks most related to each one (default 5), so
+  - the 5 active memories that recall ranks most related to each one, so
     the model can tell which statement is the current one;
   - the usual tombstones and prepass findings.
   It is not the newest-first, 200-memory slice that scheduled grooming uses.
@@ -200,7 +201,10 @@ grooming mode demands that a stale fact keep its arc ("was A; now B").
    asks the model to "carry the arc forward". A replacement body states the current
    facts; git history keeps the old version. Curator corrections then behave the
    same way whichever job makes them.
-2. **Debounce and neighbours:** still open (see §1 for the proposed defaults).
+2. **Debounce and neighbours are fixed, not settings.** A targeted groom runs 10
+   minutes after the latest pending flag, and never later than 30 minutes after
+   the first. A run shows each flagged memory with its 5 most related active
+   memories. Both can become settings later if they prove wrong in practice.
 3. **One threshold for every correction.** A correction nobody flagged follows the
    same D13 auto-apply threshold as any other `update`: at or above it, it applies;
    below it, it becomes a proposal. There is no extra bar for unflagged corrections.
