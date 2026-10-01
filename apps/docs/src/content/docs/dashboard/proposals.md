@@ -74,20 +74,15 @@ For a split that produces several new memories, an **Archive original** button
 appears below the replacements so you can retire the source in one click once you
 are happy with the pieces.
 
-### Flagged-memory corrections
+### Corrections for flagged memories
 
-A correction proposal is a single-memory update created when the correction worker
-can isolate an exact stale claim but policy requires human approval. The card shows
-the flagged source and the proposed deletion. The original stays active and flagged
-until you decide:
+When the curator fixes a [flagged memory](/dashboard/flagged/) but is not confident
+enough to apply the fix itself, the fix arrives here as an ordinary update, marked
+**Fixes a flagged memory** and listing the flags it addresses.
 
-- **Approve** — activate the corrected replacement and archive the superseded
-  source. The replacement retains the useful, non-target facts.
-- **Reject** — keep the original active and flagged for manual review.
-
-These actions require the exact source shelf and unchanged source/flag/proposal
-snapshot. If the source has drifted, approval is blocked; whole-memory **Archive**
-remains a separate action on the Flagged page.
+- **Approve** — replace the memory with the corrected version and close its flags.
+- **Reject** — keep the original. Its flags stay on the Flagged page, marked as
+  declined, and the curator does not propose the same fix again unless you ask it to.
 
 When the queue is empty it simply says **No proposals pending** — that is the goal
 state.

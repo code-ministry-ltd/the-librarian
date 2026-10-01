@@ -15,10 +15,10 @@ Librarian primer into the system prompt. One install, zero config files.
   `flag_memory`, `store_handoff`, `list_handoffs`, `claim_handoff`,
   `search_references`. Descriptions and schemas mirror the server's
   (a drift-guard test pins them), so the model is taught the same protocol in
-  Pi as in Claude Code, Codex, OpenCode, and Hermes. `flag_memory` queues
-  targeted asynchronous correction review: a safe exact claim may be removed or
-  proposed, while unsafe cases stay flagged. The response reports queue status,
-  not completion; whole-memory Archive remains a separate human action.
+  Pi as in Claude Code, Codex, OpenCode, and Hermes. `flag_memory` asks
+  the curator to review a wrong or outdated memory: it may correct it in place,
+  propose a correction, or leave the flag for a person. The response reports
+  queue status, not completion.
 - **Primer injection** — the operator-editable `vault/primer.md` (≤2KB) is
   fetched once per process from `GET <server>/primer.md` and appended to the
   system prompt via `before_agent_start`.
@@ -34,8 +34,7 @@ Librarian primer into the system prompt. One install, zero config files.
   token travels in the header only (`redirect:"error"`), and it is fully
   fail-soft — a Librarian outage never blocks a turn or leaks a stack trace.
   Private mode is an in-conversation instruction; the server cannot verify its
-  marker. A correction job queued by a flag from public context may still finish
-  after switching private; the toggle does not cancel queued work.
+  marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work.
 - **Four slash commands** (optional sugar): `/handoff`, `/takeover`, `/learn`,
   `/toggle-private` — thin prompt templates that drive the corresponding tool
   flows. See [`docs/slash-commands.md`](../../docs/slash-commands.md).

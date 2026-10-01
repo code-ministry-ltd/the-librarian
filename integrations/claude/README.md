@@ -12,10 +12,10 @@ protocol (the recall/remember loop, the five-section handoff template, the
 learn flow, private mode). The plugin below adds only optional sugar: four
 slash commands that restate the same protocols as convenient prompts.
 
-Flagging a wrong or outdated memory with `flag_memory` queues targeted
-correction review; safe exact claims may be removed or proposed, while unsafe
-cases stay flagged. The response reports queue status, not completion, and
-whole-memory Archive remains a separate human action.
+Flagging a wrong or outdated memory with `flag_memory` asks the curator to
+review it: it may correct the memory in place, propose a correction for you to
+approve, or leave the flag for you. The response reports queue status, not
+completion.
 
 This integration replaces the standalone
 [`the-librarian-claude-plugin`](https://github.com/JimJafar/the-librarian-claude-plugin)
@@ -95,7 +95,7 @@ The plugin ships the `.mcp.json` from Option A plus four commands:
 | `/handoff` | Author a five-section narrative and persist it via `store_handoff` for cross-harness pickup |
 | `/takeover` | List candidate handoffs (`list_handoffs`), atomically claim one (`claim_handoff`), inject the document |
 | `/learn` | Extract durable lessons from the conversation and submit each via `remember` |
-| `/toggle-private` | Flip the `[librarian:private=on\|off]` marker — pure in-conversation, no server state; the server cannot verify it, and correction work queued from a public flag may still finish after switching private |
+| `/toggle-private` | Flip the `[librarian:private=on\|off]` marker — pure in-conversation, no server state; the server cannot verify it, and a curator review queued from a public flag may still correct that memory after switching private |
 
 All four are thin prompt templates over the primer protocols — saying
 "hand this off" or "go private" in plain language works identically.
@@ -148,8 +148,7 @@ remember the verbs (spec `2026-06-16-harness-auto-capture`, ADR 0009):
 - **Per-turn private skip.** A turn under `[librarian:private=on]` is never
   shipped (forward-only — a private-then-public sequence never retroactively
   ships the private turns). Private mode is an in-conversation instruction; the
-  server cannot verify its marker. A correction job queued by a flag from public
-  context may still finish after switching private; the toggle does not cancel
+  server cannot verify its marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel
   queued work.
 - **`LIBRARIAN_AUTO_SAVE=false`** — the per-machine kill-switch: set it and the
   capture hook ships and buffers nothing on this machine.

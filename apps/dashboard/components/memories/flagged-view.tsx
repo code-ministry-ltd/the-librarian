@@ -52,8 +52,11 @@ type Status =
  */
 function statusOf(flags: MemoryFlag[]): Status {
   const agentFlags = flags.filter((flag) => flag.agent_id !== CURATOR_ACTOR);
-  if (agentFlags.length === 0) return { kind: "archive_proposed" };
   if (agentFlags.some((flag) => !flag.review)) return { kind: "waiting" };
+  // The curator's own archive flag is its proposal: it is decided on this page,
+  // not on the Proposals page, whatever the agent flags' outcome says.
+  if (flags.some((flag) => flag.agent_id === CURATOR_ACTOR)) return { kind: "archive_proposed" };
+  if (agentFlags.length === 0) return { kind: "waiting" };
   const latest = agentFlags.map((flag) => flag.review!).reduce((a, b) => (a.at >= b.at ? a : b));
   return latest.rationale
     ? { kind: latest.outcome, rationale: latest.rationale }

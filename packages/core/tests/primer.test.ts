@@ -81,7 +81,7 @@ describe("the shipped default primer", () => {
     expect(DEFAULT_PRIMER).toMatch(/relay the returned status/i);
     expect(DEFAULT_PRIMER).toMatch(/server cannot verify its marker/i);
     expect(DEFAULT_PRIMER).toMatch(
-      /queued by a flag from public context may still finish after switching private/i,
+      /queued by a flag from public context may still correct that memory after switching private/i,
     );
     expect(DEFAULT_PRIMER).toMatch(/toggle does not cancel queued work/i);
     // (e) fail-soft posture.

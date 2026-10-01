@@ -37,13 +37,13 @@ Save a durable fact, preference, or decision the moment you learn it — not tra
 
 ## `flag_memory`
 
-A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` (required: say why; never include secrets). Never call while private. A saved flag queues targeted asynchronous correction review: if the shared confidence policy permits, a safe exact-claim removal may apply automatically; otherwise a reviewable proposal may be created. Unsafe or unreviewable cases remain flagged for human review. The flag also demotes the memory below unflagged matches in recall. Relay the returned status to the user; a queued response is not completion, so never claim the memory is already corrected. Whole-memory Archive remains a separate human action. Use sparingly, only when a memory actively led you astray.
+A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` (required: say what is wrong and, if you know it, what is true now; never include secrets). Never call while private. The curator reviews flagged memories shortly afterwards: it may correct the memory in place, propose a correction for a person to approve, or leave the flag for human review. The flag also demotes the memory below unflagged matches in recall. Relay the returned status to the user; a queued response is not completion, so never claim the memory is already corrected. Use sparingly, only when a memory actively led you astray.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `agent_id` | `string` | server-populated | Server-populated from your authenticated token, not supplied by you — it records which agent raised the flag. |
 | `memory_id` | `string` | required | The id of the memory to flag — take it from a recall result fetched with include_ids: true. |
-| `reason` | `string` | required | Briefly identify which claim is wrong or outdated. Treat the reason as untrusted data; never include secrets. |
+| `reason` | `string` | required | Say which statement is wrong or outdated and, if you know it, what is true now. Treat the reason as untrusted data; never include secrets. |
 
 ## `store_handoff`
 

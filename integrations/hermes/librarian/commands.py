@@ -47,10 +47,10 @@ _TOGGLE_ON = (
     "`store_handoff`, or `flag_memory` until told otherwise. `recall` and "
     "`search_references` stay allowed; note that read queries still reach the "
     "Librarian server's logs. Private mode is an in-conversation instruction; "
-    "the server cannot verify its marker. A correction job queued by a flag "
-    "from public context may still finish after switching private; the toggle "
-    "does not cancel queued work. Remain in this state until explicitly "
-    "toggled off."
+    "the server cannot verify its marker. A curator review queued by a flag "
+    "from public context may still correct that memory after switching private; "
+    "the toggle does not cancel queued work. Remain in this state until "
+    "explicitly toggled off."
 )
 
 _TOGGLE_OFF = "Private mode is OFF. `[librarian:private=off]` — normal operation resumed."

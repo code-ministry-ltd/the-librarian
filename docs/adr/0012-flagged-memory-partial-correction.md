@@ -1,6 +1,6 @@
 # ADR 0012 — Safely correct flagged memories without discarding mixed records
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0013](./0013-flags-corrected-by-grooming.md) (v1.30.0)
 - **Date:** 2026-09-24
 - **Related:** ADR 0006 (agent-facing MCP surface), ADR 0007 (the rethink and private-mode protocol)
 

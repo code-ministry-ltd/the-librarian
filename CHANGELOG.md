@@ -9,6 +9,54 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.30.0] — 2026-10-01
+
+### Changed
+
+- **The curator now corrects flagged memories itself, as part of grooming**
+  ([ADR 0013](docs/adr/0013-flags-corrected-by-grooming.md), replacing ADR 0012).
+  Memories have become cumulative, so the old correction worker, which could only
+  delete one exact quoted sentence or list item, rarely found anything it could
+  safely remove. Most flags ended in manual review with only Dismiss or
+  whole-memory Archive left.
+  - **How a flag is handled now.** About 10 minutes after the latest flag (never
+    more than 30 after the first), a focused grooming pass shows the curator each
+    flagged memory in full, its flag reasons, and the five most related memories.
+    It rewrites or removes the stale statement and keeps the rest.
+  - **The auto-apply threshold decides the outcome.** A confident fix applies and
+    closes the flag. Otherwise it becomes an ordinary proposal: approving it
+    closes the flag, and rejecting it marks the flag declined so the curator stops
+    proposing it.
+  - **Corrections just fix the text.** No "was A; now B" note is added, in
+    grooming or in intake's supersede; git history keeps the old text. Routine
+    grooming may also fix a statement that newer evidence clearly contradicts,
+    under the same threshold.
+  - **Upgrading.** Open proposals from the old correction worker are withdrawn at
+    boot and their flags go back to the curator. The first scheduled groom after
+    upgrading reprocesses the whole corpus once, because the curator prompt moved
+    to v6.0. On a slow local model, expect one long run.
+- **The Flagged page shows what the curator did and gives you the fallbacks.**
+  Each memory says whether the curator is still to look, proposed a correction
+  (with a link), made no change (with its reason), had its fix declined by you, or
+  found the memory too long to rewrite safely.
+  - New actions: **Edit**, which fixes the memory yourself and closes the flags on
+    save, and **Ask the curator again**. Dismiss and Archive work as before.
+  - Re-assess and the "Recent corrections" list are gone.
+- **`flag_memory` asks for what is true now.** Its description and `reason`
+  guidance ask the agent to say what is wrong and, if it knows, what is true now.
+  The tool's reply says when the curator will look, or plainly that grooming is
+  off or does not cover that shelf. The primer, `docs/slash-commands.md`, the
+  `/toggle-private` templates, and the Hermes and Pi adapters carry the same
+  wording. The tool's inputs are unchanged.
+
+### Fixed
+
+- **Grooming never rewrites a memory it could not read in full.** Bodies over
+  4,000 characters reached the model cut short, and text that looked like a secret
+  was masked. An update, merge, or split built from that text would have silently
+  dropped the rest of the memory or written the placeholder back. Such operations
+  are now refused. A flagged memory is shown in full up to 20,000 characters.
+
 ## [1.29.1] — 2026-10-01
 
 ### Fixed
@@ -4821,6 +4869,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.30.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.1...v1.30.0
 [1.29.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.0...v1.29.1
 [1.29.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.27.0...v1.28.0

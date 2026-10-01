@@ -235,3 +235,25 @@ One PR, MINOR release:
    - declined and no-change outcomes don't loop;
    - boot migration of legacy work and proposals;
    - the drift guards across Hermes and Pi.
+
+## Implementation notes (v1.30.0)
+
+- **The incomplete-body guard is wider than §4.** Validation refuses any operation
+  that writes a new body from a source the curator did not see whole: an `update`
+  with a body, a `merge`, or a `split`. "Not whole" covers truncation and a body
+  whose secret-looking text was masked. Both would otherwise be written back as
+  lost or placeholder text.
+- **A targeted groom takes at most 5 flagged memories.** Five flagged memories
+  with up to 5 neighbours each fit one model call. While more unreviewed flags
+  remain, the trigger re-arms for another 10-minute window.
+- **The flag groom's timer follows grooming's.** `LIBRARIAN_GROOMING_TICK_MS=0`
+  turns it off too. The stdio server runs no curator jobs; a flag recorded there
+  is picked up by the HTTP server that grooms the vault, at its boot scan or next
+  groom.
+- **Review outcomes are written as memory updates.** They are frontmatter-only
+  changes and don't bump `updated_at`. Their commits use the `memory: update`
+  subject, so the audit export classifies them without a new audit action, which
+  would be a MAJOR change.
+- **A manual edit clears flags only when asked.** The Flagged page's Edit sends
+  `resolve_flags`. An edit elsewhere in the dashboard leaves the flags alone.
+

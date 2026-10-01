@@ -242,6 +242,11 @@ class FlagOutcomes {
   applied(op: GroomingOperation): void {
     if (op.type === "update" && op.resolves_flags === true) {
       this.settled.set(op.source_memory_id, "cleared");
+    } else if (op.type === "merge") {
+      // The merge archived its sources, flags and all: nothing left to review.
+      for (const id of op.source_memory_ids) {
+        if (this.flagged.has(id)) this.settled.set(id, "cleared");
+      }
     } else {
       this.note(op, op.rationale);
     }
@@ -286,9 +291,13 @@ class FlagOutcomes {
 }
 
 // An operation that, if approved, deals with its sources' flags: an update that
-// says it fixes them, or an archive (the whole memory goes).
+// says it fixes them, or a merge or archive (the flagged memory goes).
 function fixesFlags(op: GroomingOperation): boolean {
-  return (op.type === "update" && op.resolves_flags === true) || op.type === "archive";
+  return (
+    (op.type === "update" && op.resolves_flags === true) ||
+    op.type === "merge" ||
+    op.type === "archive"
+  );
 }
 
 // The memories an operation proposes to replace — the identity D6 dedups on.

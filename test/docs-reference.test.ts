@@ -167,14 +167,14 @@ describe("private-mode correction caveat parity", () => {
     "integrations/pi/extensions/librarian/commands.ts",
   ];
 
-  it("warns on every harness surface that queued public correction work may finish while private", () => {
+  it("warns on every harness surface that a curator review queued in public may still correct a memory while private", () => {
     for (const file of surfaces) {
       const content = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
       expect(content, `${file}: server-side limitation missing`).toMatch(
         /server cannot verify its\s+marker/,
       );
       expect(content, `${file}: queued-work timing missing`).toMatch(
-        /from public\s+context may still finish\s+after switching private/,
+        /from public\s+context may still correct\s+that\s+memory\s+after\s+switching\s+private/,
       );
       expect(content, `${file}: non-cancellation guarantee missing`).toMatch(
         /cancel\s+queued work/,

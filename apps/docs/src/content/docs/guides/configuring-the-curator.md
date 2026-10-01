@@ -20,7 +20,9 @@ The Curator settings contain three distinct jobs, configured side by side under
 - **Grooming** tends the *existing* collection slice by slice — de-duplicating,
   archiving stale notes, refining. Grooming is **triggered, not scheduled**: it runs
   when you press *Run now*, and automatically after intake has added enough new
-  material to be worth a tidy-up.
+  material to be worth a tidy-up. It also corrects memories an agent has
+  [flagged](/dashboard/flagged/) as wrong or outdated, about 10 minutes after the
+  flag: it rewrites or removes the stale statement and keeps the rest.
 - **Chronicle** writes a searchable weekly review under `references/chronicle/`.
   Its factual digest does not require an LLM; a configured model adds an optional
   narrative and possible blog seeds. It never changes memories. See
@@ -82,9 +84,9 @@ Each job's model settings have two more fields:
 A reply that reaches the output limit before it finishes is **thrown away, never
 used**. The curator never files a memory, applies a correction, or writes a
 chronicle narrative from a cut-off answer. What happens instead depends on the
-job: an intake submission is retried later (see below), and a flagged correction
-stays flagged with a note that the Grooming model's reply hit its output limit.
-If you see these, raise that job's output limit.
+job: an intake submission is retried later (see below), and a flagged memory
+stays waiting for the curator's next look. If you see these, raise that job's
+output limit.
 
 ### When the model is slow or down
 

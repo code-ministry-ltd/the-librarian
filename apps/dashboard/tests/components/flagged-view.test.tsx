@@ -143,6 +143,24 @@ describe("FlaggedView", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/proposes archiving this whole memory/);
   });
 
+  it("says the curator proposes archiving when its archive flag sits beside reviewed agent flags", () => {
+    showing(
+      flaggedRow({
+        flags: [
+          { ...FLAG, review: { outcome: "proposed", at: "2026-06-03T00:00:00.000Z" } },
+          {
+            agent_id: "system-memory-curator",
+            reason: "curator proposes archive: obsolete",
+            created_at: "2026-06-03T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    render(<FlaggedView />);
+    expect(screen.getByRole("status")).toHaveTextContent(/proposes archiving this whole memory/);
+    expect(screen.queryByRole("link", { name: "Review proposal" })).toBeNull();
+  });
+
   it("Edit saves the admin's fix and closes the flags", async () => {
     render(<FlaggedView />);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));

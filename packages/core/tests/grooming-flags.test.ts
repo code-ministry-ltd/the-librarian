@@ -235,6 +235,27 @@ describe("targeted flag groom (ADR 0013)", () => {
     expect(memory.flags[0]!.review!.outcome).toBe("too_long");
   });
 
+  it("a merge that consumes a flagged memory counts as dealing with its flags", async () => {
+    const id = seed("Atlas", CUMULATIVE_BODY);
+    const twin = seed("Atlas notes", "Atlas is the internal billing service.");
+    store.flagMemory(id, "Duplicate of the Atlas notes.", "claude");
+    const { client } = scripted(() => [
+      {
+        type: "merge",
+        source_memory_ids: [id, twin],
+        replacement: { title: "Atlas", body: CUMULATIVE_BODY, visibility: "common" },
+        rationale: "Same service.",
+        confidence: 0.95,
+      },
+    ]);
+
+    await flagGroom(client);
+
+    const source = store.getMemory(id)!;
+    expect(source.status).toBe("archived");
+    expect(source.flags[0]!.review).toBeUndefined(); // not stamped "no change"
+  });
+
   it("does not call the model when no flag is waiting", async () => {
     seed("Atlas", CUMULATIVE_BODY);
     const { client, prompts } = scripted(() => []);

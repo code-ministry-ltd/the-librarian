@@ -76,7 +76,7 @@ def test_toggle_private_blocks_writes_only() -> None:
     assert "`recall`" in text
     assert "logs" in text
     assert "server cannot verify its marker" in text
-    assert "from public context may still finish after switching private" in text
+    assert "from public context may still correct that memory after switching private" in text
     assert "does not cancel queued work" in text
 
 

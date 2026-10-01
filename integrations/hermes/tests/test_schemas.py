@@ -101,16 +101,18 @@ def test_descriptions_carry_their_protocols_within_budget() -> None:
     flag_description = by_name["flag_memory"]["description"]
     for marker in (
         "Never call while private.",
-        "safe exact-claim removal may apply automatically",
-        "reviewable proposal may be created",
-        "Unsafe or unreviewable cases remain flagged for human review.",
+        "what is true now",
+        "The curator reviews flagged memories shortly afterwards",
+        "correct the memory in place",
+        "propose a correction for a person to approve",
+        "leave the flag for human review",
         "The flag also demotes the memory below unflagged matches in recall.",
         "Relay the returned status to the user",
         "a queued response is not completion",
-        "Whole-memory Archive remains a separate human action.",
     ):
         assert marker in flag_description
     reason_description = by_name["flag_memory"]["parameters"]["properties"]["reason"]["description"]
+    assert "what is true now" in reason_description
     assert "untrusted data" in reason_description
     assert "never include secrets" in reason_description
     for heading in ("Start & intent", "Journey", "Current state", "What's left", "Open questions"):
