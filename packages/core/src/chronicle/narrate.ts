@@ -64,7 +64,7 @@ export async function narrateChronicle(
       messages,
       jsonResponse: true,
       temperature: 0.2,
-      maxTokens: 2_000,
+      // The Chronicle job's output limit on the client governs (thinking included).
     });
   } catch {
     return failed("llm_error", redactionCount);

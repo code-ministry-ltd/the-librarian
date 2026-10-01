@@ -275,4 +275,25 @@ describe("processMemoryCorrectionWork", () => {
     expect(applied).toMatchObject({ status: "applied" });
     expect(llmClient.complete).toHaveBeenCalledTimes(2);
   });
+
+  // A hard-coded 2,000-token cap cut off thinking models before they answered; the
+  // Grooming job's own output limit (set on the client) now governs.
+  it("leaves the output limit to the job's client settings", async () => {
+    const context = setup();
+    await run(context);
+    const request = vi.mocked(context.llmClient.complete).mock.calls[0]?.[0];
+    expect(request).not.toHaveProperty("maxTokens");
+  });
+
+  it("sends a reply cut off by the output limit to manual review, naming the cause", async () => {
+    const context = setup();
+    const llmClient: LlmClient = {
+      complete: vi.fn().mockRejectedValue(new LlmClientError("truncated", "hit the output limit")),
+    };
+
+    const result = await run(context, { llmClient });
+
+    expect(result).toEqual({ status: "manual_review", reason_code: "provider_output_limit" });
+    expect(context.store.getMemory(context.memory.id)?.body).toBe(context.memory.body);
+  });
 });

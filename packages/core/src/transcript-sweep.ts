@@ -19,6 +19,10 @@
 //      navigate→judge→apply with confidence bands. The judge/apply is untouched.
 //   5. DELETE-AFTER — drop the `.processing` claim (and any `.ended` marker) on
 //      success: zero trace; only extracted facts persist in the inbox→vault path.
+//      A FAILED pass (the model call threw, or its reply was unusable) is not a
+//      success: the claim is kept and its clock restarted, so the reaper returns
+//      it after one window. The third failure drops it (review 2026-09-29 #10),
+//      and a timeout / unavailable provider stops the rest of this tick.
 //
 // REAPER — an orphaned `.processing` (crash mid-extract) is recovered at the
 // START of each tick: a `.processing` older than `reaperTtlMs` is renamed back to
@@ -43,8 +47,14 @@ import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
+  type ConsumerConnection,
+  consumerConnection,
 } from "./curator-consumers.js";
-import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
+import {
+  type LlmClient,
+  createGroomingLlmClient,
+  isProviderUnavailableError,
+} from "./grooming-llm-client.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import { isIntakeEnabled } from "./intake-config.js";
 import type { InboxItemRef, InboxSubmissionHints } from "./store/corpus/index.js";
@@ -61,7 +71,7 @@ import {
   transcriptShelfMarkerPath,
   transcriptsDir,
 } from "./transcript-buffer.js";
-import { extractTranscriptFacts } from "./transcript-extract.js";
+import { tryExtractTranscriptFacts } from "./transcript-extract.js";
 import { type Shelf, validateShelfSet } from "./vault-router.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
@@ -82,6 +92,13 @@ export const DEFAULT_TRANSCRIPT_MAX_BYTES = 5_000_000;
  * recovers a genuinely crashed worker within an hour.
  */
 export const DEFAULT_TRANSCRIPT_REAPER_TTL_MS = 60 * 60_000;
+/**
+ * Failed extraction passes a conversation gets before the sweep gives up on it
+ * (review 2026-09-29 item #10). A failed pass keeps the claimed buffer and backs
+ * off for one reaper window; the third failure deletes it, as every failure used
+ * to: transcripts are private working data, so they are not parked forever.
+ */
+export const DEFAULT_TRANSCRIPT_MAX_ATTEMPTS = 3;
 
 export interface TranscriptSweepOptions {
   store: LibrarianStore;
@@ -98,10 +115,7 @@ export interface TranscriptSweepOptions {
    * from the intake consumer config) — mirrors runIntakeTick's `buildClient`, so
    * tests inject a fake `complete` with no network.
    */
-  buildClient?: (
-    conn: { endpoint: string; model: string; timeoutMs: number },
-    token: string,
-  ) => LlmClient;
+  buildClient?: (conn: ConsumerConnection, token: string) => LlmClient;
 }
 
 export interface TranscriptSweepSummary {
@@ -113,6 +127,12 @@ export interface TranscriptSweepSummary {
   skipped: number;
   /** Orphaned `.processing` claims reaped (renamed back to `.md`) this tick. */
   reaped: number;
+  /** Extractions that failed and kept their buffer for a retry after the reaper window. */
+  failed: number;
+  /** Conversations dropped after their last allowed failed extraction. */
+  abandoned: number;
+  /** True when a provider failure stopped the sweep before every buffer was tried. */
+  stoppedEarly: boolean;
   /** Why the tick did nothing wholesale, when applicable. */
   reason?: "disabled" | "no_dir" | "no_client";
 }
@@ -135,7 +155,15 @@ export async function runTranscriptSweepTick(
   const maxBytes = options.maxBytes ?? DEFAULT_TRANSCRIPT_MAX_BYTES;
   const reaperTtlMs = options.reaperTtlMs ?? DEFAULT_TRANSCRIPT_REAPER_TTL_MS;
 
-  const summary: TranscriptSweepSummary = { extracted: 0, facts: 0, skipped: 0, reaped: 0 };
+  const summary: TranscriptSweepSummary = {
+    extracted: 0,
+    facts: 0,
+    skipped: 0,
+    reaped: 0,
+    failed: 0,
+    abandoned: 0,
+    stoppedEarly: false,
+  };
 
   // GATE COHERENCE: the whole tick is gated on the intake gate that would drain
   // the inbox these facts land in (spec Q-gate). Disabled → leave every buffer
@@ -169,6 +197,7 @@ export async function runTranscriptSweepTick(
       if (fs.existsSync(recovered)) {
         fs.rmSync(procPath, { force: true });
         removeClaimedMarkers(store.dataDir, name.slice(0, -".processing".length));
+        clearAttempts(store.dataDir, name.slice(0, -".processing".length));
       } else {
         fs.renameSync(procPath, recovered);
         recoverClaimedMarkers(store.dataDir, name.slice(0, -".processing".length));
@@ -288,7 +317,40 @@ export async function runTranscriptSweepTick(
 
       summary.extracted += 1;
       const text = readClaimed(procPath, warn);
-      const facts = text ? await extractTranscriptFacts(text, { llmClient: client }) : [];
+      const extraction = text
+        ? await tryExtractTranscriptFacts(text, { llmClient: client })
+        : { ok: true as const, facts: [] };
+      if (!extraction.ok) {
+        // A failed pass is not "nothing worth keeping" (review #10): keep the
+        // claimed buffer and its markers, and restart its reaper clock so the
+        // retry waits a full window instead of hitting a struggling model again
+        // on the next tick. The last allowed failure drops it.
+        const attempts = recordFailedAttempt(store.dataDir, convBase);
+        const err = (extraction.error as Error | undefined)?.message ?? String(extraction.error);
+        if (attempts >= DEFAULT_TRANSCRIPT_MAX_ATTEMPTS) {
+          fs.rmSync(procPath, { force: true });
+          removeClaimedMarkers(store.dataDir, convBase);
+          clearAttempts(store.dataDir, convBase);
+          summary.abandoned += 1;
+          warn(
+            { file: name, attempts, err },
+            "transcript extraction failed too often; conversation dropped",
+          );
+        } else {
+          const at = new Date(now());
+          fs.utimesSync(procPath, at, at);
+          summary.failed += 1;
+          warn({ file: name, attempts, err }, "transcript extraction failed; kept for a retry");
+        }
+        if (isProviderUnavailableError(extraction.error)) {
+          // Same rule as the intake sweep: a timed-out request may still be
+          // running on a serial local model, so don't queue the next one behind it.
+          summary.stoppedEarly = true;
+          break;
+        }
+        continue;
+      }
+      const facts = extraction.facts;
 
       // SHELF ROUTING (spec 062 SC 8a): submit this conversation's facts into the write-target
       // shelf's inbox recorded by T1's `<conv_id>.shelf` marker. Absent marker (the DEFAULT router,
@@ -322,6 +384,7 @@ export async function runTranscriptSweepTick(
       // have created a fresh `.md` plus active markers; those belong to the next generation.
       fs.rmSync(procPath, { force: true });
       removeClaimedMarkers(store.dataDir, convBase);
+      clearAttempts(store.dataDir, convBase);
     } catch (err) {
       // Per-buffer fail-soft: an unexpected error on one buffer never aborts the
       // rest of the sweep. The claim (if made) stays as `.processing` for the
@@ -545,6 +608,35 @@ function recoverClaimedMarkers(dataDir: string, convBase: string): void {
   }
 }
 
+/**
+ * Failed-extraction count for one conversation, kept beside its claimed markers
+ * (the claimed-marker reaper only touches `.ended` / `.shelf` / `.harness`).
+ */
+function attemptsPath(dataDir: string, convBase: string): string {
+  const markersDir = path.dirname(transcriptProcessingHarnessMarkerPath(dataDir, convBase));
+  return path.join(markersDir, `${convBase}.attempts`);
+}
+
+/** Count one more failed extraction and return the new total. */
+function recordFailedAttempt(dataDir: string, convBase: string): number {
+  const file = attemptsPath(dataDir, convBase);
+  let previous = 0;
+  try {
+    const parsed = Number.parseInt(fs.readFileSync(file, "utf8"), 10);
+    if (Number.isInteger(parsed) && parsed > 0) previous = parsed;
+  } catch {
+    // No count yet: this is the first failure.
+  }
+  const attempts = previous + 1;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, String(attempts), "utf8");
+  return attempts;
+}
+
+function clearAttempts(dataDir: string, convBase: string): void {
+  fs.rmSync(attemptsPath(dataDir, convBase), { force: true });
+}
+
 function markerPairs(dataDir: string, convBase: string): Array<[string, string]> {
   return [
     [endedMarkerPath(dataDir, convBase), transcriptProcessingEndedMarkerPath(dataDir, convBase)],
@@ -591,16 +683,8 @@ function buildExtractorClient(
       return null;
     }
     if (!token) return null;
-    const build =
-      inject ??
-      ((conn, secret) =>
-        createGroomingLlmClient({
-          endpoint: conn.endpoint,
-          token: secret,
-          model: conn.model,
-          timeoutMs: conn.timeoutMs,
-        }));
-    return build({ endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs }, token);
+    const build = inject ?? ((conn, secret) => createGroomingLlmClient({ ...conn, token: secret }));
+    return build(consumerConnection(llm), token);
   } catch (err) {
     warn({ err: (err as Error).message }, "transcript extractor client build failed (fail-soft)");
     return null;

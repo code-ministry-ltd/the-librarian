@@ -593,7 +593,14 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     });
     if (summary.extracted > 0 || summary.reaped > 0) {
       logger.info(
-        { extracted: summary.extracted, facts: summary.facts, reaped: summary.reaped },
+        {
+          extracted: summary.extracted,
+          facts: summary.facts,
+          reaped: summary.reaped,
+          failed: summary.failed,
+          abandoned: summary.abandoned,
+          stoppedEarly: summary.stoppedEarly,
+        },
         "transcript settle-sweep extracted capture buffers to the inbox",
       );
     }

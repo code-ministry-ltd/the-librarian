@@ -98,14 +98,19 @@ function stripCodeFence(raw: string): string {
  * non-string entries are dropped defensively.
  */
 export function parseExtractedFacts(raw: string): string[] {
+  return parseFactsOrNull(raw) ?? [];
+}
+
+/** Like {@link parseExtractedFacts}, but null when the reply is unusable. */
+function parseFactsOrNull(raw: string): string[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripCodeFence(raw));
   } catch {
-    return [];
+    return null;
   }
   const result = ExtractionSchema.safeParse(parsed);
-  if (!result.success) return [];
+  if (!result.success) return null;
   return result.data.facts
     .filter((f): f is string => typeof f === "string")
     .map((f) => f.trim())
@@ -125,13 +130,34 @@ export async function extractTranscriptFacts(
   bufferText: string,
   deps: ExtractTranscriptFactsDeps,
 ): Promise<string[]> {
-  if (bufferText.trim().length === 0) return [];
+  const outcome = await tryExtractTranscriptFacts(bufferText, deps);
+  return outcome.ok ? outcome.facts : [];
+}
+
+export type TranscriptExtraction =
+  | { ok: true; facts: string[] }
+  /** The model call threw, or its reply was unusable: NOT the same as "no facts". */
+  | { ok: false; error: unknown };
+
+/**
+ * {@link extractTranscriptFacts} for a caller that must tell a failed pass from
+ * a conversation with nothing worth keeping (review 2026-09-29 item #10): the
+ * settle-sweep keeps the buffer for a retry on `ok: false` and only deletes it
+ * once the model has actually answered. Never throws.
+ */
+export async function tryExtractTranscriptFacts(
+  bufferText: string,
+  deps: ExtractTranscriptFactsDeps,
+): Promise<TranscriptExtraction> {
+  if (bufferText.trim().length === 0) return { ok: true, facts: [] };
   let completion: { content: string };
   try {
     completion = await deps.llmClient.complete({ messages: buildExtractionPrompt(bufferText) });
-  } catch {
-    // Fail-soft: a transport/LLM error is a no-fact extraction, never a throw.
-    return [];
+  } catch (error) {
+    return { ok: false, error };
   }
-  return parseExtractedFacts(completion.content);
+  const facts = parseFactsOrNull(completion.content);
+  return facts === null
+    ? { ok: false, error: new Error("the extractor reply was not the expected JSON") }
+    : { ok: true, facts };
 }

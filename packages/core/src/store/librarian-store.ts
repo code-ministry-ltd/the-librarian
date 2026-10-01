@@ -1610,6 +1610,8 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         judgeErrors: 0,
         claimedByOther: 0,
         errored: 0,
+        parked: 0,
+        stoppedEarly: false,
       };
       for (const shelf of shelves) {
         const core = coreForShelf(shelf);
@@ -1647,6 +1649,13 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         summary.judgeErrors += shelfSummary.judgeErrors;
         summary.claimedByOther += shelfSummary.claimedByOther;
         summary.errored += shelfSummary.errored;
+        summary.parked += shelfSummary.parked;
+        // Every shelf shares the one intake model: once it is struggling, leave
+        // the remaining shelves for the next tick too.
+        if (shelfSummary.stoppedEarly) {
+          summary.stoppedEarly = true;
+          break;
+        }
       }
       // The apply path commits per memory write (each pathspec-limited + attributed to
       // INTAKE_ACTOR_ID); commit once more to capture the inbox claim/complete moves a no-op

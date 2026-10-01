@@ -22,9 +22,11 @@ import type {
   LibrarianStore,
   ListCurationRunsInput,
   LlmClient,
+  ConsumerConnection,
 } from "@librarian/core";
 import {
   GroomingConfigPatchSchema,
+  consumerConnection,
   createGroomingLlmClient,
   inferChatJob,
   readConsumerConfig,
@@ -271,20 +273,9 @@ export const groomingRouter = router({
 
       const buildClient =
         ctx.buildChatClient ??
-        ((
-          conn: { endpoint: string; model: string; timeoutMs: number },
-          secret: string,
-        ): LlmClient =>
-          createGroomingLlmClient({
-            endpoint: conn.endpoint,
-            token: secret,
-            model: conn.model,
-            timeoutMs: conn.timeoutMs,
-          }));
-      const client = buildClient(
-        { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
-        token,
-      );
+        ((conn: ConsumerConnection, secret: string): LlmClient =>
+          createGroomingLlmClient({ ...conn, token: secret }));
+      const client = buildClient(consumerConnection(llm), token);
 
       // Ground in the memory + its decision history (fail-soft: null → un-grounded).
       const grounding = input.memoryId ? gatherChatGrounding(ctx.store, input.memoryId) : null;

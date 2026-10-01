@@ -61,12 +61,37 @@ describe("RunNowButton", () => {
           judgeErrors: 0,
           claimedByOther: 0,
           errored: 0,
+          parked: 0,
+          stoppedEarly: false,
         },
       },
     }));
     render(<RunNowButton onRun={onRun} renderResult={renderIntakeResult} label="Run intake now" />);
     await userEvent.click(screen.getByRole("button", { name: /run intake now/i }));
     expect(screen.getByText(/Ran — 3 item\(s\) consolidated/)).toBeTruthy();
+  });
+
+  it("tells the operator when a sweep stopped early or set items aside", () => {
+    const text = renderIntakeResult({
+      ran: true,
+      summary: {
+        reclaimed: 0,
+        consolidated: 1,
+        judgeErrors: 0,
+        claimedByOther: 0,
+        errored: 1,
+        parked: 2,
+        stoppedEarly: true,
+      },
+    });
+    expect(text).toMatch(/2 item\(s\) failed three times and were set aside in inbox\/\.failed/);
+    expect(text).toMatch(/Stopped early: the model timed out or was unavailable/);
+  });
+
+  it("explains a Run now refused because a sweep is already running", () => {
+    expect(renderIntakeResult({ ran: false, reason: "already_running" })).toMatch(
+      /a sweep is already running/,
+    );
   });
 
   it("surfaces an intake disabled skip (not swallowed)", async () => {

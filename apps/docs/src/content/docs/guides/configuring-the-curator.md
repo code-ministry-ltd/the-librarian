@@ -66,6 +66,49 @@ notes.)
 Keep an eye on token usage on the [Analytics](/dashboard/analytics/) page, broken
 down per model, to balance quality against cost.
 
+### Output limit and thinking level
+
+Each job's model settings have two more fields:
+
+- **Output limit (tokens)** caps how long one reply can be. The defaults are
+  16,384 for Intake, 32,768 for Grooming, 8,192 for Chronicle, and 16,384 for the
+  curator chat. Any thinking the model does counts towards this limit, so a model
+  that thinks heavily needs more room. You can set anything from 256 to
+  1,048,576.
+- **Thinking level** is sent to the provider as `reasoning_effort` (None, Low,
+  Medium, or High). Leave it on **Provider default** to send nothing, which is
+  also the right choice for a provider that doesn't support the field.
+
+A reply that reaches the output limit before it finishes is **thrown away, never
+used**. The curator never files a memory, applies a correction, or writes a
+chronicle narrative from a cut-off answer. What happens instead depends on the
+job: an intake submission is retried later (see below), and a flagged correction
+stays flagged with a note that the Grooming model's reply hit its output limit.
+If you see these, raise that job's output limit.
+
+### When the model is slow or down
+
+The curator streams every reply. When a request times out, the curator
+disconnects and the provider stops generating, so an abandoned request doesn't
+keep a local model busy after the curator has given up on it.
+
+- **A timeout or an unavailable provider stops the run.** If the model times
+  out, drops the connection, or answers with a rate limit or server error, the
+  intake sweep and the transcript extraction stop there. They don't send the
+  next item into the same queue. The remaining items wait for the next run.
+- **Run now never overlaps a running sweep.** Pressing *Run now* on Intake while
+  a sweep is already running reports "a sweep is already running" instead of
+  starting a second one against the same model.
+- **Failed items are retried, but not forever.** An intake submission that fails
+  is retried about an hour later. After its third failure it is set aside in
+  `inbox/.failed/` in your vault, and the run summary says so. Nothing is
+  deleted: to retry it, move the file back into `inbox/`.
+- **A failed transcript extraction keeps the conversation.** If extracting facts
+  from an automatically captured conversation fails, the conversation is kept and
+  retried about an hour later. After the third failure it is deleted, as a
+  captured conversation always is once processed: captured text is never kept
+  indefinitely.
+
 ## Teaching it over time — the self-improving loop
 
 Intake and Grooming get better through use, and you steer them with plain English rather than

@@ -16,6 +16,7 @@ import {
   createVault,
   listInbox,
   parseInboxItem,
+  reapStaleClaims,
   releaseStaleClaims,
   writeInbox,
 } from "@librarian/core";
@@ -205,6 +206,45 @@ describe("releaseStaleClaims (boot reaper)", () => {
     const reclaimed = claimInboxItem(vault, ref.relPath, { now: () => 9_000_000 });
     expect(reclaimed).not.toBeNull();
     expect(reclaimed!.startsWith("inbox/.processing/")).toBe(true);
+  });
+});
+
+describe("reapStaleClaims (attempt cap)", () => {
+  const stale = (vault: Vault, ref: { relPath: string }, claimAt: number) => {
+    claimInboxItem(vault, ref.relPath, { now: () => claimAt });
+    return reapStaleClaims(vault, { olderThanMs: 60_000, now: claimAt + 120_000 });
+  };
+
+  it("counts each reclaim as a failed attempt on the item itself", () => {
+    const ref = writeInbox(vault, "retry me", { now: () => 1000, generateId: () => "inbox_a" });
+    expect(stale(vault, ref, 10_000)).toEqual({ restored: [ref.relPath], parked: [] });
+    expect(parseInboxItem(vault.readText(ref.relPath)).attempts).toBe(1);
+    stale(vault, ref, 20_000_000);
+    const item = parseInboxItem(vault.readText(ref.relPath));
+    expect(item.attempts).toBe(2);
+    expect(item.text).toBe("retry me"); // the submission survives the rewrite
+  });
+
+  it("parks the item in inbox/.failed on its third failed attempt", () => {
+    const ref = writeInbox(vault, "doomed", { now: () => 1000, generateId: () => "inbox_a" });
+    stale(vault, ref, 10_000);
+    stale(vault, ref, 20_000_000);
+    const third = stale(vault, ref, 40_000_000);
+    expect(third.restored).toEqual([]);
+    expect(third.parked).toEqual(["inbox/.failed/000000000001000-inbox_a.md"]);
+    expect(listInbox(vault)).toEqual([]);
+    expect(parseInboxItem(vault.readText(third.parked[0]!)).text).toBe("doomed");
+  });
+
+  it("honours a custom attempt cap", () => {
+    const ref = writeInbox(vault, "once", { now: () => 1000, generateId: () => "inbox_a" });
+    claimInboxItem(vault, ref.relPath, { now: () => 10_000 });
+    const result = reapStaleClaims(vault, { olderThanMs: 0, now: 20_000, maxAttempts: 1 });
+    expect(result.parked).toHaveLength(1);
+  });
+
+  it("an inbox item written before attempts existed parses as zero attempts", () => {
+    expect(parseInboxItem('---\nid: "inbox_a"\ncreated: "x"\n---\nold\n').attempts).toBe(0);
   });
 });
 

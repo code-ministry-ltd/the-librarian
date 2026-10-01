@@ -8,12 +8,15 @@
 //   curator.<consumer>.provider    = provider id reference
 //   curator.<consumer>.model       = model name
 //   curator.<consumer>.timeout_ms  = per-request timeout
+//   curator.<consumer>.max_output_tokens = output cap per call (thinking included)
+//   curator.<consumer>.reasoning_effort  = thinking level; unset → provider default
 //
 // Resolution joins the consumer's keys with the referenced provider (endpoint +
 // presence-only token). A consumer whose provider was deleted resolves to
 // not-operational (inert, never throws) — the caller skips it.
 
 import { z } from "zod";
+import type { LlmClientConfig, ReasoningEffort } from "./grooming-llm-client.js";
 import { CHRONICLE_ENABLED_KEY } from "./chronicle/config.js";
 import { GROOMING_ENABLED_KEY } from "./grooming-config.js";
 import { INTAKE_ENABLED_KEY } from "./intake-config.js";
@@ -65,6 +68,20 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 600_000;
 
+// Output caps exist to stop a runaway (a model looping while it thinks), never to
+// shorten a healthy answer: a reply that hits the cap is discarded as an error, not
+// stored. The defaults are deliberately generous because thinking counts towards
+// them and local reasoning models think heavily.
+export const DEFAULT_MAX_OUTPUT_TOKENS: Readonly<Record<LlmConsumer, number>> = {
+  intake: 16_384,
+  grooming: 32_768,
+  chronicle: 8_192,
+  chat: 16_384,
+};
+const MIN_MAX_OUTPUT_TOKENS = 256;
+const MAX_MAX_OUTPUT_TOKENS = 1_048_576;
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ["none", "low", "medium", "high"];
+
 export interface ConsumerConfig {
   consumer: LlmConsumer;
   /**
@@ -83,6 +100,10 @@ export interface ConsumerConfig {
   endpoint: string;
   model: string;
   timeoutMs: number;
+  /** Output cap per call (`max_tokens`), thinking included. */
+  maxOutputTokens: number;
+  /** Thinking level sent as `reasoning_effort`; null → not sent (provider default). */
+  reasoningEffort: ReasoningEffort | null;
   /** The resolved provider exists AND has a token stored. */
   hasToken: boolean;
   /** providerExists && hasToken && model set — the resolution a tick needs to run. */
@@ -94,6 +115,9 @@ export interface ConsumerConfigPatch {
   providerId?: string;
   model?: string;
   timeoutMs?: number;
+  maxOutputTokens?: number;
+  /** null or "" clears it (back to the provider default). */
+  reasoningEffort?: ReasoningEffort | "" | null;
 }
 
 // Permissive admin-patch shape; the timeout bound is enforced in
@@ -103,6 +127,8 @@ export const ConsumerConfigPatchSchema = z.strictObject({
   providerId: z.string().optional(),
   model: z.string().optional(),
   timeoutMs: z.number().optional(),
+  maxOutputTokens: z.number().optional(),
+  reasoningEffort: z.enum(["none", "low", "medium", "high", ""]).nullable().optional(),
 });
 
 type ConsumerReader = LlmConnectionReader;
@@ -112,6 +138,8 @@ interface ConsumerKeys {
   provider: string;
   model: string;
   timeoutMs: string;
+  maxOutputTokens: string;
+  reasoningEffort: string;
 }
 
 function consumerKeys(consumer: LlmConsumer): ConsumerKeys {
@@ -120,6 +148,38 @@ function consumerKeys(consumer: LlmConsumer): ConsumerKeys {
     provider: `${prefix}.provider`,
     model: `${prefix}.model`,
     timeoutMs: `${prefix}.timeout_ms`,
+    maxOutputTokens: `${prefix}.max_output_tokens`,
+    reasoningEffort: `${prefix}.reasoning_effort`,
+  };
+}
+
+// Clamp-on-read, like the timeout: a hand-edited or corrupt value falls back to the
+// job's default rather than feeding a call a zero or absurd cap.
+function readMaxOutputTokens(raw: string | null, consumer: LlmConsumer): number {
+  const n = Number(raw);
+  return raw !== null &&
+    Number.isInteger(n) &&
+    n >= MIN_MAX_OUTPUT_TOKENS &&
+    n <= MAX_MAX_OUTPUT_TOKENS
+    ? n
+    : DEFAULT_MAX_OUTPUT_TOKENS[consumer];
+}
+
+function readReasoningEffort(raw: string | null): ReasoningEffort | null {
+  return REASONING_EFFORTS.find((effort) => effort === raw) ?? null;
+}
+
+/** What a job needs to build its LLM client (everything but the token). */
+export type ConsumerConnection = Omit<LlmClientConfig, "token"> & { timeoutMs: number };
+
+/** The client settings a resolved consumer config implies. */
+export function consumerConnection(config: ConsumerConfig): ConsumerConnection {
+  return {
+    endpoint: config.endpoint,
+    model: config.model,
+    timeoutMs: config.timeoutMs,
+    maxOutputTokens: config.maxOutputTokens,
+    ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}),
   };
 }
 
@@ -179,6 +239,8 @@ export function readConsumerConfig(store: ConsumerReader, consumer: LlmConsumer)
   const providerId = store.getSetting(keys.provider) ?? "";
   const model = store.getSetting(keys.model) ?? "";
   const timeoutMs = parseTimeoutMs(store.getSetting(keys.timeoutMs));
+  const maxOutputTokens = readMaxOutputTokens(store.getSetting(keys.maxOutputTokens), consumer);
+  const reasoningEffort = readReasoningEffort(store.getSetting(keys.reasoningEffort));
   const provider = providerId ? getProvider(store, providerId) : null;
   const providerExists = provider !== null;
   const hasToken = provider?.hasToken ?? false;
@@ -190,6 +252,8 @@ export function readConsumerConfig(store: ConsumerReader, consumer: LlmConsumer)
     endpoint: provider?.endpoint ?? "",
     model,
     timeoutMs,
+    maxOutputTokens,
+    reasoningEffort,
     hasToken,
     isOperational: providerExists && hasToken && model !== "",
   };
@@ -213,6 +277,27 @@ export function writeConsumerConfig(
       );
     }
   }
+  if (patch.maxOutputTokens !== undefined) {
+    const n = patch.maxOutputTokens;
+    if (!Number.isInteger(n) || n < MIN_MAX_OUTPUT_TOKENS || n > MAX_MAX_OUTPUT_TOKENS) {
+      throw new Error(
+        `curator.${consumer}.max_output_tokens must be a whole number of tokens between ` +
+          `${MIN_MAX_OUTPUT_TOKENS} and ${MAX_MAX_OUTPUT_TOKENS}; got ${n}.`,
+      );
+    }
+  }
+  const effort = patch.reasoningEffort;
+  if (
+    effort !== undefined &&
+    effort !== null &&
+    effort !== "" &&
+    !REASONING_EFFORTS.includes(effort)
+  ) {
+    throw new Error(
+      `curator.${consumer}.reasoning_effort must be one of ${REASONING_EFFORTS.join(", ")}, ` +
+        `or empty for the provider default; got '${String(effort)}'.`,
+    );
+  }
   const keys = consumerKeys(consumer);
   if (patch.enabled !== undefined) {
     if (consumer === "chat") {
@@ -223,6 +308,10 @@ export function writeConsumerConfig(
   if (patch.providerId !== undefined) store.setSetting(keys.provider, patch.providerId);
   if (patch.model !== undefined) store.setSetting(keys.model, patch.model);
   if (patch.timeoutMs !== undefined) store.setSetting(keys.timeoutMs, String(patch.timeoutMs));
+  if (patch.maxOutputTokens !== undefined) {
+    store.setSetting(keys.maxOutputTokens, String(patch.maxOutputTokens));
+  }
+  if (effort !== undefined) store.setSetting(keys.reasoningEffort, effort ?? "");
 }
 
 /**

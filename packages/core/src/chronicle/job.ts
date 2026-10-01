@@ -4,6 +4,8 @@ import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
+  type ConsumerConnection,
+  consumerConnection,
 } from "../curator-consumers.js";
 import { isCuratorPausedForRestore } from "../curator-pause.js";
 import { type LlmClient, createGroomingLlmClient } from "../grooming-llm-client.js";
@@ -47,10 +49,7 @@ export interface ChronicleTickOptions {
   trigger?: ChronicleRunTrigger;
   /** Manual admin runs may override the default-off job gate. */
   allowDisabled?: boolean;
-  buildClient?: (
-    conn: { endpoint: string; model: string; timeoutMs: number },
-    token: string,
-  ) => LlmClient;
+  buildClient?: (conn: ConsumerConnection, token: string) => LlmClient;
   /** Monotonic-enough millisecond clock for duration accounting; test-injectable. */
   clock?: () => number;
 }
@@ -196,13 +195,10 @@ function buildNarratorClient(
   if (!token) return null;
   const build =
     injected ??
-    ((conn: { endpoint: string; model: string; timeoutMs: number }, secret: string) =>
+    ((conn: ConsumerConnection, secret: string) =>
       createGroomingLlmClient({ ...conn, token: secret }));
   try {
-    return build(
-      { endpoint: config.endpoint, model: config.model, timeoutMs: config.timeoutMs },
-      token,
-    );
+    return build(consumerConnection(config), token);
   } catch {
     return null;
   }

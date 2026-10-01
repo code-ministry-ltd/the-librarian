@@ -27,6 +27,7 @@ import {
   INTAKE_ENABLED_KEY,
   type LibrarianStore,
   type LlmClient,
+  LlmClientError,
   type Shelf,
   type VaultRouter,
   addProvider,
@@ -502,9 +503,108 @@ describe("runTranscriptSweepTick — fail-soft", () => {
 
     const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => flaky });
 
-    // One buffer's extractor threw (0 facts, fail-soft), the other still ran.
+    // One buffer's extractor threw (kept for a retry), the other still ran.
     expect(summary.extracted).toBe(2);
+    expect(summary.failed).toBe(1);
     expect(summary.facts).toBe(1);
+  });
+});
+
+describe("runTranscriptSweepTick — a failed extraction keeps the conversation (review #10)", () => {
+  const failing = (error: unknown = new Error("model unavailable")): LlmClient => ({
+    complete: async () => {
+      throw error;
+    },
+  });
+  const HOUR = 60 * 60_000;
+
+  it("keeps the claimed buffer when the model call fails, instead of deleting the conversation", async () => {
+    enableCapture();
+    writeBuffer("conv-1", "### user\n\nWe chose queues for durable retries.\n", IDLE_MS + 1);
+
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => failing() });
+
+    expect(summary).toMatchObject({ extracted: 1, failed: 1, facts: 0 });
+    expect(fs.readFileSync(transcriptProcessingPath(dataDir, "conv-1"), "utf8")).toContain(
+      "durable retries",
+    );
+  });
+
+  it("an unusable reply is a failure too, not an empty conversation", async () => {
+    enableCapture();
+    writeBuffer("conv-1", "### user\n\nsubstantive\n", IDLE_MS + 1);
+    const garbage: LlmClient = {
+      complete: async () => ({ content: "not json at all", model: "m", usage: null }),
+    };
+
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => garbage });
+
+    expect(summary.failed).toBe(1);
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-1"))).toBe(true);
+  });
+
+  it("waits a full reaper window before retrying, then extracts the kept buffer", async () => {
+    enableCapture();
+    writeBuffer("conv-1", "### user\n\nWe chose queues.\n", IDLE_MS + 1);
+    await runTranscriptSweepTick({ store: store!, buildClient: () => failing() });
+
+    // Five minutes later the failed claim is still backing off.
+    const soon = await runTranscriptSweepTick({
+      store: store!,
+      now: () => Date.now() + 5 * 60_000,
+      buildClient: () => factsClient(["queues chosen"]),
+    });
+    expect(soon).toMatchObject({ reaped: 0, extracted: 0 });
+
+    // After the reaper window it is returned and extracted.
+    const later = await runTranscriptSweepTick({
+      store: store!,
+      now: () => Date.now() + HOUR + 60_000,
+      buildClient: () => factsClient(["queues chosen"]),
+    });
+    expect(later).toMatchObject({ reaped: 1, extracted: 1, facts: 1, failed: 0 });
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-1"))).toBe(false);
+  });
+
+  it("gives up on a conversation after three failed attempts and deletes it", async () => {
+    enableCapture();
+    writeBuffer("conv-1", "### user\n\nalways times out\n", IDLE_MS + 1);
+    let summary = await runTranscriptSweepTick({ store: store!, buildClient: () => failing() });
+    for (const at of [1, 2]) {
+      summary = await runTranscriptSweepTick({
+        store: store!,
+        now: () => Date.now() + at * (HOUR + 60_000),
+        buildClient: () => failing(),
+      });
+    }
+
+    expect(summary).toMatchObject({ failed: 0, abandoned: 1 });
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-1"))).toBe(false);
+    expect(fs.existsSync(transcriptBufferPath(dataDir, "conv-1"))).toBe(false);
+  });
+
+  it("stops the sweep after a provider timeout instead of sending the next conversation", async () => {
+    enableCapture();
+    writeBuffer("conv-a", "### user\n\nfirst\n", IDLE_MS + 1);
+    writeBuffer("conv-b", "### user\n\nsecond\n", IDLE_MS + 1);
+    let calls = 0;
+    const timingOut: LlmClient = {
+      complete: async () => {
+        calls += 1;
+        throw new LlmClientError("timeout", "timed out after 300000ms");
+      },
+    };
+
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => timingOut });
+
+    expect(calls).toBe(1);
+    expect(summary).toMatchObject({ extracted: 1, failed: 1, stoppedEarly: true });
+    // The untouched conversation is still waiting for the next tick.
+    expect(
+      [transcriptBufferPath(dataDir, "conv-a"), transcriptBufferPath(dataDir, "conv-b")].filter(
+        (p) => fs.existsSync(p),
+      ),
+    ).toHaveLength(1);
   });
 });
 

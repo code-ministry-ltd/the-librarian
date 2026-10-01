@@ -28,6 +28,8 @@ import {
   resolveConsumerToken,
   setIntakeExamples,
   unifiedMemoryDiff,
+  type ConsumerConnection,
+  consumerConnection,
 } from "@librarian/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -108,17 +110,9 @@ export const examplesRouter = router({
     }
     const buildClient =
       ctx.buildChatClient ??
-      ((conn: { endpoint: string; model: string; timeoutMs: number }, secret: string): LlmClient =>
-        createGroomingLlmClient({
-          endpoint: conn.endpoint,
-          token: secret,
-          model: conn.model,
-          timeoutMs: conn.timeoutMs,
-        }));
-    const client = buildClient(
-      { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
-      token,
-    );
+      ((conn: ConsumerConnection, secret: string): LlmClient =>
+        createGroomingLlmClient({ ...conn, token: secret }));
+    const client = buildClient(consumerConnection(llm), token);
 
     const current = readIntakeExamples(ctx.store).content;
     const { content: candidate } = await distillIntakeExamples({

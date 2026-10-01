@@ -196,4 +196,162 @@ describe("createGroomingLlmClient", () => {
     expect(() => createGroomingLlmClient({ ...CONFIG, token: "" })).toThrow(/token/i);
     expect(() => createGroomingLlmClient({ ...CONFIG, model: "" })).toThrow(/model/i);
   });
+
+  // ── Runaway protection (Marvin incident, 2026-10-01) ─────────────────────────
+  // A local model looped while thinking for ~240K tokens. Requests carried no
+  // output cap and were not streamed, so when the client gave up at 5 minutes the
+  // server never noticed and kept generating for 30+ minutes.
+
+  function sse(events: unknown[], { done = true } = {}): Response {
+    const body =
+      events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") +
+      (done ? "data: [DONE]\n\n" : "");
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }
+
+  it("streams the request and assembles the reply, usage and model from the event stream", async () => {
+    const fetchMock = vi.fn(async () =>
+      sse([
+        { model: "gpt-x-2026", choices: [{ delta: { role: "assistant" } }] },
+        { choices: [{ delta: { reasoning_content: "thinking…" } }] },
+        { choices: [{ delta: { content: '{"operations"' } }] },
+        { choices: [{ delta: { content: ":[]}" }, finish_reason: "stop" }] },
+        { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } },
+      ]),
+    );
+    const client = createGroomingLlmClient(CONFIG, { fetch: fetchMock });
+
+    const result = await client.complete({ messages: [{ role: "user", content: "x" }] });
+
+    const sent = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(sent.stream).toBe(true);
+    expect(sent.stream_options).toEqual({ include_usage: true });
+    expect(result).toEqual({
+      content: '{"operations":[]}',
+      model: "gpt-x-2026",
+      usage: { promptTokens: 12, completionTokens: 3, totalTokens: 15 },
+    });
+  });
+
+  it("treats a reply cut off by the output limit as an error, never as an answer", async () => {
+    const client = createGroomingLlmClient(
+      { ...CONFIG, maxOutputTokens: 100 },
+      {
+        fetch: async () =>
+          sse([
+            { choices: [{ delta: { content: '{"operations":[{"op":' }, finish_reason: "length" }] },
+          ]),
+      },
+    );
+
+    const err = await failure(() =>
+      client.complete({ messages: [{ role: "user", content: "x" }] }),
+    );
+
+    expect(err.kind).toBe("truncated");
+    expect(err.message).toMatch(/hit the output limit \(100 tokens\)/);
+    expectNoTokenLeak(err);
+  });
+
+  it("also catches the output limit on a non-streamed reply", async () => {
+    const client = createGroomingLlmClient(CONFIG, {
+      fetch: async () =>
+        completion({ choices: [{ message: { content: '{"op' }, finish_reason: "length" }] }),
+    });
+
+    const err = await failure(() =>
+      client.complete({ messages: [{ role: "user", content: "x" }] }),
+    );
+
+    expect(err.kind).toBe("truncated");
+  });
+
+  it("treats a stream that ends without [DONE] or a finish reason as malformed", async () => {
+    const client = createGroomingLlmClient(CONFIG, {
+      fetch: async () => sse([{ choices: [{ delta: { content: '{"op' } }] }], { done: false }),
+    });
+
+    const err = await failure(() =>
+      client.complete({ messages: [{ role: "user", content: "x" }] }),
+    );
+
+    expect(err.kind).toBe("malformed");
+  });
+
+  it("cancels the in-flight stream when the timeout fires, so the server stops generating", async () => {
+    let cancelled = false;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode('data: {"choices":[{"delta":{"content":"a"}}]}\n\n'),
+          );
+          init?.signal?.addEventListener("abort", () => {
+            cancelled = true;
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+        },
+      });
+      return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+    });
+    const client = createGroomingLlmClient(CONFIG, { fetch: fetchMock });
+
+    const err = await failure(() =>
+      client.complete({ messages: [{ role: "user", content: "x" }], timeoutMs: 20 }),
+    );
+
+    expect(err.kind).toBe("timeout");
+    expect(cancelled).toBe(true);
+  });
+
+  it("hangs up on a stream it rejects partway, so the server stops generating", async () => {
+    let signal: AbortSignal | undefined;
+    const client = createGroomingLlmClient(CONFIG, {
+      fetch: async (_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        // A bad event, then a stream the provider would keep writing to.
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("data: {not json\n\n"));
+          },
+        });
+        return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+      },
+    });
+
+    const err = await failure(() =>
+      client.complete({ messages: [{ role: "user", content: "x" }] }),
+    );
+
+    expect(err.kind).toBe("malformed");
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("sends the configured output limit and thinking level; a request's own limit wins", async () => {
+    const fetchMock = vi.fn(async () => completion(OK_BODY));
+    const client = createGroomingLlmClient(
+      { ...CONFIG, maxOutputTokens: 16_384, reasoningEffort: "low" },
+      { fetch: fetchMock },
+    );
+
+    await client.complete({ messages: [{ role: "user", content: "x" }] });
+    await client.complete({ messages: [{ role: "user", content: "x" }], maxTokens: 500 });
+
+    const first = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    const second = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
+    expect(first.max_tokens).toBe(16_384);
+    expect(first.reasoning_effort).toBe("low");
+    expect(second.max_tokens).toBe(500);
+  });
+
+  it("omits reasoning_effort when no thinking level is configured", async () => {
+    const fetchMock = vi.fn(async () => completion(OK_BODY));
+    const client = createGroomingLlmClient(CONFIG, { fetch: fetchMock });
+
+    await client.complete({ messages: [{ role: "user", content: "x" }] });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string)).not.toHaveProperty(
+      "reasoning_effort",
+    );
+  });
 });

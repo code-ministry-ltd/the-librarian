@@ -12,6 +12,7 @@ import {
   CURATOR_CONSUMERS,
   type LibrarianStore,
   addProvider,
+  consumerConnection,
   createLibrarianStore,
   deleteProvider,
   listProviders,
@@ -520,6 +521,64 @@ describe("per-consumer LLM resolution", () => {
       } finally {
         keyless.close();
       }
+    });
+  });
+
+  // Output limits stop a runaway model, never a healthy answer, so the defaults are
+  // generous (thinking counts towards them); the thinking level is opt-in because
+  // some hosted providers reject `reasoning_effort`.
+  describe("output limit and thinking level", () => {
+    it("defaults each job to a generous output limit and no thinking level", () => {
+      const { store } = s!;
+      expect(readConsumerConfig(store, "intake")).toMatchObject({
+        maxOutputTokens: 16_384,
+        reasoningEffort: null,
+      });
+      expect(readConsumerConfig(store, "grooming").maxOutputTokens).toBe(32_768);
+      expect(readConsumerConfig(store, "chronicle").maxOutputTokens).toBe(32_768); // inherits grooming
+    });
+
+    it("saves both, and carries them into the client connection", () => {
+      const { store } = s!;
+      writeConsumerConfig(store, "intake", { maxOutputTokens: 20_000, reasoningEffort: "low" });
+
+      const config = readConsumerConfig(store, "intake");
+      expect(config).toMatchObject({ maxOutputTokens: 20_000, reasoningEffort: "low" });
+      expect(consumerConnection(config)).toMatchObject({
+        maxOutputTokens: 20_000,
+        reasoningEffort: "low",
+      });
+    });
+
+    it("clears the thinking level with an empty value", () => {
+      const { store } = s!;
+      writeConsumerConfig(store, "intake", { reasoningEffort: "high" });
+      writeConsumerConfig(store, "intake", { reasoningEffort: "" });
+
+      const config = readConsumerConfig(store, "intake");
+      expect(config.reasoningEffort).toBeNull();
+      expect(consumerConnection(config)).not.toHaveProperty("reasoningEffort");
+    });
+
+    it("refuses an out-of-range limit or unknown thinking level with a teaching error", () => {
+      const { store } = s!;
+      expect(() => writeConsumerConfig(store, "intake", { maxOutputTokens: 10 })).toThrow(
+        /max_output_tokens must be a whole number of tokens between 256 and 1048576; got 10/,
+      );
+      expect(() =>
+        writeConsumerConfig(store, "intake", { reasoningEffort: "extreme" as never }),
+      ).toThrow(/must be one of none, low, medium, high/);
+    });
+
+    it("falls back to the default when a stored limit is corrupt", () => {
+      const { store } = s!;
+      store.setSetting("curator.intake.max_output_tokens", "0");
+      store.setSetting("curator.intake.reasoning_effort", "bogus");
+
+      expect(readConsumerConfig(store, "intake")).toMatchObject({
+        maxOutputTokens: 16_384,
+        reasoningEffort: null,
+      });
     });
   });
 });

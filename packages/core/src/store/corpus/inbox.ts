@@ -20,6 +20,15 @@ import type { Vault } from "./vault.js";
 
 const INBOX_DIR = "inbox";
 const PROCESSING_DIR = "inbox/.processing";
+// Items that failed too often to keep retrying (review 2026-09-29 item #28). Parked,
+// never deleted: the operator can read them and move one back to inbox/ to retry.
+const FAILED_DIR = "inbox/.failed";
+/**
+ * How many failed attempts an inbox item gets before the reaper parks it in
+ * `inbox/.failed/` instead of queueing it again. Each reclaim of a stale claim is
+ * one failed attempt (a timeout, a provider error or an unusable reply).
+ */
+export const DEFAULT_MAX_INBOX_ATTEMPTS = 3;
 // Zero-padded width for epoch-ms prefixes: 13 digits today, 14 by ~2286 — 15
 // leaves headroom and keeps lexicographic order == chronological order.
 const TS_WIDTH = 15;
@@ -77,6 +86,8 @@ export interface InboxItem {
   text: string;
   /** Filing/ownership hints from the original submission (possibly empty). */
   hints: InboxSubmissionHints;
+  /** Failed processing attempts so far (absent / 0 on a fresh submission). */
+  attempts?: number;
 }
 
 function pad(ms: number): string {
@@ -119,6 +130,7 @@ export function serializeInboxItem(item: InboxItem): string {
   // A directive, not a filing hint: only the `true` case is meaningful, so absent
   // and false both round-trip to "no directive" (omitted from the frontmatter).
   if (forceProposal) lines.push("force_proposal: true");
+  if (item.attempts) lines.push(`attempts: ${item.attempts}`);
   const head = `---\n${lines.join("\n")}\n---\n`;
   const body = item.text.trim();
   return body ? `${head}\n${body}\n` : head;
@@ -137,7 +149,11 @@ export function parseInboxItem(raw: string): InboxItem {
     hints.appliesTo = d.applies_to.filter((a): a is string => typeof a === "string");
   }
   if (d.force_proposal === true) hints.forceProposal = true;
-  return { id: String(d.id ?? ""), created, text: content.trim(), hints };
+  const attempts =
+    typeof d.attempts === "number" && Number.isInteger(d.attempts) && d.attempts > 0
+      ? d.attempts
+      : 0;
+  return { id: String(d.id ?? ""), created, text: content.trim(), hints, attempts };
 }
 
 /**
@@ -199,27 +215,70 @@ export function claimInboxItem(vault: Vault, relPath: string, deps: InboxDeps = 
   }
 }
 
+export interface ReapStaleClaimsOptions {
+  olderThanMs: number;
+  now: number;
+  /** Park an item once it reaches this many failed attempts (default 3). */
+  maxAttempts?: number;
+}
+
+export interface ReapResult {
+  /** Pending paths the stale claims were returned to. */
+  restored: string[];
+  /** `inbox/.failed/` paths of items that used up their attempts. */
+  parked: string[];
+}
+
 /**
- * Return claims older than `olderThanMs` to the pending queue (the boot reaper
- * for crashed-worker claims). Claim age comes from the `<claimMs>-` filename
- * prefix; fresh claims are left in place. Returns the restored pending paths.
+ * Deal with claims older than `olderThanMs` (a crashed worker, or an item whose
+ * processing failed and left its claim behind). Each one counts as a failed
+ * attempt, recorded on the item: below the cap it goes back to the pending
+ * queue at its original path; at the cap it is parked in `inbox/.failed/` so a
+ * reply that always times out stops costing a model call every hour. Claim age
+ * comes from the `<claimMs>-` filename prefix; fresh claims are left in place.
  */
-export function releaseStaleClaims(
-  vault: Vault,
-  opts: { olderThanMs: number; now: number },
-): string[] {
-  const restored: string[] = [];
+export function reapStaleClaims(vault: Vault, opts: ReapStaleClaimsOptions): ReapResult {
+  const maxAttempts = opts.maxAttempts ?? DEFAULT_MAX_INBOX_ATTEMPTS;
+  const result: ReapResult = { restored: [], parked: [] };
   for (const claimed of vault.listMarkdown(PROCESSING_DIR)) {
     const name = basename(claimed);
     const dash = name.indexOf("-");
     if (dash <= 0) continue; // malformed — not a claim we wrote; leave it
     const claimMs = Number(name.slice(0, dash));
     if (Number.isNaN(claimMs) || opts.now - claimMs < opts.olderThanMs) continue;
-    const pendingPath = `${INBOX_DIR}/${name.slice(dash + 1)}.md`;
-    vault.moveFile(claimed, pendingPath);
-    restored.push(pendingPath);
+    const stem = name.slice(dash + 1);
+
+    let item: InboxItem | null = null;
+    try {
+      item = parseInboxItem(vault.readText(claimed));
+    } catch {
+      // Unparseable front matter: still return it to the queue (the old
+      // behaviour) rather than strand it; it just can't carry a count.
+    }
+    if (!item) {
+      const pendingPath = `${INBOX_DIR}/${stem}.md`;
+      vault.moveFile(claimed, pendingPath);
+      result.restored.push(pendingPath);
+      continue;
+    }
+
+    const attempts = (item.attempts ?? 0) + 1;
+    const target = attempts >= maxAttempts ? `${FAILED_DIR}/${stem}.md` : `${INBOX_DIR}/${stem}.md`;
+    // Record the count on the claim first, then move it: the move is the one
+    // atomic step, so a crash in between leaves a claim the next reaper retries.
+    vault.writeText(claimed, serializeInboxItem({ ...item, attempts }));
+    vault.moveFile(claimed, target);
+    (attempts >= maxAttempts ? result.parked : result.restored).push(target);
   }
-  return restored;
+  return result;
+}
+
+/**
+ * Return stale claims to the pending queue (see {@link reapStaleClaims}, which
+ * also reports the items it parked). Returns the restored pending paths.
+ */
+export function releaseStaleClaims(vault: Vault, opts: ReapStaleClaimsOptions): string[] {
+  return reapStaleClaims(vault, opts).restored;
 }
 
 /** Remove a processed claim from `.processing/`. Idempotent (a no-op if gone). */

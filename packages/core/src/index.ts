@@ -221,14 +221,17 @@ export {
 } from "./transcript-buffer.js";
 export {
   type ExtractTranscriptFactsDeps,
+  type TranscriptExtraction,
   extractTranscriptFacts,
   parseExtractedFacts,
+  tryExtractTranscriptFacts,
 } from "./transcript-extract.js";
 export {
   type TranscriptSweepOptions,
   type TranscriptSweepSummary,
   DEFAULT_TRANSCRIPT_IDLE_MS,
   DEFAULT_TRANSCRIPT_MAX_BYTES,
+  DEFAULT_TRANSCRIPT_MAX_ATTEMPTS,
   DEFAULT_TRANSCRIPT_REAPER_TTL_MS,
   runTranscriptSweepTick,
 } from "./transcript-sweep.js";
@@ -286,11 +289,13 @@ export {
   type LlmCompletion,
   type LlmCompletionRequest,
   type LlmErrorKind,
+  type ReasoningEffort,
   type LlmMessage,
   type LlmRole,
   type LlmUsage,
   LlmClientError,
   createGroomingLlmClient,
+  isProviderUnavailableError,
 } from "./grooming-llm-client.js";
 export {
   type FileIo,
@@ -418,11 +423,15 @@ export {
 export {
   type ConsumerConfig,
   type ConsumerConfigPatch,
+  type ConsumerConnection,
   type ConfigurableJobConsumer,
   type CuratorConsumer,
   type LlmConsumer,
   CURATOR_CONSUMERS,
   ConsumerConfigPatchSchema,
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  REASONING_EFFORTS,
+  consumerConnection,
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
@@ -455,6 +464,9 @@ export {
   type InboxItem,
   type InboxItemRef,
   type InboxSubmissionHints,
+  type ReapResult,
+  type ReapStaleClaimsOptions,
+  DEFAULT_MAX_INBOX_ATTEMPTS,
   type Vault,
   type VaultOptions,
   type Wikilink,
@@ -467,6 +479,7 @@ export {
   parseDocument,
   parseInboxItem,
   parseWikilinks,
+  reapStaleClaims,
   releaseStaleClaims,
   relinkVault,
   renameWikilinkTarget,

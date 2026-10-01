@@ -13,7 +13,6 @@ import type { MemoryCorrectionWorkItem, MemoryStore } from "./store/memory-types
 const DEFAULT_LEASE_MS = 6 * 60_000;
 const RETRY_DELAYS_MS = [30_000, 2 * 60_000] as const;
 const MAX_RESPONSE_CHARS = 50_000;
-const MAX_COMPLETION_TOKENS = 2_000;
 
 type CorrectionStore = Pick<
   MemoryStore,
@@ -154,9 +153,14 @@ export async function processMemoryCorrectionWork(
     completion = await options.llmClient.complete({
       messages: buildMemoryCorrectionMessages(prepared.value),
       temperature: 0,
-      maxTokens: MAX_COMPLETION_TOKENS,
+      // No per-call cap: the Grooming job's output limit on the client governs, and
+      // a reply that hits it is rejected as `truncated`, never parsed.
     });
   } catch (error) {
+    if (error instanceof LlmClientError && error.kind === "truncated") {
+      // Retrying would hit the same limit; a person (or a higher limit) is needed.
+      return manual("provider_output_limit");
+    }
     return retryableProviderFailure(error)
       ? retryOrReview(providerFailureCode(error))
       : manual("provider_failed");

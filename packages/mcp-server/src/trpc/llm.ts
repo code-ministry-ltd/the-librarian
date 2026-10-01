@@ -63,6 +63,10 @@ const SetConsumerSchema = z.strictObject({
   providerId: z.string().optional(),
   model: z.string().optional(),
   timeoutMs: z.number().optional(),
+  // Output cap per call (thinking included) and the optional thinking level; ""/null
+  // clears the thinking level. Bounds are enforced in core's writeConsumerConfig.
+  maxOutputTokens: z.number().optional(),
+  reasoningEffort: z.enum(["none", "low", "medium", "high", ""]).nullable().optional(),
 });
 
 export const llmRouter = router({

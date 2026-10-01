@@ -22,6 +22,8 @@ import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
+  type ConsumerConnection,
+  consumerConnection,
 } from "./curator-consumers.js";
 import { isCuratorPausedForRestore } from "./curator-pause.js";
 import {
@@ -58,10 +60,7 @@ export interface GroomingTickOptions {
   allowDisabled?: boolean;
   caps?: RunCurationCaps;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
-  buildClient?: (
-    conn: { endpoint: string; model: string; timeoutMs: number },
-    token: string,
-  ) => LlmClient;
+  buildClient?: (conn: ConsumerConnection, token: string) => LlmClient;
 }
 
 export async function runGroomingTick(options: GroomingTickOptions): Promise<GroomingTickResult> {
@@ -104,21 +103,11 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
   if (!token) return { ran: false, reason: "no_token" };
 
   const buildClient =
-    options.buildClient ??
-    ((conn, secret) =>
-      createGroomingLlmClient({
-        endpoint: conn.endpoint,
-        token: secret,
-        model: conn.model,
-        timeoutMs: conn.timeoutMs,
-      }));
+    options.buildClient ?? ((conn, secret) => createGroomingLlmClient({ ...conn, token: secret }));
 
   // Build the LLM client ONCE and reuse it across every shelf pass (the client is
   // stateless per call); the caps/actor/addendum/threshold are the same for each shelf.
-  const llmClient = buildClient(
-    { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
-    token,
-  );
+  const llmClient = buildClient(consumerConnection(llm), token);
   const caps: RunCurationCaps = { maxMemories: config.maxMemoriesPerRun, ...options.caps };
   const baseRun = {
     now: options.now ?? new Date(),

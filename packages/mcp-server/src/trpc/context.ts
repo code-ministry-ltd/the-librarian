@@ -13,6 +13,7 @@
 
 import {
   type BootstrapClaimHandle,
+  type ConsumerConnection,
   type LibrarianStore,
   type LlmClient,
   type Principal,
@@ -30,10 +31,7 @@ import type { ActorDisplayProvider, GuardedAuthProvider } from "../plugin.js";
 export type TrpcRole = "admin" | "anonymous";
 
 /** Build an LLM client from a resolved connection + token (the curator.chat seam). */
-export type BuildChatClient = (
-  conn: { endpoint: string; model: string; timeoutMs: number },
-  token: string,
-) => LlmClient;
+export type BuildChatClient = (conn: ConsumerConnection, token: string) => LlmClient;
 
 export interface TrpcContext {
   /**

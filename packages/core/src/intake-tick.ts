@@ -19,6 +19,8 @@ import {
   migrateLegacyCuratorLlm,
   readConsumerConfig,
   resolveConsumerToken,
+  type ConsumerConnection,
+  consumerConnection,
 } from "./curator-consumers.js";
 import { readIntakeExamples } from "./curator-examples.js";
 import { isCuratorPausedForRestore } from "./curator-pause.js";
@@ -28,7 +30,15 @@ import type { SweepSummary } from "./intake/index.js";
 import { isIntakeEnabled } from "./intake-config.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
 
-export type IntakeTickSkipReason = "paused" | "disabled" | "incomplete_config" | "no_token";
+export type IntakeTickSkipReason =
+  "paused" | "disabled" | "incomplete_config" | "no_token" | "already_running";
+
+// Data dirs with an intake sweep in flight in this process. The scheduler never
+// overlaps its own ticks, but an admin "Run now" calls runIntakeTick directly, and
+// two sweeps against one serial model double the queue a slow request builds up.
+// So every caller goes through this one guard, keyed by data dir (not the store
+// object) so two handles on the same vault still count as one.
+const sweepsInFlight = new Set<string>();
 
 export type IntakeTickResult =
   { ran: true; summary: SweepSummary } | { ran: false; reason: IntakeTickSkipReason };
@@ -40,10 +50,7 @@ export interface IntakeTickOptions {
   /** Stale-claim TTL passed through to the sweep reaper. */
   lockTtlMs?: number;
   /** Injectable LLM client builder (defaults to the OpenAI-compatible client). */
-  buildClient?: (
-    conn: { endpoint: string; model: string; timeoutMs: number },
-    token: string,
-  ) => LlmClient;
+  buildClient?: (conn: ConsumerConnection, token: string) => LlmClient;
   /**
    * Post-intake grooming trigger (spec 043 D-A). After the sweep + decision log,
    * check the threshold/debounce and enqueue a `post_intake` groom if armed. Default
@@ -88,14 +95,7 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
   if (!token) return { ran: false, reason: "no_token" };
 
   const buildClient =
-    options.buildClient ??
-    ((conn, secret) =>
-      createGroomingLlmClient({
-        endpoint: conn.endpoint,
-        token: secret,
-        model: conn.model,
-        timeoutMs: conn.timeoutMs,
-      }));
+    options.buildClient ?? ((conn, secret) => createGroomingLlmClient({ ...conn, token: secret }));
 
   // The intake prompt addendum lives in a git-committed vault file (spec 044 D-1);
   // read it ONCE here (the sweep level), not per inbox item — intake is the hot
@@ -105,19 +105,23 @@ export async function runIntakeTick(options: IntakeTickOptions): Promise<IntakeT
   // rework F4/D3) — the curator-distilled rejected-submission examples.
   const intakeExamples = readIntakeExamples(store).content;
 
-  const summary = await store.runIntakeSweep({
-    llmClient: buildClient(
-      { endpoint: llm.endpoint, model: llm.model, timeoutMs: llm.timeoutMs },
-      token,
-    ),
-    modelProvider: llm.providerId,
-    modelName: llm.model,
-    // The ONE apply rule's single knob (D13), shared with grooming.
-    confidenceThreshold: options.confidenceThreshold ?? readApplyConfidenceThreshold(store),
-    ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
-    ...(promptAddendum ? { promptAddendum } : {}),
-    ...(intakeExamples ? { intakeExamples } : {}),
-  });
+  if (sweepsInFlight.has(store.dataDir)) return { ran: false, reason: "already_running" };
+  sweepsInFlight.add(store.dataDir);
+  let summary: SweepSummary;
+  try {
+    summary = await store.runIntakeSweep({
+      llmClient: buildClient(consumerConnection(llm), token),
+      modelProvider: llm.providerId,
+      modelName: llm.model,
+      // The ONE apply rule's single knob (D13), shared with grooming.
+      confidenceThreshold: options.confidenceThreshold ?? readApplyConfidenceThreshold(store),
+      ...(options.lockTtlMs !== undefined ? { lockTtlMs: options.lockTtlMs } : {}),
+      ...(promptAddendum ? { promptAddendum } : {}),
+      ...(intakeExamples ? { intakeExamples } : {}),
+    });
+  } finally {
+    sweepsInFlight.delete(store.dataDir);
+  }
 
   // Post-intake grooming trigger (spec 043 D-A) — the natural seam: the sweep is done
   // and its C1 decision log is written, so the applied-op count is complete. Fail-soft

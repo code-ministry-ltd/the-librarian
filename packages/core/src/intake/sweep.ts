@@ -5,10 +5,16 @@
 // safety-net tick, and the chokidar watcher all call; the scheduler that wires
 // those triggers is a separate increment.
 //
-// One item's failure never aborts the sweep: a thrown LLM/transport error leaves
-// that item's claim in `.processing/` for the next sweep's reaper to retry.
+// One item's failure never fails the sweep: a thrown LLM/transport error leaves
+// that item's claim in `.processing/` for a later sweep's reaper to retry, and the
+// reaper parks an item in `inbox/.failed/` once it has failed three times. When the
+// provider itself is struggling (a timeout, a dropped connection, a 429 or 5xx),
+// the sweep stops there instead of sending the next item into the same queue: on a
+// serial local model a timed-out request can keep generating after we hang up, so
+// firing the next one just stacks work behind it. The next tick picks up the rest.
 
-import { listInbox, releaseStaleClaims } from "../store/corpus/inbox.js";
+import { isProviderUnavailableError } from "../grooming-llm-client.js";
+import { listInbox, reapStaleClaims } from "../store/corpus/inbox.js";
 import { type IntakeLogger, completeIntakeRun, openIntakeRun } from "./decision-log.js";
 import { type IntakeInboxItemDeps, intakeInboxItem } from "./intake.js";
 
@@ -20,6 +26,8 @@ const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
 export interface IntakeSweepDeps extends IntakeInboxItemDeps {
   /** Claims older than this are reclaimed before the sweep (default 60 min). */
   lockTtlMs?: number;
+  /** Failed attempts before an item is parked in `inbox/.failed/` (default 3). */
+  maxAttempts?: number;
   /**
    * Optional intake decision-log writer (spec 043 C1). When present, the sweep
    * opens a run, records each item's outcome, and completes the run with the
@@ -47,21 +55,28 @@ export interface SweepSummary {
   claimedByOther: number;
   /** Items whose processing threw (LLM/transport); claim left for retry. */
   errored: number;
+  /** Items that used up their attempts and were parked in `inbox/.failed/`. */
+  parked: number;
+  /** True when a provider failure stopped the sweep before the inbox was empty. */
+  stoppedEarly: boolean;
 }
 
 export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummary> {
   const nowMs = (deps.now ?? Date.now)();
-  const reclaimed = releaseStaleClaims(deps.vault, {
+  const reaped = reapStaleClaims(deps.vault, {
     olderThanMs: deps.lockTtlMs ?? DEFAULT_LOCK_TTL_MS,
     now: nowMs,
-  }).length;
+    ...(deps.maxAttempts !== undefined ? { maxAttempts: deps.maxAttempts } : {}),
+  });
 
   const summary: SweepSummary = {
-    reclaimed,
+    reclaimed: reaped.restored.length,
     consolidated: 0,
     judgeErrors: 0,
     claimedByOther: 0,
     errored: 0,
+    parked: reaped.parked.length,
+    stoppedEarly: false,
   };
 
   // Open the decision-log run LAZILY (chore/quiet-empty-intake-runs): a sweep that
@@ -115,6 +130,10 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
     getIntakeRunId: ensureRun,
   };
 
+  // Parking an item is not housekeeping: the operator needs to see that a
+  // submission was given up on, so a sweep that parks something records its run.
+  if (summary.parked > 0) ensureRun();
+
   // Serial FIFO over the (reclaimed-inclusive) pending snapshot. One item at a time.
   // The run is opened lazily by the first handled item; a sweep that only sees
   // `claimed_by_other` items (or an empty inbox) never opens one — no real work.
@@ -135,6 +154,10 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
       ensureRun();
       deps.onError?.(error);
       summary.errored++;
+      if (isProviderUnavailableError(error)) {
+        summary.stoppedEarly = true;
+        break;
+      }
     }
   }
 
@@ -145,7 +168,7 @@ export async function runIntakeSweep(deps: IntakeSweepDeps): Promise<SweepSummar
     deps.intakeLog,
     runId,
     {
-      summary: `consolidated ${summary.consolidated}, judgeErrors ${summary.judgeErrors}, claimedByOther ${summary.claimedByOther}, errored ${summary.errored}, reclaimed ${summary.reclaimed}`,
+      summary: `consolidated ${summary.consolidated}, judgeErrors ${summary.judgeErrors}, claimedByOther ${summary.claimedByOther}, errored ${summary.errored}, reclaimed ${summary.reclaimed}${summary.parked ? `, parked ${summary.parked}` : ""}${summary.stoppedEarly ? ", stopped early: provider unavailable" : ""}`,
       consolidated: summary.consolidated,
       judge_errors: summary.judgeErrors,
       errored: summary.errored,

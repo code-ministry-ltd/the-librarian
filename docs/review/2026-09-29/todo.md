@@ -36,7 +36,7 @@ review. Tick an item in the same commit that fixes it, and note the PR.
 
 - [ ] **#8** Never auto-apply grooming updates/merges built from truncated or redacted evidence
 - [ ] **#9** Intake targets must come from the evidence and be active
-- [ ] **#10** A failed transcript extraction keeps the buffer for retry
+- [x] **#10** A failed transcript extraction keeps the buffer for retry (curator runaway-requests PR, v1.29.0)
 
 ## Remaining P1
 
@@ -54,6 +54,7 @@ review. Tick an item in the same commit that fixes it, and note the PR.
 - [ ] **#25** `librarian://memories` resource respects shelves and hides proposals
 - [ ] **#27** `renameFile` validates the destination kind; constrain handoff ids
 - [ ] **#28** Curator retry and failure handling
+  - [x] Bad inbox items retry for ever: attempts are counted and the third failure parks the item in `inbox/.failed/` (curator runaway-requests PR, v1.29.0). The other #28 bullets remain open.
 - [ ] **#29** MCP protocol gaps and error handling
 - [ ] **#30** Graceful shutdown ordering; validate numeric env vars
 - [ ] **#31** tRPC audit actor and error codes; shelf-scoped admin writes

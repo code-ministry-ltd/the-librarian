@@ -8,9 +8,15 @@
 // or the underlying fetch error's own message, never from the request we sent.
 //
 // The client is intentionally thin: a fetch-injectable POST with an
-// AbortController timeout. Validation of the *content* the LLM returns lives in
-// the pipeline's parse/validate stage (§10.5), not here — this layer only
-// guarantees a well-formed transport result (a string content payload).
+// AbortController timeout. Replies are STREAMED so that the timeout really ends the
+// request: when we abort, the connection closes and the provider notices on its
+// next write and stops generating. A non-streamed request keeps running on the
+// server until it finishes, however long a looping model takes. A reply that stops
+// because it hit the output limit (`finish_reason: "length"`) is an error, never an
+// answer, so a cut-off reply can never be parsed or stored. Validation of the
+// *content* the LLM returns lives in the pipeline's parse/validate stage (§10.5),
+// not here — this layer only guarantees a well-formed transport result (a string
+// content payload).
 
 export interface LlmClientConfig {
   /** Base URL, e.g. `https://api.openai.com/v1` (a trailing slash is tolerated). */
@@ -25,7 +31,17 @@ export interface LlmClientConfig {
    * on the curator path so a slow self-hosted model doesn't time out mid-batch.
    */
   timeoutMs?: number;
+  /**
+   * Default output cap (`max_tokens`) for every call that does not set its own.
+   * Thinking counts towards it on reasoning models. Unset → no cap sent.
+   */
+  maxOutputTokens?: number;
+  /** Thinking level sent as `reasoning_effort`; unset → not sent (provider default). */
+  reasoningEffort?: ReasoningEffort;
 }
+
+/** OpenAI-style `reasoning_effort` values. */
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 export type LlmRole = "system" | "user" | "assistant";
 
@@ -40,7 +56,7 @@ export interface LlmCompletionRequest {
   jsonResponse?: boolean;
   /** Sampling temperature; omitted from the request when undefined. */
   temperature?: number;
-  /** Cap on completion tokens; omitted when undefined. */
+  /** Cap on completion tokens; falls back to the client's `maxOutputTokens`. */
   maxTokens?: number;
   /** Overall request timeout in ms. Default 300_000 (5 min). */
   timeoutMs?: number;
@@ -61,7 +77,7 @@ export interface LlmCompletion {
 }
 
 /** Discriminates transport failures so the worker can decide what to retry. */
-export type LlmErrorKind = "http" | "timeout" | "network" | "malformed";
+export type LlmErrorKind = "http" | "timeout" | "network" | "malformed" | "truncated";
 
 export class LlmClientError extends Error {
   readonly kind: LlmErrorKind;
@@ -72,6 +88,21 @@ export class LlmClientError extends Error {
     this.kind = kind;
     this.status = status;
   }
+}
+
+/**
+ * True when a failure says the provider, not this one request, is the problem: a
+ * timeout, a dropped connection, a 429 or 5xx (or any other refusal not tied to
+ * the request's content). A batch job should stop there rather than send its next
+ * request into the same struggling queue. A reply cut off at the output limit,
+ * an unusable reply, or a 400 / 413 / 422 rejection of this request is about the
+ * request, so the batch can carry on after those.
+ */
+export function isProviderUnavailableError(error: unknown): boolean {
+  if (!(error instanceof LlmClientError)) return false;
+  if (error.kind === "timeout" || error.kind === "network") return true;
+  if (error.kind !== "http") return false;
+  return error.status === undefined || ![400, 413, 422].includes(error.status);
 }
 
 export interface LlmClient {
@@ -114,10 +145,17 @@ export function createGroomingLlmClient(
       } = request;
       if (!(timeoutMs > 0)) throw new Error("LLM client timeoutMs must be a positive number");
 
-      const body: Record<string, unknown> = { model, messages };
+      const outputLimit = maxTokens ?? config.maxOutputTokens;
+      const body: Record<string, unknown> = {
+        model,
+        messages,
+        stream: true,
+        stream_options: { include_usage: true },
+      };
       if (jsonResponse) body.response_format = { type: "json_object" };
       if (temperature !== undefined) body.temperature = temperature;
-      if (maxTokens !== undefined) body.max_tokens = maxTokens;
+      if (outputLimit !== undefined) body.max_tokens = outputLimit;
+      if (config.reasoningEffort !== undefined) body.reasoning_effort = config.reasoningEffort;
 
       // One controller guards the whole exchange — connect AND body read. The
       // timer stays armed until the body is fully parsed (a provider can stall
@@ -153,24 +191,39 @@ export function createGroomingLlmClient(
           );
         }
 
-        let parsed: unknown;
+        let reply: ParsedReply;
         try {
-          parsed = await response.json();
+          reply = isEventStream(response)
+            ? await readEventStream(response)
+            : parseCompletionBody(await response.json());
         } catch (err) {
-          // A stalled body read aborts via the same signal → timeout; bad JSON → malformed.
+          // A stalled body read aborts via the same signal → timeout; bad data → malformed.
           if (isAbortError(err)) {
             throw new LlmClientError("timeout", `LLM request timed out after ${timeoutMs}ms`);
           }
+          if (err instanceof LlmClientError) throw err;
           throw new LlmClientError("malformed", "LLM response was not valid JSON");
         }
 
-        const content = extractContent(parsed);
-        if (content === null) {
+        if (reply.finishReason === "length") {
+          throw new LlmClientError(
+            "truncated",
+            `LLM reply hit the output limit${outputLimit === undefined ? "" : ` (${outputLimit} tokens)`} ` +
+              "before it finished, so it was discarded. If the model needs more room (thinking " +
+              "counts too), raise this job's output limit in Curator settings.",
+          );
+        }
+        if (reply.content === null) {
           throw new LlmClientError("malformed", "LLM response had no message content");
         }
-        return { content, model: extractModel(parsed) ?? model, usage: extractUsage(parsed) };
+        return { content: reply.content, model: reply.model ?? model, usage: reply.usage };
       } finally {
         clearTimeout(timer);
+        // Hang up whatever happened. After a complete reply this is a no-op; after
+        // a reply we rejected partway (a bad event, a mid-stream error) it closes
+        // the connection, so the provider stops generating instead of finishing
+        // an answer nobody will read.
+        controller.abort();
       }
     },
   };
@@ -204,12 +257,91 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function extractContent(parsed: unknown): string | null {
-  if (!isRecord(parsed) || !Array.isArray(parsed.choices)) return null;
-  const first = parsed.choices[0];
-  if (!isRecord(first) || !isRecord(first.message)) return null;
-  const content = first.message.content;
-  return typeof content === "string" ? content : null;
+interface ParsedReply {
+  content: string | null;
+  model: string | null;
+  usage: LlmUsage | null;
+  finishReason: string | null;
+}
+
+function parseCompletionBody(parsed: unknown): ParsedReply {
+  const choice = firstChoice(parsed);
+  const message = isRecord(choice) && isRecord(choice.message) ? choice.message : null;
+  return {
+    content: message && typeof message.content === "string" ? message.content : null,
+    model: extractModel(parsed),
+    usage: extractUsage(parsed),
+    finishReason: finishReasonOf(choice),
+  };
+}
+
+function isEventStream(response: Response): boolean {
+  // A provider that ignores `stream: true` answers with plain JSON; handle both.
+  return (response.headers?.get("content-type") ?? "").includes("text/event-stream");
+}
+
+/**
+ * Assemble a streamed chat completion from its server-sent events. Content deltas
+ * are concatenated; reasoning deltas are ignored (thinking never becomes the
+ * answer). A stream that ends without `[DONE]` or a finish reason is incomplete
+ * and therefore malformed.
+ */
+async function readEventStream(response: Response): Promise<ParsedReply> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new LlmClientError("malformed", "LLM response had no body");
+  const decoder = new TextDecoder();
+  const reply: ParsedReply = { content: null, model: null, usage: null, finishReason: null };
+  let buffered = "";
+  let done = false;
+  const handleLine = (line: string): void => {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (data === "[DONE]") {
+      done = true;
+      return;
+    }
+    let event: unknown;
+    try {
+      event = JSON.parse(data);
+    } catch {
+      throw new LlmClientError("malformed", "LLM stream sent an event that was not valid JSON");
+    }
+    if (isRecord(event) && event.error !== undefined) {
+      throw new LlmClientError("http", "LLM provider reported an error mid-stream");
+    }
+    reply.model = reply.model ?? extractModel(event);
+    reply.usage = extractUsage(event) ?? reply.usage;
+    const choice = firstChoice(event);
+    if (isRecord(choice) && isRecord(choice.delta) && typeof choice.delta.content === "string") {
+      reply.content = (reply.content ?? "") + choice.delta.content;
+    }
+    reply.finishReason = finishReasonOf(choice) ?? reply.finishReason;
+  };
+  for (;;) {
+    const { value, done: streamEnded } = await reader.read();
+    if (streamEnded) break;
+    buffered += decoder.decode(value, { stream: true });
+    let newline = buffered.indexOf("\n");
+    while (newline >= 0) {
+      handleLine(buffered.slice(0, newline).replace(/\r$/, ""));
+      buffered = buffered.slice(newline + 1);
+      newline = buffered.indexOf("\n");
+    }
+  }
+  handleLine((buffered + decoder.decode()).trim());
+  if (!done && reply.finishReason === null) {
+    throw new LlmClientError("malformed", "LLM stream ended before the reply was complete");
+  }
+  return reply;
+}
+
+function firstChoice(parsed: unknown): unknown {
+  if (!isRecord(parsed) || !Array.isArray(parsed.choices)) return undefined;
+  return parsed.choices[0];
+}
+
+function finishReasonOf(choice: unknown): string | null {
+  return isRecord(choice) && typeof choice.finish_reason === "string" ? choice.finish_reason : null;
 }
 
 function extractModel(parsed: unknown): string | null {

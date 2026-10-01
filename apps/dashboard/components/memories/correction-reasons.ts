@@ -34,6 +34,8 @@ const CORRECTION_REASONS: Record<string, string> = {
   provider_unavailable: "No working Grooming model is configured.",
   token_unavailable: "The Grooming provider's API key couldn't be read.",
   provider_failed: "The Grooming model request failed.",
+  provider_output_limit:
+    "The Grooming model's reply hit its output limit before it finished, so it was discarded. Raise the Grooming output limit in Curator settings, then Re-assess.",
   retry_exhausted: "The Grooming model kept failing, so the curator stopped retrying.",
   max_attempts: "The curator stopped after the maximum number of attempts.",
   invalid_apply_threshold: "The auto-apply threshold setting is invalid.",

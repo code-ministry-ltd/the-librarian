@@ -42,8 +42,9 @@ it runs. At the top you manage **LLM providers** — add a provider (such as
 Anthropic or OpenAI) with its credentials, **test** the connection, and edit or
 remove it. Below that are three tabs: **Intake** files submissions, **Grooming**
 tends the existing collection, and **Chronicle** writes a weekly searchable
-review. Each tab contains its schedule or trigger controls, model selection, run
-history, and a **Run now** button. Chronicle's model is optional: its factual
+review. Each tab contains its schedule or trigger controls, model selection (with
+the job's **output limit** and **thinking level**), run history, and a **Run now**
+button. Chronicle's model is optional: its factual
 digest is always available.
 
 For the bigger picture — what the two jobs do and how to tune them — see

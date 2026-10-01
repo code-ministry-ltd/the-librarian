@@ -12,6 +12,7 @@ import {
   readGroomingConfig,
   resolveConsumerToken,
   validateShelfSet,
+  consumerConnection,
 } from "@librarian/core";
 import type { SerialScheduler, Shelf } from "@librarian/core";
 import type { MemoryCorrectionWakeRequest } from "./mcp/tool.js";
@@ -133,12 +134,7 @@ export function createMemoryCorrectionRuntime(
         if (!token) {
           preconditionFailure = "token_unavailable";
         } else {
-          llmClient = createGroomingLlmClient({
-            endpoint: config.endpoint,
-            token,
-            model: config.model,
-            timeoutMs: config.timeoutMs,
-          });
+          llmClient = createGroomingLlmClient({ ...consumerConnection(config), token });
         }
       } catch {
         preconditionFailure = "token_unavailable";

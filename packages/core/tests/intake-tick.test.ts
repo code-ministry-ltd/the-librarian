@@ -128,6 +128,38 @@ describe("runIntakeTick — operational", () => {
     ).toContain("Elaine");
   });
 
+  it("a Run now during a sweep in flight is refused instead of starting a second sweep", async () => {
+    configureLlm();
+    store!.submitToInbox("Elaine moved to Berlin.");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let calls = 0;
+    const slowClient: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        calls++;
+        await gate;
+        return createJudgmentClient().complete(request);
+      },
+    };
+
+    const first = runIntakeTick({ store: store!, buildClient: () => slowClient });
+    await vi.waitFor(() => expect(calls).toBe(1));
+    const second = await runIntakeTick({
+      store: store!,
+      allowDisabled: true,
+      buildClient: () => slowClient,
+    });
+
+    expect(second).toEqual({ ran: false, reason: "already_running" });
+    release();
+    expect(await first).toMatchObject({ ran: true, summary: { consolidated: 1 } });
+    expect(calls).toBe(1);
+    // Once the first sweep finishes, the next one runs normally.
+    expect(await runIntakeTick({ store: store!, buildClient: () => slowClient })).toMatchObject({
+      ran: true,
+    });
+  });
+
   it("an empty-inbox tick still RAN (cadence advances) but records NO run", async () => {
     // The noisy case: a scheduled tick over an empty inbox. It must report ran:true
     // (so the scheduler stamps curator.intake.last_sweep_at and the cadence advances

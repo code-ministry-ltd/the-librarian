@@ -9,6 +9,49 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.29.0] — 2026-10-01
+
+### Added
+
+- **Per-job output limit and thinking level.** Each curator job (Intake,
+  Grooming, Chronicle, and the curator chat) now has an **Output limit (tokens)**
+  and an optional **Thinking level** in Settings → Curator. The limit is sent as
+  `max_tokens` and defaults to 16,384 for Intake, 32,768 for Grooming, 8,192 for
+  Chronicle, and 16,384 for chat. Before this, requests sent no limit, so a
+  provider could generate hundreds of thousands of tokens for a single reply. The
+  thinking level is sent as `reasoning_effort`; leave it on Provider default to
+  send nothing.
+
+### Fixed
+
+- **A timed-out curator request no longer keeps the model busy.** Replies are now
+  streamed, so when the curator gives up on a request the provider sees the
+  disconnect and stops generating. Before this, a serial local model (llama-swap
+  and similar) kept working on an abandoned request while the next one queued
+  behind it.
+- **A reply cut off at the output limit is never used.** A reply the provider
+  stopped at the limit (`finish_reason: "length"`) is now discarded with an error
+  that names the limit to raise, rather than being parsed as an answer. A flagged
+  correction in that state stays flagged with an explanation.
+- **The intake sweep stops when the model is struggling.** After a timeout, a
+  dropped connection, a rate limit, or a server error, the sweep stops instead of
+  sending the next inbox item into the same queue; the rest wait for the next
+  run. A reply cut off at the limit, or an unusable reply, still lets the sweep
+  carry on.
+- **Intake Run now can't overlap a sweep.** Pressing Run now while a sweep is in
+  flight reports "a sweep is already running" instead of starting a second sweep
+  against the same model.
+- **Failing inbox items are no longer retried forever** (review 2026-09-29
+  #28). Each item now records its failed attempts. After the third failure it is
+  set aside in `inbox/.failed/` rather than costing a model call every hour, and
+  the run summary reports it. To retry an item, move it back into `inbox/`.
+- **A failed transcript extraction no longer deletes the conversation** (review
+  2026-09-29 #10). If the model call fails or its reply is unusable, the captured
+  conversation is kept and retried after the hour-long back-off. Only an answered
+  extraction deletes it. After the third failure it is dropped, so captured text
+  is never kept indefinitely. Extraction also stops after a timeout, as intake
+  does.
+
 ## [1.28.0] — 2026-09-30
 
 ### Security
@@ -4762,6 +4805,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.29.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.1...v1.27.0
 [1.26.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.26.0...v1.26.1

@@ -18,6 +18,7 @@ const REASON_COPY: Record<string, string> = {
   not_due: "nothing to do",
   paused: "a vault restore is in progress — retry once it finishes",
   no_writable_shelves: "there are no writable system shelves",
+  already_running: "a sweep is already running — its results will show when it finishes",
 };
 
 const skipLabel = (reason: string) =>
@@ -34,9 +35,15 @@ export function renderGroomingResult(result: GroomingTickResult): string {
 export function renderIntakeResult(
   result: IntakeTickResult | { ran: false; reason: "disabled" },
 ): string {
-  return result.ran
-    ? `Ran — ${result.summary.consolidated} item(s) consolidated.`
-    : skipLabel(result.reason);
+  if (!result.ran) return skipLabel(result.reason);
+  const { consolidated, parked, stoppedEarly } = result.summary;
+  const parkedNote = parked
+    ? ` ${parked} item(s) failed three times and were set aside in inbox/.failed.`
+    : "";
+  const stoppedNote = stoppedEarly
+    ? " Stopped early: the model timed out or was unavailable, so the rest wait for the next run."
+    : "";
+  return `Ran — ${consolidated} item(s) consolidated.${parkedNote}${stoppedNote}`;
 }
 
 /** Chronicle pass: one digest per writable system shelf, optionally narrated. */

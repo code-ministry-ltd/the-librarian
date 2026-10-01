@@ -7,7 +7,7 @@
 // unusable model response yields zero facts (fail-soft, never throws).
 
 import type { LlmClient, LlmCompletionRequest } from "@librarian/core";
-import { extractTranscriptFacts } from "@librarian/core";
+import { extractTranscriptFacts, tryExtractTranscriptFacts } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 /** A fake LLM returning a fixed candidate-facts JSON payload. */
@@ -175,5 +175,32 @@ describe("extractTranscriptFacts — one LLM pass → N candidate facts", () => 
     };
     const facts = await extractTranscriptFacts("### user\n\nq\n", { llmClient: client });
     expect(facts).toEqual(["good fact", "another fact"]);
+  });
+});
+
+describe("tryExtractTranscriptFacts — a failed pass is not an empty conversation", () => {
+  it("reports a thrown model call as a failure, not as zero facts", async () => {
+    const outcome = await tryExtractTranscriptFacts("### user\n\nsubstantive\n", {
+      llmClient: {
+        complete: async () => {
+          throw new Error("network down");
+        },
+      },
+    });
+    expect(outcome.ok).toBe(false);
+  });
+
+  it("reports an unusable reply as a failure", async () => {
+    const outcome = await tryExtractTranscriptFacts("### user\n\nsubstantive\n", {
+      llmClient: { complete: async () => ({ content: "nope", model: "m", usage: null }) },
+    });
+    expect(outcome.ok).toBe(false);
+  });
+
+  it("reports an answered pass with nothing worth keeping as success with no facts", async () => {
+    const outcome = await tryExtractTranscriptFacts("### user\n\nhi\n", {
+      llmClient: { complete: async () => ({ content: '{"facts": []}', model: "m", usage: null }) },
+    });
+    expect(outcome).toEqual({ ok: true, facts: [] });
   });
 });
