@@ -34,25 +34,24 @@ reason not to.
 
 ## The one rule that governs what happens automatically
 
-The curator applies safe changes itself and asks you about risky ones:
+The curator applies a change itself when it is confident enough, and asks you
+otherwise:
 
-- **Create, update, and merge** are applied automatically **when the curator is
-  confident enough**. The **Auto-apply threshold** slider appears in **both Intake
-  and Grooming** under [Settings → Curator](/dashboard/curator/). These are two views
-  of **the same setting**, defaulting to 0.8; saving it in either tab changes both
-  jobs. **Raise it to review more proposals; lower it to let the curator apply more
-  unattended.**
-- **Archive and split** — the only operations that lose or reshape information —
-  **always** become [proposals](/dashboard/proposals/) for you to approve, no matter
-  how confident the curator is. Changes to memories marked `requires_approval` and
-  submissions explicitly marked `forceProposal` also require review. Approving a
-  proposal does **not** protect the resulting memory: once accepted, later curator
-  changes to it follow the threshold like any other memory.
+- **Every operation** (create, update, merge, split and archive) is applied
+  automatically **when the curator's confidence is at or above the threshold**, and
+  becomes a [proposal](/dashboard/proposals/) for you to approve below it. The
+  **Auto-apply threshold** slider appears in **both Intake and Grooming** under
+  [Settings → Curator](/dashboard/curator/). These are two views of **the same
+  setting**, defaulting to 0.8; saving it in either tab changes both jobs. **Raise
+  it to review more proposals; lower it to let the curator apply more unattended.**
+- **At 0, nothing comes to you.** The curator archives, splits and rewrites on its
+  own. Nothing is deleted: an archived memory stays on the
+  [Archive](/dashboard/archive/) page, and the vault's history keeps every earlier
+  version, with a restore on the [Activity](/dashboard/activity/) page. At **1**,
+  nearly everything becomes a proposal.
 
-Even at **0**, these exceptions can produce Intake proposals. Lowering the threshold
-also does not remove proposals already in the queue; review or reject those
-separately. So you are never surprised by a memory vanishing — the most a
-confident curator does on its own is add and tidy.
+Lowering the threshold does not remove proposals already in the queue; review or
+reject those separately.
 
 ## Choosing a model
 

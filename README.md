@@ -128,10 +128,10 @@ every harness.
   uploaded by the admin, chunk-indexed with persistently cached embeddings so a
   500KB document is searchable end-to-end via `search_references` — deliberately
   *not* auto-recalled.
-- **Memory curator** — one curator, one prompt core, one apply rule: routine
-  operations (`create`/`update`/`merge`) auto-apply above a single confidence
-  threshold; destructive ones (`archive`/`split`) always become human-reviewed
-  proposals.
+- **Memory curator** — one curator, one prompt core, one apply rule: every
+  operation (`create`/`update`/`merge`/`split`/`archive`) auto-applies at or
+  above a single confidence threshold and becomes a human-reviewed proposal
+  below it.
 - **Dashboard as the complete admin surface** — memory browser, proposal +
   flag queues, curator config/chat/run history, **vault explorer/editor**
   (Obsidian-lite: tree, rendered markdown, wikilinks, backlinks, validated
@@ -254,10 +254,10 @@ The curator engine does two corpus-maintenance jobs, configured and observed fro
 (`/curator`): **Intake** consolidates each new submission as
 it lands (create / update / merge against the corpus), and **Grooming** tends the
 existing corpus (dedupe, archive stale, refine) — triggered, not scheduled. Under
-**one apply rule** (ADR 0007), `create` / `update` / `merge` auto-apply once the
-curator's confidence clears a single threshold (default **0.8**), while `archive`
-and `split` — the only operations that destroy or restructure information —
-**always** become proposals for human review. The curator's LLM API token is one
+**one apply rule** (ADR 0007, amended by ADR 0014), every operation — `create`,
+`update`, `merge`, `split` and `archive` — auto-applies once the curator's
+confidence clears a single threshold (default **0.8**) and becomes a proposal for
+human review below it. Set the threshold to 0 and nothing waits for you. The curator's LLM API token is one
 of the server's own credentials that `LIBRARIAN_SECRET_KEY` encrypts; the master
 key protects those creds, not the vault (your memories stay plaintext markdown by
 design; ADR 0008).

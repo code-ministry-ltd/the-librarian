@@ -9,6 +9,37 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.31.0] — 2026-10-07
+
+### Changed
+
+- **The auto-apply threshold now decides every curator change, archive and split
+  included** ([ADR 0014](docs/adr/0014-threshold-governs-every-curator-operation.md)).
+  Until now, archive and split always went to you, whatever the threshold, so a
+  threshold of 0 still filled the Proposals page with splits and the Flagged page
+  with "curator proposes archive" items.
+  - **At 0, nothing comes to you.** Intake and grooming apply every change
+    themselves. An applied split files its replacements first, then archives the
+    original; an applied archive archives the memory. Nothing is deleted: archived
+    memories stay on the Archive page and in the vault's history.
+  - **At the default 0.8, confident archives and splits now apply without review.**
+    If you want to keep reviewing them, raise the threshold.
+  - **Memories marked `requires_approval` are no longer an exception.** The curator
+    changes them under the same threshold.
+  - **Proposals already waiting stay put.** Review or reject them once; nothing
+    new is added for changes the curator is confident about.
+  - The curator prompt moved to v6.1 to say so, so the first scheduled groom after
+    upgrading reprocesses the whole corpus once. On a slow local model, expect one
+    long run.
+  - The threshold slider's note in Curator settings and the docs-site Curator,
+    Proposals and Flagged pages now describe the single rule.
+
+### Removed
+
+- **The `forceProposal` inbox directive.** Nothing has set it since
+  `propose_memory` was retired. An inbox file that still carries
+  `force_proposal: true` is read normally and the flag is ignored.
+
 ## [1.30.1] — 2026-10-07
 
 ### Security
@@ -4892,6 +4923,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.31.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.1...v1.31.0
 [1.30.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.0...v1.30.1
 [1.30.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.1...v1.30.0
 [1.29.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.0...v1.29.1

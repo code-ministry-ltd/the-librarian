@@ -20,12 +20,13 @@ the five memories most closely related to it, then does one of these:
   the rest of the memory as it was. When its confidence is at or above the
   auto-apply threshold in [Curator settings](/dashboard/settings/#curator), the fix
   applies straight away and the flag closes.
-- **Proposes a correction.** Below the threshold, or for a protected memory, the fix
+- **Proposes a correction.** Below the threshold, the fix
   goes to the [Proposals](/dashboard/proposals/) page. Approving it replaces the
   memory and closes the flag; rejecting it keeps the original and marks the flag
   declined.
-- **Proposes archiving it.** When the whole memory is obsolete, the curator proposes
-  archiving it; you decide on this page.
+- **Archives it.** When the whole memory is obsolete, the curator archives it if its
+  confidence clears the threshold. Below the threshold it proposes archiving it
+  instead, and you decide on this page.
 - **Leaves it.** When it cannot tell what is true now, it changes nothing and says
   why.
 

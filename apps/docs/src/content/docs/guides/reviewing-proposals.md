@@ -10,13 +10,12 @@ it usually takes a minute or two. This guide explains how to do it well.
 
 ## Why some changes need you and others don't
 
-The curator follows one simple rule. Safe, additive operations — creating a memory,
-updating one, or merging near-duplicates — it applies on its own **when it is
-confident enough**. The two operations that *lose or reshape* information —
-**archiving** a memory and **splitting** one apart — are never done automatically;
-they always become proposals. So does any change to a memory you have marked as
-needing approval. The queue, in other words, is exactly the set of changes worth a
-human glance, and nothing else.
+The curator follows one simple rule. Any change it is **confident enough** about —
+creating, updating, merging, splitting or archiving a memory — it applies on its
+own. Anything below the **auto-apply threshold** in
+[Settings → Curator](/dashboard/curator/) becomes a proposal. The queue, in other
+words, is the set of changes the curator was unsure of, and nothing else. Set the
+threshold to 0 and the queue stays empty.
 
 ## The workflow
 

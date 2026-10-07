@@ -253,14 +253,14 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
     expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "create" });
   });
 
-  // Phase 1 review F3: an intake archive rides the flag-review queue (mirroring
-  // grooming, D13/D4) — it FLAGS the judged target so the admin sees an
+  // Phase 1 review F3: a below-threshold intake archive rides the flag-review
+  // queue (mirroring grooming, D4) — it FLAGS the judged target so the admin sees an
   // actionable review item, instead of filing the raw submission as a proposed
   // doc that points at nothing.
-  it("archive ALWAYS proposes — even at confidence 1.0 — by flagging the TARGET, never archiving", () => {
+  it("a below-threshold archive proposes by flagging the TARGET, never archiving", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     const out = applyIntakeJudgment(
-      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
+      judgment({ action: "archive", target_id: "mem_old", confidence: 0.5 }),
       deps(store, "The standup doc is stale."),
     );
     expect(out).toEqual({ kind: "flagged_for_archive", id: "mem_old" });
@@ -280,7 +280,7 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
       judgment({
         action: "archive",
         target_id: "mem_old",
-        confidence: 1,
+        confidence: 0.5,
         rationale: `${kw} = "leakvalue123"`,
       }),
       deps(store),
@@ -295,7 +295,7 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
       mem_old: { title: "Old", body: "Stale.", flags: [{ agent_id: "system-consolidator" }] },
     });
     const out = applyIntakeJudgment(
-      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
+      judgment({ action: "archive", target_id: "mem_old", confidence: 0.5 }),
       deps(store),
     );
     expect(out).toEqual({ kind: "skipped" });
@@ -307,7 +307,7 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
       mem_old: { title: "Old", body: "Stale.", flags: [{ agent_id: "codex" }] },
     });
     const out = applyIntakeJudgment(
-      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
+      judgment({ action: "archive", target_id: "mem_old", confidence: 0.5 }),
       deps(store),
     );
     expect(out).toEqual({ kind: "flagged_for_archive", id: "mem_old" });
@@ -322,19 +322,6 @@ describe("applyIntakeJudgment — propose lane (below threshold / guarded)", () 
     );
     expect(out).toEqual({ kind: "rejected", reason: "archive target missing" });
     expect(calls.flag.length + calls.create.length + calls.archive.length).toBe(0);
-  });
-
-  it("a requires_approval target proposes regardless of confidence (D13)", () => {
-    const { store, calls } = fakeStore({
-      mem_p: { title: "P", body: "x", requires_approval: true },
-    });
-    const out = applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_p", addition: "y", confidence: 1 }),
-      deps(store),
-    );
-    expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.update.length).toBe(0);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "augment" });
   });
 
   it("the proposed doc inherits the submitter's owner from submissionHints", () => {
@@ -450,22 +437,13 @@ describe("applyIntakeJudgment — propose lane persists the judge's plan (D1)", 
     expect(String(note.planned_addition)).not.toContain(syntheticKey);
     expect(String(note.planned_addition)).toContain("[REDACTED");
   });
-
-  it("a forced proposal above the threshold still carries the plan", () => {
-    const { store, calls } = fakeStore({ mem_elaine: { title: "Elaine", body: "x" } });
-    applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_elaine", addition: "a", confidence: 0.95 }),
-      { ...deps(store), forceProposal: true },
-    );
-    const note = calls.create[0]?.options?.curator_note as Record<string, unknown>;
-    expect(note).toMatchObject({ guessed_target_id: "mem_elaine", planned_addition: "a" });
-  });
 });
 
-describe("applyIntakeJudgment — intake split (always proposed, never auto-applied)", () => {
+describe("applyIntakeJudgment — intake split below the threshold (proposed)", () => {
   const splitJudgment = {
     action: "split" as const,
     target_id: "mem_overloaded",
+    confidence: 0.5, // below the default 0.8 threshold
     replacements: [
       { title: "Elaine", body: "About Elaine.", tags: ["person"] },
       { title: "Bob", body: "About Bob.", tags: [] },
@@ -489,16 +467,6 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
     }
     // The source candidate is NOT archived — a human archives it after accepting.
     expect(calls.archive.length).toBe(0);
-  });
-
-  it("never auto-applies a split, even at confidence 1.0", () => {
-    const { store, calls } = fakeStore({
-      mem_overloaded: { title: "Elaine and Bob", body: "mixed" },
-    });
-    const out = applyIntakeJudgment(judgment({ ...splitJudgment, confidence: 1 }), deps(store));
-    expect(out.kind).toBe("proposed");
-    expect(calls.archive.length).toBe(0); // never mutates the live source
-    for (const c of calls.create) expect(c.options?.requires_approval).toBe(true);
   });
 
   it("rejects a split whose target is missing from the store (target ∈ candidates guard)", () => {
@@ -542,113 +510,68 @@ describe("applyIntakeJudgment — intake split (always proposed, never auto-appl
   });
 });
 
-// ── Force-proposal routing (ADR 0004 → D13's upstream override) ──────────────
-//
-// When the submission itself demands review (the `forceProposal` hint), NO op
-// auto-applies: the unified decision function proposes everything but a noop
-// (which stays skipped). Without the hint (the default) the threshold rules
-// apply as normal.
-describe("applyIntakeJudgment — forceProposal routing (ADR 0004)", () => {
-  const forceDeps = (store: IntakeApplyStore, submissionText = "Elaine moved to Berlin.") => ({
-    store,
-    submissionText,
-    actorId: "system-consolidator",
-    forceProposal: true,
-  });
-
-  it("a confident create → PROPOSED (not created)", () => {
-    const { store, calls } = fakeStore();
-    const out = applyIntakeJudgment(
-      judgment({ action: "create", title: "Elaine", body: "Lives in Berlin.", tags: [] }),
-      forceDeps(store),
-    );
-    expect(out).toMatchObject({ kind: "proposed" }); // NOT "created"
-    expect(calls.create[0]?.options?.requires_approval).toBe(true);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "create" });
-    // The submission is filed as-is (the judge's curated title/body are dropped on
-    // the propose lane — a human decides from the raw submission).
-    expect(calls.create[0]?.input).toMatchObject({ body: "Elaine moved to Berlin." });
-  });
-
-  it("a confident augment → PROPOSED (target untouched)", () => {
-    const { store, calls } = fakeStore({
-      mem_elaine: { title: "Elaine", body: "Lives in Paris." },
-    });
-    const out = applyIntakeJudgment(
-      judgment({ action: "augment", target_id: "mem_elaine", addition: "moved" }),
-      forceDeps(store),
-    );
-    expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.update.length).toBe(0); // the existing doc is NOT mutated
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "augment" });
-  });
-
-  it("a confident supersede → PROPOSED (target untouched)", () => {
-    const { store, calls } = fakeStore({
-      mem_elaine: { title: "Elaine", body: "Works at Globex." },
-    });
-    const out = applyIntakeJudgment(
-      judgment({ action: "supersede", target_id: "mem_elaine", title: "t", body: "b" }),
-      forceDeps(store),
-    );
-    expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.update.length).toBe(0);
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "supersede" });
-  });
-
-  it("archive stays a flag-routed proposal (never archived) under the hint too", () => {
+// ── Archive, split and protected targets follow the threshold (ADR 0014) ────
+describe("applyIntakeJudgment — archive and split at or above the threshold apply (ADR 0014)", () => {
+  // Regression: at a zero threshold ("never ask me") an intake archive or split
+  // still went to a person.
+  it("a zero threshold archives the target, even at confidence 0 — no flag", () => {
     const { store, calls } = fakeStore({ mem_old: { title: "Old", body: "Stale." } });
     const out = applyIntakeJudgment(
-      judgment({ action: "archive", target_id: "mem_old", confidence: 1 }),
-      forceDeps(store),
+      judgment({ action: "archive", target_id: "mem_old", confidence: 0 }),
+      { ...deps(store), confidenceThreshold: 0 },
     );
-    expect(out).toEqual({ kind: "flagged_for_archive", id: "mem_old" });
-    expect(calls.archive.length).toBe(0);
-    expect(calls.flag[0]?.reason).toContain("curator proposes archive:");
+    expect(out).toEqual({ kind: "archived", id: "mem_old" });
+    expect(calls.archive).toEqual(["mem_old"]);
+    expect(calls.flag.length).toBe(0);
   });
 
-  it("split stays PROPOSED", () => {
-    const { store, calls } = fakeStore({ mem_overloaded: { title: "A and B", body: "mixed" } });
+  it("an applied archive of a missing target → rejected (fail-soft, never throws)", () => {
+    const { store, calls } = fakeStore();
+    const out = applyIntakeJudgment(
+      judgment({ action: "archive", target_id: "mem_ghost", confidence: 1 }),
+      deps(store),
+    );
+    expect(out).toEqual({ kind: "rejected", reason: "archive target missing" });
+    expect(calls.archive.length).toBe(0);
+  });
+
+  it("a confident split files live replacements, then archives the source", () => {
+    const { store, calls } = fakeStore({
+      mem_overloaded: { title: "Elaine and Bob", body: "mixed" },
+    });
     const out = applyIntakeJudgment(
       judgment({
         action: "split",
         target_id: "mem_overloaded",
+        confidence: 0.9,
         replacements: [
-          { title: "A", body: "about a", tags: [] },
-          { title: "B", body: "about b", tags: [] },
+          { title: "Elaine", body: "About Elaine.", tags: ["person"] },
+          { title: "Bob", body: "About Bob.", tags: [] },
         ],
       }),
-      forceDeps(store),
-    );
-    expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.archive.length).toBe(0); // source stays active (a proposed split)
-    expect(calls.create[0]?.options?.curator_note).toMatchObject({ proposed_action: "split" });
-  });
-
-  it("noop stays skipped (nothing proposed)", () => {
-    const { store, calls } = fakeStore();
-    expect(applyIntakeJudgment(judgment({ action: "noop" }), forceDeps(store))).toEqual({
-      kind: "skipped",
-    });
-    expect(calls.create.length).toBe(0);
-  });
-
-  it("even at confidence 1.0 a force-proposed create never auto-applies (defence-in-depth)", () => {
-    const { store, calls } = fakeStore();
-    const out = applyIntakeJudgment(
-      judgment({ action: "create", title: "T", body: "B", tags: [], confidence: 1 }),
-      forceDeps(store),
-    );
-    expect(out).toMatchObject({ kind: "proposed" });
-    expect(calls.create[0]?.options?.requires_approval).toBe(true);
-  });
-
-  it("default (forceProposal absent): a confident create still applies", () => {
-    const { store } = fakeStore();
-    const created = applyIntakeJudgment(
-      judgment({ action: "create", title: "Elaine", body: "Lives in Paris.", tags: [] }),
       deps(store),
     );
-    expect(created).toMatchObject({ kind: "created" });
+    expect(out).toEqual({ kind: "split", id: "mem_overloaded" });
+    expect(calls.create.length).toBe(2);
+    for (const c of calls.create) {
+      expect(c.options?.requires_approval).toBeUndefined(); // lands active
+      expect(c.options?.curator_note).toMatchObject({
+        source: "intake",
+        supersedes: ["mem_overloaded"],
+      });
+    }
+    expect(calls.archive).toEqual(["mem_overloaded"]); // after the replacements exist
+  });
+
+  it("a confident augment of a requires_approval target applies in place", () => {
+    const { store, calls } = fakeStore({
+      mem_p: { title: "P", body: "x", requires_approval: true },
+    });
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_p", addition: "y", confidence: 1 }),
+      deps(store),
+    );
+    expect(out).toEqual({ kind: "augmented", id: "mem_p" });
+    expect(calls.create.length).toBe(0);
   });
 });

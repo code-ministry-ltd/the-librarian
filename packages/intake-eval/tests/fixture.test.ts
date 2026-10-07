@@ -75,11 +75,10 @@ describe("IntakeFixtureEntrySchema cross-field invariants", () => {
   });
 
   it("rejects an action↔decision pair the D13 rule can never produce", () => {
-    // `archive` ALWAYS proposes — `apply` is unreachable.
+    // `noop` always skips — `apply` is unreachable.
     const bad = {
       ...base,
-      corpus: [{ id: "mem_1", title: "Stale", body: "Old.", tags: [] }],
-      expect: { action: "archive", decision: "apply", target_id: "mem_1" },
+      expect: { action: "noop", decision: "apply" },
     };
     expect(() => IntakeFixtureEntrySchema.parse(bad)).toThrow(/routing/i);
   });

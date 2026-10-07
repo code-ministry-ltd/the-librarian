@@ -269,44 +269,6 @@ describe("intakeInboxItem", () => {
     expect(capturedPrompt).not.toContain("OPERATOR GUIDANCE");
   });
 
-  it("threads a forceProposal submission hint into apply: force-proposes (ADR 0004)", async () => {
-    // The force-proposal path: the submission carries a forceProposal hint. A
-    // would-be auto-apply create lands as a PROPOSAL, proving hint → inbox item →
-    // applyIntakePlan.
-    const ref = writeInbox(vault, "Elaine moved to Berlin.", {
-      now: () => 1000,
-      generateId: () => "inbox_a",
-      hints: { forceProposal: true },
-    });
-    let createdOptions: Record<string, unknown> | undefined;
-    const store: IntakeApplyStore = {
-      createMemory: (_input, options) => {
-        createdOptions = options;
-        return { memory: { id: "mem_p" } };
-      },
-      updateMemory: () => null,
-      archiveMemory: () => null,
-      flagMemory: () => null,
-      getMemory: () => null,
-    };
-    const client = fakeClient(
-      JSON.stringify({
-        action: "create",
-        title: "Elaine",
-        body: "Elaine lives in Berlin.",
-        tags: [],
-        rationale: "novel",
-        confidence: 0.99,
-      }),
-    );
-
-    const result = await intakeInboxItem(ref.relPath, baseDeps(store, client));
-
-    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "proposed" } });
-    expect(createdOptions?.requires_approval).toBe(true);
-    expect(createdOptions?.curator_note).not.toHaveProperty("addendum_version");
-  });
-
   it("completes (removes) the item even when apply rejects — a rejection is terminal", async () => {
     const ref = writeInbox(vault, "augment that", { now: () => 1000, generateId: () => "inbox_a" });
     const { store } = fakeStore(); // empty → the augment target is missing → rejected

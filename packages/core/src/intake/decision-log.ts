@@ -94,6 +94,8 @@ function outcomeOf(outcome: IntakeOutcome): RecordIntakeOperationInput["outcome"
     case "created":
     case "augmented":
     case "superseded":
+    case "archived":
+    case "split":
       return "applied";
     // A flagged-for-archive target IS the archive proposal (review F3: it rides
     // the flag-review queue) — log it under the realised "proposed" verdict.

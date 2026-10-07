@@ -41,16 +41,14 @@ export interface RunIntakeEvalOptions {
 }
 
 // Derive the D13 verdict for a judgment the way the apply layer would, using
-// the apply layer's own action→operation mapping (INTAKE_OPERATION_OF). The
-// eval corpus carries no requires_approval memories and no forceProposal hints,
-// so only the operation type + the single threshold drive the verdict.
+// the apply layer's own action→operation mapping (INTAKE_OPERATION_OF): only the
+// operation type + the single threshold drive the verdict (ADR 0014).
 function routePlan(judgment: IntakeJudgment, threshold: number): RoutedPlan {
   return {
     decision: decideApplication({
       operation: INTAKE_OPERATION_OF[judgment.action],
       confidence: judgment.confidence,
       threshold,
-      targetRequiresApproval: false,
     }),
     judgment,
   };

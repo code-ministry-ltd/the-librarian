@@ -61,10 +61,9 @@ const NoopJudgment = z.strictObject({
  * proposed only when the submission is primarily about a DIFFERENT, already
  * well-supported entity that is itself among the candidates — so no navigate is
  * needed and the split target is an existing candidate (never a fabricated id).
- * Intake lacks grooming's whole-slice context, so an intake split is ALWAYS routed
- * to a human PROPOSAL regardless of confidence (it never auto-applies) — see
- * apply.ts. `target_id` is the overloaded doc; `replacements` are the focused docs
- * it becomes.
+ * Like every operation it applies at or above the operator's threshold and is
+ * proposed below it (ADR 0014) — see apply.ts. `target_id` is the overloaded doc;
+ * `replacements` are the focused docs it becomes.
  */
 const SplitJudgment = z.strictObject({
   action: z.literal("split"),

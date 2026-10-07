@@ -32,8 +32,8 @@ export const JUDGE_ACTIONS = ["create", "augment", "supersede", "archive", "noop
 export const ROUTING_DECISIONS = ["apply", "propose", "skip"] as const;
 
 // Which verdicts each action can actually reach (mirrors `decideApplication`
-// in @librarian/core: noop skips, archive always proposes, the rest gate on
-// the single confidence threshold). A fixture pairing an action with an
+// in @librarian/core: noop skips, everything else gates on the single
+// confidence threshold — ADR 0014). A fixture pairing an action with an
 // unreachable decision is an authoring error — reject it at parse time.
 const REACHABLE: Record<
   (typeof JUDGE_ACTIONS)[number],
@@ -43,7 +43,7 @@ const REACHABLE: Record<
   create: ["apply", "propose"],
   augment: ["apply", "propose"],
   supersede: ["apply", "propose"],
-  archive: ["propose"],
+  archive: ["apply", "propose"],
 };
 
 const CorpusDocSchema = z.strictObject({

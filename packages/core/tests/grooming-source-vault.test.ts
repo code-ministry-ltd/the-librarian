@@ -88,10 +88,9 @@ describe("createVaultGroomingMemorySource — selectMemories (global slice)", ()
     expect(source.selectMemories(GLOBAL, "active", 2).map((m) => m.id)).toEqual(["new", "mid"]);
   });
 
-  it("maps the verdict booleans onto the record", () => {
-    const source = sourceOf([mem({ id: "p", requires_approval: true, is_global: true })]);
+  it("maps is_global onto the record", () => {
+    const source = sourceOf([mem({ id: "p", is_global: true })]);
     const [rec] = source.selectMemories(GLOBAL, "active", 50);
-    expect(rec?.requiresApproval).toBe(true);
     expect(rec?.isGlobal).toBe(true);
   });
 

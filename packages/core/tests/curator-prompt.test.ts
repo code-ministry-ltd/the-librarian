@@ -73,7 +73,6 @@ function activeMem(
     status: "active",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    requiresApproval: false,
     isGlobal: false,
   };
 }
@@ -153,12 +152,14 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("teaches the ONE D13 apply rule: threshold gate + archive/split always propose", () => {
+  it("teaches the ONE D13 apply rule: the threshold decides every operation, archive and split too (ADR 0014)", () => {
     for (const system of [intakeSystem, groomingSystem]) {
       const lower = system.toLowerCase();
       expect(lower).toContain("threshold");
       expect(lower).toContain("proposal");
-      expect(lower).toMatch(/archive and split[^.]*always/i);
+      expect(lower).toMatch(/every operation, archive and split included/);
+      expect(lower).not.toMatch(/archive and split[^.]*always/);
+      expect(lower).not.toContain("requires_approval");
     }
   });
 
@@ -169,8 +170,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v6.0 prompt version (v6.0 makes grooming correct flagged memories, ADR 0013)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v6.0");
+  it("pins the v6.1 prompt version (v6.1 lets the threshold decide archive and split, ADR 0014)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v6.1");
   });
 });
 
@@ -197,7 +198,7 @@ describe("buildCuratorPrompt — intake mode", () => {
     expect(lower).toContain("overloaded");
     expect(lower).toContain('"target_id" must be one of the candidate');
     expect(lower).toContain("do not split a single-entity");
-    expect(lower).toContain("always proposed");
+    expect(lower).toContain("score it honestly");
   });
 
   it("carries the rules-rechecked-in-code notice", () => {
@@ -400,7 +401,7 @@ describe("buildCuratorPrompt — grooming mode", () => {
     expect(groomingSystem).not.toContain("SUBMISSION");
   });
 
-  it("enforces the code-side rules: ids, slice boundary, proposed sources, requires_approval, tombstones, secrets", () => {
+  it("enforces the code-side rules: ids, slice boundary, proposed sources, tombstones, secrets", () => {
     const lower = groomingSystem.toLowerCase();
     expect(lower).toMatch(/re-checked in code/);
     expect(lower).toContain("never invent an id");
@@ -410,7 +411,8 @@ describe("buildCuratorPrompt — grooming mode", () => {
     // priority was dropped from the grooming contract (the memory field was retired).
     expect(lower).not.toContain("priority");
     expect(lower).toContain("proposed_memories");
-    expect(lower).toContain("requires_approval");
+    // ADR 0014: requires_approval is no longer a curator rule.
+    expect(lower).not.toContain("requires_approval");
     expect(lower).toContain("tombstones");
     expect(lower).toMatch(/secret|credential/);
     expect(groomingSystem).toContain('{ "operations": [] }'); // the empty-slice answer

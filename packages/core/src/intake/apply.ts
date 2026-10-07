@@ -5,12 +5,10 @@
 // archiveMemory) — never raw writes — so the markdown vault + git history stay
 // authoritative.
 //
-// The decision is made HERE (not in the judge step) because two of its inputs
-// only exist at apply time: the target memory's requires_approval flag and the
-// submission's forceProposal hint. The no-clobber guard (preservesOriginal)
-// gates the augment write; a store rejection (e.g. a protected target) is
-// caught and returned as `rejected`, never thrown, so one bad item can't abort
-// a batch.
+// The decision reads only the judgment's confidence against the operator's
+// threshold (ADR 0014). The no-clobber guard (preservesOriginal) gates the
+// augment write; a store rejection is caught and returned as `rejected`, never
+// thrown, so one bad item can't abort a batch.
 
 import {
   type CuratorOperationType,
@@ -27,8 +25,6 @@ import type { IntakeJudgment } from "./judge.js";
 export interface IntakeStoredMemory {
   title: string;
   body: string;
-  /** D13: a requires_approval target routes any operation to a proposal. */
-  requires_approval?: boolean;
   /**
    * Open review flags (spec 047 / ADR 0006) — read to keep archive proposals
    * idempotent: one open curator flag per target, never a stack (review F3).
@@ -42,10 +38,15 @@ export interface IntakeApplyStore {
     input: Record<string, unknown>,
     options?: Record<string, unknown>,
   ) => { memory: { id: string } };
-  updateMemory: (id: string, patch?: Record<string, unknown>, agent_id?: string) => unknown;
+  updateMemory: (
+    id: string,
+    patch?: Record<string, unknown>,
+    agent_id?: string,
+    options?: { allowProtected?: boolean },
+  ) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
-  // An archive judgment rides the flag-review queue (review F3, mirroring
-  // grooming): the target is flagged, never archived, until a human acts.
+  // An archive judgment below the threshold rides the flag-review queue (review
+  // F3, mirroring grooming): the target is flagged, not archived, until a human acts.
   flagMemory: (id: string, reason: string, agent_id?: string) => unknown;
   getMemory: (id: string) => IntakeStoredMemory | null;
 }
@@ -68,12 +69,6 @@ export interface ApplyIntakeDeps {
    * ownership and ignore these.
    */
   submissionHints?: InboxSubmissionHints;
-  /**
-   * Force-proposal routing (ADR 0004). When true, this submission must terminate
-   * as a PROPOSAL, never an auto-apply — the upstream override the D13 decision
-   * function honours regardless of confidence (only a noop still skips).
-   */
-  forceProposal?: boolean;
   /** Optional sink for a swallowed store error, so a real bug stays observable. */
   onError?: (error: unknown) => void;
 }
@@ -82,6 +77,11 @@ export type IntakeOutcome =
   | { kind: "created"; id: string }
   | { kind: "augmented"; id: string }
   | { kind: "superseded"; id: string }
+  // An auto-applied archive (ADR 0014): the target was archived.
+  | { kind: "archived"; id: string }
+  // An auto-applied split (ADR 0014): the replacements are live and the source
+  // was archived. `id` is the SOURCE, so the decision log records the candidate.
+  | { kind: "split"; id: string }
   | { kind: "proposed"; id: string }
   // An archive judgment's honest outcome (review F3): the TARGET was flagged
   // into the review queue — no doc was filed, nothing was archived. The
@@ -171,7 +171,7 @@ export function applyIntakeJudgment(
           confidence: judgment.confidence,
         };
       default:
-        // split/archive never reach proposeSubmission; noop never proposes.
+        // split/archive have their own propose lanes; noop never proposes.
         return {};
     }
   };
@@ -191,23 +191,20 @@ export function applyIntakeJudgment(
   };
 
   try {
-    // The ONE apply rule (D13). The target's requires_approval flag is read from
-    // the authoritative store; a missing target reads as not-protected and is
-    // rejected by the apply lane below (propose lanes never need the target).
+    // The ONE apply rule (D13, ADR 0014). The target is read from the
+    // authoritative store; a missing one is rejected by the lane that needs it.
     const target = "target_id" in judgment ? store.getMemory(judgment.target_id) : null;
     const decision = decideApplication({
       operation: INTAKE_OPERATION_OF[judgment.action],
       confidence: judgment.confidence,
       threshold: deps.confidenceThreshold ?? DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
-      targetRequiresApproval: target?.requires_approval === true,
-      forceProposal: deps.forceProposal === true,
     });
 
     if (decision === "skip") return { kind: "skipped" };
 
     if (decision === "propose") {
-      // Split (spec 043 D-B + D13) — ALWAYS a proposal, never auto-applied. We
-      // spin the judge's focused replacements out as PROPOSED docs
+      // Split below the threshold (spec 043 D-B + D13). We spin the judge's
+      // focused replacements out as PROPOSED docs
       // (requires_approval) that supersede the overloaded source candidate, and
       // leave the source ACTIVE — the admin archives it on accept. The shared
       // `splitMemory` primitive (the same one grooming uses) sequences the
@@ -229,8 +226,8 @@ export function applyIntakeJudgment(
         splitMemory(store, { sourceId: judgment.target_id, replacements });
         return { kind: "proposed", id: judgment.target_id };
       }
-      // Archive (never auto-applies under D13) rides the flag-review queue,
-      // mirroring grooming (review F3): flag the judged TARGET with the redacted
+      // Archive below the threshold rides the flag-review queue, mirroring
+      // grooming (review F3): flag the judged TARGET with the redacted
       // rationale so the admin sees an actionable review item — filing the raw
       // submission as a proposed doc would point at nothing. Idempotent: an open
       // flag from this curator actor already queues the proposal, so don't stack
@@ -250,7 +247,8 @@ export function applyIntakeJudgment(
       return proposeSubmission(judgment.action);
     }
 
-    // apply — execute the judged action directly.
+    // apply — execute the judged action directly. The threshold is the only gate
+    // (ADR 0014), so a requires_approval target is written like any other.
     switch (judgment.action) {
       case "create": {
         // The judge curated title/body/tags; the submitter's scope still applies.
@@ -268,7 +266,7 @@ export function applyIntakeJudgment(
         if (!preservesOriginal(target.body, body)) {
           return { kind: "rejected", reason: "augment would clobber existing content" };
         }
-        store.updateMemory(judgment.target_id, { body }, actorId);
+        store.updateMemory(judgment.target_id, { body }, actorId, { allowProtected: true });
         return { kind: "augmented", id: judgment.target_id };
       }
       case "supersede": {
@@ -279,14 +277,33 @@ export function applyIntakeJudgment(
           judgment.target_id,
           { title: judgment.title, body: judgment.body },
           actorId,
+          { allowProtected: true },
         );
         return { kind: "superseded", id: judgment.target_id };
       }
-      case "archive":
-      case "split":
+      case "archive": {
+        if (!target) return { kind: "rejected", reason: "archive target missing" };
+        store.archiveMemory(judgment.target_id, actorId);
+        return { kind: "archived", id: judgment.target_id };
+      }
+      case "split": {
+        // The split target MUST be an existing candidate, as on the propose lane.
+        if (!target) return { kind: "rejected", reason: "split target missing" };
+        // Replacements land live; the actor makes the shared primitive archive
+        // the source after every replacement exists (data-loss-safe ordering).
+        splitMemory(store, {
+          sourceId: judgment.target_id,
+          replacements: judgment.replacements.map((r) => ({
+            input: scope({ title: r.title, body: r.body, tags: r.tags }),
+            options: note({ supersedes: [judgment.target_id] }),
+          })),
+          archiveActorId: actorId,
+        });
+        return { kind: "split", id: judgment.target_id };
+      }
       case "noop":
-        // decideApplication routes these to propose/skip, never apply — a
-        // mis-route lands as a value-free skip rather than a silent mutation.
+        // decideApplication routes noop to skip, never apply — a mis-route lands
+        // as a value-free skip rather than a silent mutation.
         return { kind: "skipped" };
     }
   } catch (error) {

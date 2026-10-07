@@ -78,7 +78,7 @@ describe("IntakeConfigForm", () => {
     expect(slider).toHaveValue("0.8");
     expect(slider).toHaveAttribute("aria-valuetext", "0.8 — Often raises proposals");
     expect(screen.getByText(/shared with grooming/i)).toBeTruthy();
-    expect(screen.getByText(/protected memories and forced submissions/i)).toBeTruthy();
+    expect(screen.getByText(/archives and splits included/i)).toBeTruthy();
 
     fireEvent.change(slider, { target: { value: "0" } });
     expect(slider).toHaveValue("0");
