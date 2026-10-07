@@ -37,7 +37,11 @@ describe("dependency security policy", () => {
 
     const expectedFloors = {
       "postcss@<=8.5.25": "8.5.26",
-      "sharp@<0.35.4": "0.35.4",
+      "sharp@<0.35.5": "0.35.5",
+      "source-map-js@>=1.0.0 <1.2.2": "1.2.2",
+      "simple-git@<4.0.2": "4.0.2",
+      "@simple-git/argv-parser@<2.0.1": "2.0.1",
+      "http-cache-semantics@<=4.2.0": "4.3.0",
       "tar@<=7.5.21": "7.5.22",
       "undici@>=8.0.0 <8.10.2": "8.10.2",
       "devalue@<5.9.3": "5.9.3",
