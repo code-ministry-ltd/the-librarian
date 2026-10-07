@@ -96,18 +96,18 @@ describe("runCuration — happy path", () => {
     const run = await runOk(SLICE, options(client));
 
     expect(run.status).toBe("completed");
-    // D13: archive never auto-applies — the cited dup is flagged for review.
-    expect(s!.store.getMemory(dupB.id)?.status).toBe("active");
-    expect(s!.store.getMemory(dupB.id)?.flags.length).toBe(1);
-    expect(s!.store.getMemory(dupA.id)?.flags.length).toBe(0); // only the cited dup
-    expect(run.summary).toContain("proposed 1");
+    // ADR 0014: a confident archive applies like any other operation.
+    expect(s!.store.getMemory(dupB.id)?.status).toBe("archived");
+    expect(s!.store.getMemory(dupA.id)?.status).toBe("active"); // only the cited dup
+    expect(s!.store.getMemory(dupB.id)?.flags.length).toBe(0); // nothing sent for review
+    expect(run.summary).toContain("applied 1");
     expect(run.usage_input_tokens).toBe(100);
     expect(run.usage_output_tokens).toBe(20);
     expect(run.input_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(run.model_name).toBe("gpt-x");
 
     const recorded = s!.store.getCurationOperations(run.id);
-    expect(recorded.some((o) => o.operation_type === "archive" && o.status === "proposed")).toBe(
+    expect(recorded.some((o) => o.operation_type === "archive" && o.status === "applied")).toBe(
       true,
     );
   });

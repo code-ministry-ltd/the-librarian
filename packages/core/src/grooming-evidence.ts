@@ -40,7 +40,6 @@ export interface GroomingMemoryRecord {
   title: string;
   body: string;
   agentId: string | null;
-  requiresApproval: boolean;
   isGlobal: boolean;
   createdAt: string;
   updatedAt: string;
@@ -123,10 +122,6 @@ export interface MemoryEvidenceItem {
   status: "active" | "proposed";
   createdAt: string;
   updatedAt: string;
-  // Section 4d.3 — the protected-memory gate (set by admin/curator).
-  // The curator's apply layer reads this to flag operations that touch
-  // a protected memory; legacy category strings are gone.
-  requiresApproval: boolean;
   isGlobal: boolean;
   // Present (and true) ONLY when a curator archive proposal is already open on
   // this memory (review F2) — the prompt tells the model to noop instead of
@@ -267,7 +262,6 @@ function toItem(
     status,
     createdAt: rec.createdAt,
     updatedAt: rec.updatedAt,
-    requiresApproval: rec.requiresApproval,
     isGlobal: rec.isGlobal,
     ...(rec.hasOpenCuratorFlag === true ? { has_open_curator_flag: true as const } : {}),
     ...(flags.length > 0

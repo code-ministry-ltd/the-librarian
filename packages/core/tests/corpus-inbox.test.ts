@@ -76,16 +76,19 @@ describe("writeInbox", () => {
     });
   });
 
-  it("round-trips a forceProposal routing directive (ADR 0004)", () => {
-    const ref = writeInbox(vault, "Elaine moved to Berlin", {
-      now: () => 1000,
-      generateId: () => "inbox_a",
-      hints: { agentId: "agent-a", forceProposal: true },
-    });
-    expect(parseInboxItem(vault.readText(ref.relPath)).hints).toEqual({
-      agentId: "agent-a",
-      forceProposal: true,
-    });
+  it("ignores the retired force_proposal directive on a legacy inbox item (ADR 0014)", () => {
+    const raw = [
+      "---",
+      'id: "inbox_a"',
+      'created: "1970-01-01T00:00:01.000Z"',
+      'agent_id: "agent-a"',
+      "force_proposal: true",
+      "---",
+      "",
+      "Elaine moved to Berlin",
+      "",
+    ].join("\n");
+    expect(parseInboxItem(raw).hints).toEqual({ agentId: "agent-a" });
   });
 
   it("round-trips an empty tag list", () => {

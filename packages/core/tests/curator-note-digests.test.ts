@@ -90,8 +90,7 @@ function deps() {
   };
 }
 
-const accept = () =>
-  ({ decision: "accept", targetRequiresApproval: false }) as ValidatedOperation["outcome"];
+const accept = () => ({ decision: "accept" }) as ValidatedOperation["outcome"];
 
 function updateOp(id: string, confidence: number): ValidatedOperation {
   return {

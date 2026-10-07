@@ -192,9 +192,8 @@ describe("intake decision log — full-outcome coverage", () => {
     expect(ops[0]).toMatchObject({ action: "augment", outcome: "applied", target_id: "m1" });
   });
 
-  it("logs an intake split as a PROPOSED op (action=split, target=the split source)", async () => {
-    // A high-confidence split must still land as a `proposed` row in the log —
-    // never `applied` (spec 043 D-B: intake split is never auto-applied).
+  it("logs a confident intake split as an APPLIED op (action=split, target=the split source)", async () => {
+    // ADR 0014: a split above the threshold applies like any other operation.
     const SPLIT_JUDGMENT = JSON.stringify({
       action: "split",
       target_id: "m1", // fakeStore.getMemory returns a doc for any id → target exists
@@ -210,7 +209,7 @@ describe("intake decision log — full-outcome coverage", () => {
     await runIntakeSweep(deps(constantClient(SPLIT_JUDGMENT), { intakeLog: store }));
     const ops = store.getIntakeOperations(store.listIntakeRuns()[0]!.id);
     expect(ops).toHaveLength(1);
-    expect(ops[0]).toMatchObject({ action: "split", outcome: "proposed", target_id: "m1" });
+    expect(ops[0]).toMatchObject({ action: "split", outcome: "applied", target_id: "m1" });
     expect(ops[0]?.source_id?.startsWith("inbox/.processing/")).toBe(true);
   });
 

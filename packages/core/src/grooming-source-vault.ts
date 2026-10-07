@@ -75,7 +75,6 @@ function toRecord(memory: Memory): GroomingMemoryRecord {
     title: String(memory.title ?? ""),
     body: String(memory.body ?? ""),
     agentId: memory.agent_id ?? null,
-    requiresApproval: memory.requires_approval === true,
     isGlobal: memory.is_global === true,
     createdAt: String(memory.created_at ?? memory.updated_at),
     updatedAt: String(memory.updated_at),

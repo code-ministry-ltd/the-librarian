@@ -8,7 +8,7 @@
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate: no empty memory, no duplicate of an active memory;
 //   - resurrection: no create/merge that matches an archived tombstone (§9.1).
-// Accepted ops are tagged targetRequiresApproval for the D13 apply decision.
+// Accepted ops go on to the D13 apply decision, which reads only confidence.
 // Reject reasons are value-free (audit hygiene).
 
 import {
@@ -32,7 +32,6 @@ function memItem(id: string, over: Partial<MemoryEvidenceItem> = {}): MemoryEvid
     status: "active",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    requiresApproval: false,
     isGlobal: false,
     ...over,
   };
@@ -197,80 +196,7 @@ describe("validateOperations — resurrection guard", () => {
   });
 });
 
-describe("validateOperations — requires_approval routing (D13)", () => {
-  it("accepts a create as not-requires-approval (no pre-existing source to consult)", () => {
-    const outcome = only(
-      [
-        {
-          type: "create",
-          memory: { ...newMem },
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx(),
-    );
-    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: false });
-  });
-
-  it("flags an archive of a requires_approval memory", () => {
-    const outcome = only(
-      [{ type: "archive", source_memory_ids: ["mem_id"], rationale: "stale", confidence: 0.9 }],
-      ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
-    );
-    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
-  });
-
-  it("flags an update of a requires_approval memory", () => {
-    const outcome = only(
-      [
-        {
-          type: "update",
-          source_memory_id: "mem_id",
-          patch: { body: "tweak" },
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
-    );
-    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
-  });
-});
-
 describe("validateOperations — security regressions (audit)", () => {
-  it("treats a merge that consumes a protected source as protected", () => {
-    const outcome = only(
-      [
-        {
-          type: "merge",
-          source_memory_ids: ["mem_id", "mem_b"],
-          replacement: { ...newMem },
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx({ active: [memItem("mem_id", { requiresApproval: true }), memItem("mem_b")] }),
-    );
-    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
-  });
-
-  it("treats a split of a protected source as protected", () => {
-    const outcome = only(
-      [
-        {
-          type: "split",
-          source_memory_id: "mem_id",
-          replacements: [{ ...newMem }, { ...newMem, title: "Two", body: "two" }],
-          rationale: "x",
-          confidence: 0.9,
-        },
-      ],
-      ctx({ active: [memItem("mem_id", { requiresApproval: true })] }),
-    );
-    expect(outcome).toMatchObject({ decision: "accept", targetRequiresApproval: true });
-  });
-
   it("accepts a create in the global slice (memories are project-less)", () => {
     const outcome = only(
       [

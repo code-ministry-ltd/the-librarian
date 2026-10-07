@@ -10,8 +10,8 @@
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate/resurrection: applied to the RESULTING content of every op
 //     (including an update's patched memory), not just brand-new memories.
-// Accepted ops are tagged `targetRequiresApproval` for the D13 apply decision
-// (curator-apply-policy.ts) — the old model-adjacent risk classification is gone.
+// Accepted ops go on to the D13 apply decision (curator-apply-policy.ts), which
+// reads only the operation's confidence (ADR 0014).
 // Reject reasons are fixed strings — never echo operation content (audit hygiene).
 
 import type {
@@ -38,8 +38,7 @@ export interface ValidationContext {
   prepass: PrepassResult;
 }
 
-export type OperationOutcome =
-  { decision: "accept"; targetRequiresApproval: boolean } | { decision: "reject"; reason: string };
+export type OperationOutcome = { decision: "accept" } | { decision: "reject"; reason: string };
 
 export interface ValidatedOperation {
   operation: GroomingOperation;
@@ -48,10 +47,6 @@ export interface ValidatedOperation {
 
 // What we need to know about each in-evidence memory to validate an op.
 interface EvidenceItem {
-  // Section 4d.3 — `category` is gone; the curator's protected-routing
-  // gate now reads `requires_approval` on the evidence shape (set by
-  // admin/curator; ground truth).
-  requiresApproval: boolean;
   status: "active" | "proposed";
   title: string;
   body: string;
@@ -82,7 +77,6 @@ export function validateOperations(
   const items = new Map<string, EvidenceItem>();
   for (const m of context.memory.activeMemories) {
     items.set(m.id, {
-      requiresApproval: m.requiresApproval,
       status: "active",
       title: m.title,
       body: m.body,
@@ -91,7 +85,6 @@ export function validateOperations(
   }
   for (const m of context.memory.proposedMemories) {
     items.set(m.id, {
-      requiresApproval: m.requiresApproval,
       status: "proposed",
       title: m.title,
       body: m.body,
@@ -165,7 +158,7 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
     return reject("would resurrect archived content");
   }
 
-  return { decision: "accept", targetRequiresApproval: touchesProtected(op, gate.items) };
+  return { decision: "accept" };
 }
 
 function reject(reason: string): OperationOutcome {
@@ -273,30 +266,4 @@ function duplicatesActive(
   return activeMemories.some(
     (a) => !sources.has(a.id) && curationContentFingerprint(a.title, a.body) === fingerprint,
   );
-}
-
-// Section 4d.3 — an op targets a requires-approval memory when it touches a
-// source whose `requires_approval=true` flag was set by admin/curator (e.g.
-// the dashboard's explicit-approval flow). Create / update / split /
-// merge that produce a NEW memory don't have a pre-existing source
-// `requires_approval` to consult — they land unprotected unless the
-// apply layer sets the flag explicitly. The conservative read: any op
-// that consumes a protected source is protected; pure-create ops are
-// not unless the curator emits an explicit hint (out of scope here).
-function touchesProtected(op: GroomingOperation, items: Map<string, EvidenceItem>): boolean {
-  const sourceProtected = (id: string) => items.get(id)?.requiresApproval === true;
-  switch (op.type) {
-    case "create":
-      return false;
-    case "merge":
-      return op.source_memory_ids.some(sourceProtected);
-    case "split":
-      return sourceProtected(op.source_memory_id);
-    case "update":
-      return sourceProtected(op.source_memory_id);
-    case "archive":
-      return op.source_memory_ids.some(sourceProtected);
-    case "noop":
-      return false;
-  }
 }

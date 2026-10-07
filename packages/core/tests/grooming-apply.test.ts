@@ -89,8 +89,7 @@ function deps(confidenceThreshold = 0.8) {
   };
 }
 
-const accept = (targetRequiresApproval = false) =>
-  ({ decision: "accept", targetRequiresApproval }) as ValidatedOperation["outcome"];
+const accept = () => ({ decision: "accept" }) as ValidatedOperation["outcome"];
 
 function ops(...validated: ValidatedOperation[]): ValidatedOperation[] {
   return validated;
@@ -184,7 +183,7 @@ describe("applyOperations — auto-apply (confidence at/above the threshold)", (
   });
 });
 
-describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
+describe("applyOperations — archive/split below the threshold propose (ADR 0014)", () => {
   it("routes an archive to the flag-review queue — sources flagged, never archived", () => {
     const m = seed();
     const summary = applyOperations(
@@ -193,7 +192,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
           type: "archive",
           source_memory_ids: [m.id],
           rationale: "dup",
-          confidence: 1, // even fully confident, archive never auto-applies
+          confidence: 0.5, // below the 0.8 threshold → a proposal
         },
         outcome: accept(),
       }),
@@ -218,7 +217,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
           type: "archive",
           source_memory_ids: [m.id],
           rationale: `${kw} = "leakvalue123"`,
-          confidence: 1,
+          confidence: 0.5,
         },
         outcome: accept(),
       }),
@@ -240,7 +239,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
         type: "archive",
         source_memory_ids: [m.id],
         rationale: "dup",
-        confidence: 1,
+        confidence: 0.5,
       },
       outcome: accept(),
     });
@@ -278,7 +277,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
         type: "archive",
         source_memory_ids: [m.id],
         rationale: "stale",
-        confidence: 1,
+        confidence: 0.5,
       },
       outcome: accept(),
     });
@@ -302,10 +301,10 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
   });
 
   // The split path routes through the shared `splitMemory` store primitive
-  // (spec 043 D-B). Under D13 a split is ALWAYS proposed: replacements land at
-  // status=proposed and the source stays ACTIVE — the admin archives it after
+  // (spec 043 D-B). Below the threshold a split is proposed: replacements land
+  // at status=proposed and the source stays ACTIVE — the admin archives it after
   // accepting (§11.1).
-  it("proposes a split's replacements and leaves the source active, even at confidence 1.0", () => {
+  it("proposes a below-threshold split's replacements and leaves the source active", () => {
     const src = seed({ title: "Mixed", body: "facts about Elaine and Bob" });
     const replacement = (title: string, body: string) => ({
       title,
@@ -320,7 +319,7 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
           source_memory_id: src.id,
           replacements: [replacement("Elaine", "about Elaine"), replacement("Bob", "about Bob")],
           rationale: "two distinct entities",
-          confidence: 1,
+          confidence: 0.5,
         },
         outcome: accept(),
       }),
@@ -341,34 +340,95 @@ describe("applyOperations — archive/split ALWAYS propose (D13)", () => {
   });
 });
 
-describe("applyOperations — requires_approval routing", () => {
-  it("routes a requires-approval create to a proposal, not an active memory", () => {
+describe("applyOperations — archive/split at or above the threshold apply (ADR 0014)", () => {
+  // Regression: with the threshold at 0 ("never ask me"), every archive and
+  // split still became a proposal, so the operator kept getting review items.
+  it("archives the source at a zero threshold, even at confidence 0 — no flag, no proposal", () => {
+    const m = seed();
     const summary = applyOperations(
       ops({
         operation: {
-          type: "create",
-          memory: {
-            title: "Identity fact",
-            body: "who they are",
-            visibility: "common",
-            project_key: "proj-x",
-          },
-          rationale: "identity",
-          confidence: 0.95,
+          type: "archive",
+          source_memory_ids: [m.id],
+          rationale: "stale",
+          confidence: 0,
         },
-        outcome: accept(true),
+        outcome: accept(),
+      }),
+      context(),
+      deps(0),
+    );
+    expect(summary).toMatchObject({ applied: 1, proposed: 0 });
+    const after = s!.store.getMemory(m.id)!;
+    expect(after.status).toBe("archived");
+    expect(after.flags).toEqual([]); // nothing routed to the review queue
+    expect(recorded()[0]).toMatchObject({
+      operation_type: "archive",
+      status: "applied",
+      target_memory_ids: [m.id],
+    });
+  });
+
+  it("applies a split at the threshold: replacements go live and the source is archived", () => {
+    const src = seed({ title: "Mixed", body: "facts about Elaine and Bob" });
+    const replacement = (title: string, body: string) => ({
+      title,
+      body,
+      visibility: "common" as const,
+      project_key: "proj-x",
+    });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "split",
+          source_memory_id: src.id,
+          replacements: [replacement("Elaine", "about Elaine"), replacement("Bob", "about Bob")],
+          rationale: "two distinct entities",
+          confidence: 0.8,
+        },
+        outcome: accept(),
       }),
       context(),
       deps(),
     );
-    expect(summary.proposed).toBe(1);
-    expect(summary.applied).toBe(0);
-    const proposedOp = recorded().find((o) => o.status === "proposed")!;
-    expect(s!.store.getMemory(proposedOp.target_memory_ids[0]!)?.status).toBe("proposed");
+    expect(summary).toMatchObject({ applied: 1, proposed: 0 });
+    expect(s!.store.getMemory(src.id)?.status).toBe("archived");
+    const targets = recorded()[0]!.target_memory_ids;
+    expect(targets).toHaveLength(2);
+    for (const id of targets) {
+      const t = s!.store.getMemory(id)!;
+      expect(t.status).toBe("active");
+      expect(t.curator_note?.supersedes).toEqual([src.id]);
+      expect(t.curator_note?.proposed_action).toBeUndefined(); // applied, not proposed
+    }
   });
 
-  it("never applies an update touching a requires_approval source, even at confidence 1.0", () => {
+  it("an applied archive settles the memory's agent flags instead of marking them reviewed", () => {
     const m = seed();
+    s!.store.flagMemory(m.id, "this whole note is obsolete", "agent-a");
+    applyOperations(
+      ops({
+        operation: {
+          type: "archive",
+          source_memory_ids: [m.id],
+          rationale: "obsolete",
+          confidence: 0.9,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(),
+    );
+    const after = s!.store.getMemory(m.id)!;
+    expect(after.status).toBe("archived");
+    expect(after.flags.every((flag) => flag.review === undefined)).toBe(true);
+  });
+});
+
+describe("applyOperations — a requires_approval memory follows the threshold too (ADR 0014)", () => {
+  it("applies a confident update to a protected memory in place", () => {
+    const m = seed({}, { requires_approval: true, status: "active" });
+    expect(s!.store.getMemory(m.id)?.requires_approval).toBe(true);
     const summary = applyOperations(
       ops({
         operation: {
@@ -378,19 +438,19 @@ describe("applyOperations — requires_approval routing", () => {
           rationale: "fix",
           confidence: 1,
         },
-        outcome: accept(true),
+        outcome: accept(),
       }),
       context(),
       deps(),
     );
-    expect(summary.proposed).toBe(1);
-    expect(s!.store.getMemory(m.id)?.title).toBe("title"); // the live doc is untouched
+    expect(summary).toMatchObject({ applied: 1, proposed: 0, failed: 0 });
+    expect(s!.store.getMemory(m.id)?.title).toBe("Changed");
   });
 });
 
 describe("applyOperations — protected update reconstruction (data integrity)", () => {
   it("proposes the corrected memory from the authoritative record, preserving untouched fields", () => {
-    // Active requires-approval memory with a body longer than the evidence
+    // An active memory with a body longer than the evidence
     // truncation cap, plus tags — both must survive a title-only patch.
     const fullBody = "X".repeat(5000);
     const m = seed({ body: fullBody, tags: ["keep"] });
@@ -402,9 +462,9 @@ describe("applyOperations — protected update reconstruction (data integrity)",
           source_memory_id: m.id,
           patch: { title: "Corrected title" },
           rationale: "fix",
-          confidence: 0.95,
+          confidence: 0.5, // below threshold → a proposal rebuilt from the store
         },
-        outcome: accept(true),
+        outcome: accept(),
       }),
       context(),
       deps(),
@@ -597,7 +657,7 @@ describe("applyOperations — proposals self-describe their provenance (D2)", ()
           source_memory_id: src.id,
           replacements: [replacement("Elaine", "about Elaine"), replacement("Bob", "about Bob")],
           rationale: "two distinct entities",
-          confidence: 1,
+          confidence: 0.5,
         },
         outcome: accept(),
       }),
@@ -627,9 +687,9 @@ describe("applyOperations — proposals self-describe their provenance (D2)", ()
             project_key: "proj-x",
           },
           rationale: "durable identity fact",
-          confidence: 0.95,
+          confidence: 0.5, // below threshold → propose
         },
-        outcome: accept(true), // requires-approval target → propose
+        outcome: accept(),
       }),
       context(),
       deps(),

@@ -9,6 +9,9 @@
 > `InboxSubmissionHints.forceProposal` remains an internal curator routing mechanism;
 > this ADR records the decision that introduced it and does not define a current MCP
 > verb.
+>
+> **Retired (2026-10-07):** ADR 0014 removed `forceProposal` altogether. Nothing set
+> it after `propose_memory` went, and the threshold is now the only apply gate.
 
 ## Context
 

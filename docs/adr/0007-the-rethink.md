@@ -128,6 +128,10 @@ operation type, not LLM-self-reported risk (D13):
   information — **always** propose;
 - any operation targeting a `requires_approval` memory proposes.
 
+> **Amended (2026-10-07):** ADR 0014 removes both exceptions. Every operation,
+> `archive` and `split` included, now applies at or above the threshold and
+> proposes below it, and `requires_approval` no longer gates curator writes.
+
 The `risk_level` field, the off/safe_only/high_confidence policy levels, the
 under-evaluation addendum lifecycle, and the dry-run modes are deleted (D4).
 Addendum edits apply immediately as git commits; the dashboard's

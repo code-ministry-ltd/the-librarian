@@ -171,12 +171,12 @@ describe("GroomingConfigForm", () => {
     }
   });
 
-  it("states that archive and split proposals are outside the threshold's reach", () => {
-    // The slider's stops describe create/update/merge only (D13). Without this
-    // line, stop 0 reads as "never raises proposals" — which the archive and split
-    // paths always contradict.
+  it("states that the threshold governs archives and splits too (ADR 0014)", () => {
+    // Stop 0 reads as "never raises proposals", and since ADR 0014 that is true
+    // for every operation. The caveat must not claim archive/split always propose.
     render(<GroomingConfigForm initial={config} onSave={vi.fn()} />);
-    expect(screen.getByText(/archive and split proposals always come to you/i)).toBeTruthy();
+    expect(screen.getByText(/archives and splits included/i)).toBeTruthy();
+    expect(screen.queryByText(/always come to you/i)).toBeNull();
   });
 
   it("snaps a legacy off-stop threshold onto the slider grid and saves the snapped value", async () => {

@@ -88,7 +88,7 @@ describe("curator on the markdown backend — read side reads the vault", () => 
 });
 
 describe("curator on the markdown backend — full run mutates the vault", () => {
-  it("runs a curation pass that flags a duplicate memory for archive review (D13)", async () => {
+  it("runs a curation pass that archives a confident duplicate in the vault (ADR 0014)", async () => {
     const dupA = seed({ title: "Dup", body: "same body" });
     const dupB = seed({ title: "Dup", body: "same body" });
 
@@ -116,12 +116,12 @@ describe("curator on the markdown backend — full run mutates the vault", () =>
 
     expect(run).not.toBeNull();
     expect(run!.status).toBe("completed");
-    // D13: the archive is PROPOSED — the vault doc is flagged for review, not archived.
-    expect(store!.getMemory(dupB.id)?.status).toBe("active");
-    expect(store!.getMemory(dupB.id)?.flags.length).toBe(1);
-    expect(store!.getMemory(dupA.id)?.flags.length).toBe(0);
+    // ADR 0014: a confident archive applies — the vault doc is archived, not flagged.
+    expect(store!.getMemory(dupB.id)?.status).toBe("archived");
+    expect(store!.getMemory(dupB.id)?.flags.length).toBe(0);
+    expect(store!.getMemory(dupA.id)?.status).toBe("active");
     // The run + operation were recorded in the sidecar run log.
     const ops = store!.getCurationOperations(run!.id);
-    expect(ops.some((o) => o.operation_type === "archive" && o.status === "proposed")).toBe(true);
+    expect(ops.some((o) => o.operation_type === "archive" && o.status === "applied")).toBe(true);
   });
 });

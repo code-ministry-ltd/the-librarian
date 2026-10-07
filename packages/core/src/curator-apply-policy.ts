@@ -1,17 +1,15 @@
-// The ONE curator apply rule (rethink D13, spec §5.3). Every apply/propose/skip
-// verdict in the system — intake apply (intake/apply.ts) and grooming apply
-// (grooming-apply.ts) — is produced HERE and nowhere else.
+// The ONE curator apply rule (rethink D13, spec §5.3, amended by ADR 0014). Every
+// apply/propose/skip verdict in the system — intake apply (intake/apply.ts) and
+// grooming apply (grooming-apply.ts) — is produced HERE and nowhere else.
 //
-// The rule is enforced by OPERATION TYPE, never by model-self-reported risk
-// (the old risk_level / off|safe_only|high_confidence policy levels are gone):
+// The rule is the operator's confidence threshold and nothing else (ADR 0014):
 //   - noop changes nothing → skip;
-//   - archive and split — the only two operations that destroy or restructure
-//     information — ALWAYS propose, regardless of confidence;
-//   - any operation targeting a requires_approval memory proposes;
-//   - the submission-level forceProposal hint (ADR 0004) is the surviving
-//     upstream override: nothing it touches ever auto-applies;
-//   - what's left (create/update/merge) auto-applies at confidence ≥ threshold,
-//     else proposes.
+//   - every other operation — create, update, merge, split and archive alike —
+//     auto-applies at confidence ≥ threshold, else proposes.
+// There are no operation-type, protected-memory or submission-level exceptions:
+// a threshold of 0 means the curator never asks, and 1 means it (nearly) always
+// does. Archive and split delete nothing: an archived memory stays in the vault,
+// and its git history keeps every earlier body.
 
 import type { LlmConnectionReader, LlmConnectionWriter } from "./llm-connection.js";
 
@@ -29,18 +27,11 @@ export interface ApplyDecisionInput {
   confidence: number;
   /** The single curator.apply.confidence_threshold knob (default 0.8). */
   threshold: number;
-  /** True when the operation touches a memory with requires_approval=true. */
-  targetRequiresApproval: boolean;
-  /** The submission-level force-proposal hint (ADR 0004); intake-only today. */
-  forceProposal?: boolean;
 }
 
-/** The one apply rule (D13). See the module comment for the full table. */
+/** The one apply rule (D13, ADR 0014). See the module comment. */
 export function decideApplication(input: ApplyDecisionInput): ApplyDecision {
   if (input.operation === "noop") return "skip";
-  if (input.forceProposal === true) return "propose";
-  if (input.targetRequiresApproval) return "propose";
-  if (input.operation === "archive" || input.operation === "split") return "propose";
   return input.confidence >= input.threshold ? "apply" : "propose";
 }
 

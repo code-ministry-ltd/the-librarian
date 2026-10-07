@@ -124,10 +124,6 @@ export async function intakeInboxItem(
     ...(deps.confidenceThreshold !== undefined
       ? { confidenceThreshold: deps.confidenceThreshold }
       : {}),
-    // A force-proposal directive rides on the submission itself (ADR 0004): a
-    // force-proposal submission always lands as a proposal, deduped/merged but
-    // never auto-applied.
-    ...(item.hints.forceProposal ? { forceProposal: true } : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
   const outcome = applyIntakeJudgment(judged.judgment, applyDeps);

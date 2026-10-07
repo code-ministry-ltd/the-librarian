@@ -92,8 +92,7 @@ function deps() {
   };
 }
 
-const accept = () =>
-  ({ decision: "accept", targetRequiresApproval: false }) as ValidatedOperation["outcome"];
+const accept = () => ({ decision: "accept" }) as ValidatedOperation["outcome"];
 
 /** Below the 0.8 knob, so every op here routes to a proposal rather than an apply. */
 const PROPOSE_CONFIDENCE = 0.5;

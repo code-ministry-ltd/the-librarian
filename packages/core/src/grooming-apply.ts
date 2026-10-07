@@ -12,9 +12,10 @@
 //   - Ownership: every write is owned by the curator actor (slices are
 //     project-key-only post-D8). The agent_id is passed explicitly, never taken
 //     from the model.
-//   - Auto-applied merges archive their superseded sources in the same
-//     operation. Proposed ops NEVER mutate live sources here — they land as a
-//     new proposal carrying curator_note.supersedes (or, for archive, a flag).
+//   - Auto-applied merges and splits archive their superseded sources in the
+//     same operation, and an auto-applied archive archives its sources (ADR
+//     0014). Proposed ops NEVER mutate live sources here — they land as a new
+//     proposal carrying curator_note.supersedes (or, for archive, a flag).
 //   - Every operation (applied / proposed / skipped / failed) is recorded for the
 //     admin audit with the unified function's verdict; the recorded rationale is
 //     redacted as defence-in-depth.
@@ -53,11 +54,11 @@ export interface ApplyStore {
     id: string,
     patch?: Record<string, unknown>,
     agent_id?: string,
-    options?: { clearAgentFlags?: boolean },
+    options?: { allowProtected?: boolean; clearAgentFlags?: boolean },
   ) => unknown;
   archiveMemory: (id: string, agent_id?: string) => unknown;
-  // Archive proposals ride the flag-review queue (D13: archive never
-  // auto-applies, and there is no replacement doc to file as a proposal).
+  // Archive proposals ride the flag-review queue (there is no replacement doc
+  // to file as a proposal).
   flagMemory: (id: string, reason: string, agent_id?: string) => unknown;
   // Record what the curator did about a memory's open agent flags (ADR 0013).
   // Optional so narrow test stores without flags stay valid.
@@ -137,7 +138,6 @@ export function applyOperations(
       operation: operation.type,
       confidence: operation.confidence,
       threshold: deps.confidenceThreshold,
-      targetRequiresApproval: outcome.targetRequiresApproval,
     });
     if (decision === "skip") {
       record(deps, operation, "skipped", operation.rationale, [], payload);
@@ -242,9 +242,9 @@ class FlagOutcomes {
   applied(op: GroomingOperation): void {
     if (op.type === "update" && op.resolves_flags === true) {
       this.settled.set(op.source_memory_id, "cleared");
-    } else if (op.type === "merge") {
-      // The merge archived its sources, flags and all: nothing left to review.
-      for (const id of op.source_memory_ids) {
+    } else if (op.type === "merge" || op.type === "archive" || op.type === "split") {
+      // The sources were archived, flags and all: nothing left to review.
+      for (const id of sourceMemoryIds(op)) {
         if (this.flagged.has(id)) this.settled.set(id, "cleared");
       }
     } else {
@@ -341,7 +341,8 @@ function openProposalCovers(store: ApplyStore, op: GroomingOperation): boolean {
 }
 
 // Auto-apply an operation the D13 rule cleared; returns the target memory ids.
-// archive/split never reach here (they ALWAYS propose, by operation type).
+// The threshold is the only gate (ADR 0014), so a memory marked requires_approval
+// is no exception: the curator writes it like any other.
 function applyOp(op: GroomingOperation, c: ExecContext): string[] {
   switch (op.type) {
     case "create":
@@ -350,6 +351,7 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
       // ADR 0013: an update that fixes the memory's open flags clears them in the
       // same write; the curator's own archive flags stay.
       c.store.updateMemory(op.source_memory_id, op.patch, c.actorId, {
+        allowProtected: true,
         clearAgentFlags: op.resolves_flags === true,
       });
       return [op.source_memory_id];
@@ -366,11 +368,23 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
           archiveActorId: c.actorId,
         }),
       ];
-    case "archive":
     case "split":
+      // Auto-applied split: create every replacement, then archive the source.
+      // The shared primitive owns that data-loss-safe ordering; the actor is
+      // what makes it archive the source (an apply, not a propose).
+      return splitMemory(c.store, {
+        sourceId: op.source_memory_id,
+        replacements: op.replacements.map((r) => buildCreateCall(c, r, [op.source_memory_id])),
+        archiveActorId: c.actorId,
+      });
+    case "archive":
+      // Auto-applied archive (ADR 0014). Nothing is deleted: the memory stays in
+      // the vault as archived, and git history keeps its body.
+      for (const id of op.source_memory_ids) c.store.archiveMemory(id, c.actorId);
+      return op.source_memory_ids;
     case "noop":
-      // decideApplication routes these to propose/skip, never apply — fail loud.
-      throw new Error(`${op.type} is never auto-applied`);
+      // decideApplication routes noop → skip, never apply — fail loud.
+      throw new Error("noop is never auto-applied");
   }
 }
 
@@ -432,8 +446,9 @@ function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
       ];
     }
     case "archive": {
-      // A proposed archive has no replacement doc to file, so it rides the
-      // flag-review queue (D13 / D4: the flag queue IS the human checkpoint):
+      // A proposed archive (below the threshold) has no replacement doc to file,
+      // so it rides the flag-review queue (D4: the flag queue IS the human
+      // checkpoint):
       // each source is flagged (soft-demoted + routed to review) with the
       // redacted rationale, and the admin archives it on acceptance. Live
       // sources are never mutated here. Idempotent per source (review F2): a

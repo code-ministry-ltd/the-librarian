@@ -1,19 +1,13 @@
-// The ONE curator apply rule (rethink D13, spec §5.3) — the single decision
-// function both consumers (intake apply + grooming apply) route through:
+// The ONE curator apply rule (rethink D13, spec §5.3, amended by ADR 0014) — the
+// single decision function both consumers (intake apply + grooming apply) route
+// through:
 //
 //   - noop never mutates anything → skip;
-//   - archive and split ALWAYS propose (the only two operations that destroy or
-//     restructure information — enforced by operation TYPE, never by the model's
-//     self-reported risk);
-//   - any operation targeting a requires_approval memory proposes regardless of
-//     confidence;
-//   - the submission-level forceProposal hint (ADR 0004) is an upstream override
-//     that proposes regardless of everything but noop;
-//   - what's left (create/update/merge) applies at confidence ≥ threshold, else
-//     proposes.
+//   - every other operation — archive and split included — applies at
+//     confidence ≥ threshold, else proposes. No operation type is exempt.
 //
 // The full matrix is pinned here: every operation type × confidence
-// below/at/above the threshold × requires_approval × forceProposal.
+// below/at/above the threshold.
 
 import {
   APPLY_CONFIDENCE_THRESHOLD_KEY,
@@ -41,78 +35,39 @@ const BANDS = [
   { label: "above", confidence: 0.95 },
 ] as const;
 
-// The expected verdict, restated from the spec (NOT derived from the
-// implementation): noop is inert; archive/split always propose; the
-// forceProposal and requires_approval guards propose; the rest gate on the
-// threshold.
-function expected(
-  operation: CuratorOperationType,
-  confidence: number,
-  requiresApproval: boolean,
-  forceProposal: boolean,
-): ApplyDecision {
+// The expected verdict, restated from ADR 0014 (NOT derived from the
+// implementation): noop is inert; everything else gates on the threshold.
+function expected(operation: CuratorOperationType, confidence: number): ApplyDecision {
   if (operation === "noop") return "skip";
-  if (forceProposal) return "propose";
-  if (requiresApproval) return "propose";
-  if (operation === "archive" || operation === "split") return "propose";
   return confidence >= THRESHOLD ? "apply" : "propose";
 }
 
-describe("decideApplication — the D13 matrix (op × confidence band × requires_approval × forceProposal)", () => {
+describe("decideApplication — the D13 matrix (op × confidence band)", () => {
   for (const operation of OPERATIONS) {
     for (const band of BANDS) {
-      for (const targetRequiresApproval of [false, true]) {
-        for (const forceProposal of [false, true]) {
-          const want = expected(operation, band.confidence, targetRequiresApproval, forceProposal);
-          it(`${operation} / confidence ${band.label} threshold / requires_approval=${targetRequiresApproval} / forceProposal=${forceProposal} → ${want}`, () => {
-            expect(
-              decideApplication({
-                operation,
-                confidence: band.confidence,
-                threshold: THRESHOLD,
-                targetRequiresApproval,
-                forceProposal,
-              }),
-            ).toBe(want);
-          });
-        }
-      }
+      const want = expected(operation, band.confidence);
+      it(`${operation} / confidence ${band.label} threshold → ${want}`, () => {
+        expect(
+          decideApplication({ operation, confidence: band.confidence, threshold: THRESHOLD }),
+        ).toBe(want);
+      });
     }
   }
 
-  it("forceProposal omitted defaults to false (apply at/above threshold)", () => {
-    expect(
-      decideApplication({
-        operation: "create",
-        confidence: 0.9,
-        threshold: 0.8,
-        targetRequiresApproval: false,
-      }),
-    ).toBe("apply");
-  });
-
-  it("archive/split never apply even at confidence 1.0 with a zero threshold", () => {
+  it("a zero threshold applies every archive and split, whatever the confidence (ADR 0014)", () => {
     for (const operation of ["archive", "split"] as const) {
-      expect(
-        decideApplication({
-          operation,
-          confidence: 1,
-          threshold: 0,
-          targetRequiresApproval: false,
-        }),
-      ).toBe("propose");
+      expect(decideApplication({ operation, confidence: 0, threshold: 0 })).toBe("apply");
     }
   });
 
-  it("a requires_approval target never applies even at confidence 1.0", () => {
-    expect(
-      decideApplication({
-        operation: "update",
-        confidence: 1,
-        threshold: 0,
-        targetRequiresApproval: true,
-      }),
-    ).toBe("propose");
+  it("a confident archive or split still proposes when the threshold is above it", () => {
+    for (const operation of ["archive", "split"] as const) {
+      expect(decideApplication({ operation, confidence: 0.99, threshold: 1 })).toBe("propose");
+    }
+  });
+
+  it("noop skips even at a zero threshold", () => {
+    expect(decideApplication({ operation: "noop", confidence: 1, threshold: 0 })).toBe("skip");
   });
 });
 

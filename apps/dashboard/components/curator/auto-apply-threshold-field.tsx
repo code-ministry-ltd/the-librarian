@@ -19,7 +19,7 @@ function proposalFrequencyFor(value: number): string {
   return "Always raises proposals";
 }
 
-/** One shared D13 threshold, rendered on both jobs' tabs. Exceptions still propose at 0. */
+/** One shared D13 threshold, rendered on both jobs' tabs. It governs every operation (ADR 0014). */
 export function AutoApplyThresholdField({
   id,
   value,
@@ -63,8 +63,8 @@ export function AutoApplyThresholdField({
           {proposalFrequencyFor(value)}
         </p>
         <p id={caveatId} className="text-xs text-foreground/60">
-          Archive and split proposals always come to you for review; protected memories and forced
-          submissions do too, even at 0. Existing proposals remain until reviewed.
+          Every curator change follows this threshold, archives and splits included: at 0 nothing
+          comes to you for review. Existing proposals remain until reviewed.
         </p>
       </div>
     </div>
