@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.30.1] — 2026-10-07
+
+### Security
+
+- **Patched new production dependency advisories** that failed the production
+  dependency audit (two critical, three high):
+  - `simple-git` (critical and high, command execution through unblocked git
+    options and environment). Core listed it as a dependency but never used it, so
+    it is removed. The copy `node-llama-cpp` pulls in for building llama.cpp from
+    source is forced to 4.0.2 (with `@simple-git/argv-parser` 2.0.1); it uses only
+    the named `simpleGit` export, which v4 keeps.
+  - `sharp` 0.35.5 (librsvg) and `source-map-js` 1.2.2 (event-loop denial of
+    service), both pulled in by Next.js and Astro.
+  - `http-cache-semantics` 4.3.0 (cross-user cached responses), pulled in by the
+    docs site's Astro. The advisory lists no patched version yet, but 4.3.0 was
+    released after it and is outside its `<= 4.2.0` range.
+
 ## [1.30.0] — 2026-10-01
 
 ### Changed
@@ -4875,6 +4892,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.30.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.0...v1.30.1
 [1.30.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.1...v1.30.0
 [1.29.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.0...v1.29.1
 [1.29.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.28.0...v1.29.0
