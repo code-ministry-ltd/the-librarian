@@ -1,5 +1,7 @@
 import { ProposalsView } from "@/components/memories/proposals-view";
+import { ThresholdZeroNotice } from "@/components/memories/threshold-zero-notice";
 import type { ProposalReviewRow } from "@/components/memories/types";
+import { readApplyThreshold } from "@/lib/apply-threshold";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,7 @@ export default async function ProposalsPage() {
   // badges the action, shows the rationale, and renders the diff with DiffView.
   let rows: ProposalReviewRow[] = [];
   let error: string | null = null;
+  const threshold = await readApplyThreshold();
   try {
     rows = (await serverTRPC.memories.proposalsForReview.query()) as ProposalReviewRow[];
   } catch (err) {
@@ -25,6 +28,7 @@ export default async function ProposalsPage() {
           apply it, or reject to discard it.
         </p>
       </header>
+      <ThresholdZeroNotice threshold={threshold} page="proposals" />
       {error ? (
         <p
           role="alert"

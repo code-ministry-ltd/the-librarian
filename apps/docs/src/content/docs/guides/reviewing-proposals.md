@@ -15,7 +15,8 @@ creating, updating, merging, splitting or archiving a memory — it applies on i
 own. Anything below the **auto-apply threshold** in
 [Settings → Curator](/dashboard/curator/) becomes a proposal. The queue, in other
 words, is the set of changes the curator was unsure of, and nothing else. Set the
-threshold to 0 and the queue stays empty.
+threshold to 0 and the queue stays empty; the Proposals and Flagged pages show a
+notice saying so.
 
 ## The workflow
 

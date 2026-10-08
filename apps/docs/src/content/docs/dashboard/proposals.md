@@ -3,11 +3,14 @@ title: Proposals
 description: Review the curator's suggested changes and approve or reject each one.
 ---
 
-The **Proposals** page is the curator's in-tray to you. The curator handles
-routine filing automatically, but anything that would **destroy or restructure** a
-memory — archiving it, splitting it, or any change to a memory marked as needing
-approval — is held back here for a human to decide. This is the page you will visit
-most.
+The **Proposals** page is the curator's in-tray to you. The curator applies any
+change it is confident about on its own; a change whose confidence falls below the
+**auto-apply threshold** in [Curator settings](/dashboard/settings/#curator) is held
+back here for a human to decide. Archives and splits follow the same rule.
+
+When the threshold is 0, the curator applies every change itself and no new
+proposals arrive. The page says so at the top, with a link to the setting, so an
+empty queue is not mistaken for a stalled curator.
 
 ![The Proposals review queue](../../../assets/screenshots/proposals.png)
 

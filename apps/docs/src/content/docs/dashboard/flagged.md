@@ -30,6 +30,10 @@ the five memories most closely related to it, then does one of these:
 - **Leaves it.** When it cannot tell what is true now, it changes nothing and says
   why.
 
+When the auto-apply threshold is 0, every correction and archive applies straight
+away, so the curator sends nothing here for review. The page shows a notice saying
+so, with a link to the setting. Flags the curator leaves unchanged still appear.
+
 A correction states the current facts; it does not add a "was A; now B" note. The
 vault's git history keeps the earlier text. The curator never rewrites a memory it
 could not read in full (very long memories, or ones with secret-looking text that

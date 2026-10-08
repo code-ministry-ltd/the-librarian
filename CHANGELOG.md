@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.31.1] — 2026-10-08
+
+### Added
+
+- **The Proposals and Flagged pages say when the auto-apply threshold is 0.** At 0
+  the curator applies every change itself, so nothing new reaches either page. A
+  notice at the top now explains this and links to Curator settings, so an empty
+  queue is not mistaken for a stalled curator. If the threshold cannot be read, the
+  page shows no notice and works as before.
+
+### Fixed
+
+- **The Proposals page docs no longer say archives and splits always wait for you.**
+  Since 1.31.0 they follow the threshold like every other change.
+
 ## [1.31.0] — 2026-10-07
 
 ### Changed
@@ -4923,6 +4938,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.31.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.0...v1.31.1
 [1.31.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.1...v1.31.0
 [1.30.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.0...v1.30.1
 [1.30.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.29.1...v1.30.0

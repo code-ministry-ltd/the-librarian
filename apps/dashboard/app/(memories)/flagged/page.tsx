@@ -1,8 +1,11 @@
 import { FlaggedView } from "@/components/memories/flagged-view";
+import { ThresholdZeroNotice } from "@/components/memories/threshold-zero-notice";
+import { readApplyThreshold } from "@/lib/apply-threshold";
 
 export const dynamic = "force-dynamic";
 
-export default function FlaggedPage() {
+export default async function FlaggedPage() {
+  const threshold = await readApplyThreshold();
   return (
     <main className="flex flex-col gap-5 p-6">
       <header className="flex flex-col gap-1.5">
@@ -14,6 +17,7 @@ export default function FlaggedPage() {
           the flag, or archive the whole memory.
         </p>
       </header>
+      <ThresholdZeroNotice threshold={threshold} page="flagged" />
       <FlaggedView />
     </main>
   );
