@@ -21,6 +21,11 @@ export interface JudgeSubmissionInput {
   promptAddendum?: string;
   /** The intake examples doc (F4/D7) — inlined whole when non-empty, redacted. */
   intakeExamples?: string;
+  /**
+   * Why the previous judgment for this submission was refused (spec 075 §4.3) —
+   * a fixed guard string naming the refused action; present only on the retry.
+   */
+  guardFeedback?: string;
 }
 
 export interface JudgeSubmissionDeps {
@@ -44,6 +49,7 @@ export async function judgeSubmission(
     evidence: input.evidence,
     ...(input.promptAddendum !== undefined ? { promptAddendum: input.promptAddendum } : {}),
     ...(input.intakeExamples !== undefined ? { intakeExamples: input.intakeExamples } : {}),
+    ...(input.guardFeedback !== undefined ? { guardFeedback: input.guardFeedback } : {}),
   });
   const completion = await deps.llmClient.complete({ messages });
   const parsed = parseIntakeJudgment(completion.content);

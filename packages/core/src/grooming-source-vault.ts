@@ -85,6 +85,10 @@ function toRecord(memory: Memory): GroomingMemoryRecord {
       (flag) => flag.agent_id === SYSTEM_ACTOR_IDS.memoryCurator,
     ),
     ...(openFlags.length > 0 ? { openFlags } : {}),
+    // Split lineage (spec 075 §4.4): the validator refuses to re-merge siblings.
+    ...(typeof memory.curator_note?.split_from === "string"
+      ? { splitFrom: memory.curator_note.split_from }
+      : {}),
   };
 }
 

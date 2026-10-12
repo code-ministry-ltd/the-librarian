@@ -21,6 +21,7 @@
 //     redacted as defence-in-depth.
 
 import { decideApplication } from "./curator-apply-policy.js";
+import { checkDetailGuard, checkSizeGuard } from "./curator-guards.js";
 import { memoryContentDigest } from "./formatters/memory-diff.js";
 import type { GroomingMemoryPatch, GroomingOperation } from "./grooming-output.js";
 import { redactSecrets } from "./grooming-redaction.js";
@@ -142,6 +143,16 @@ export function applyOperations(
     if (decision === "skip") {
       record(deps, operation, "skipped", operation.rationale, [], payload);
       flags.note(operation, operation.rationale);
+      summary.skipped++;
+      continue;
+    }
+    // The guards (spec 075, ADR 0015) refuse an unsafe write the threshold would
+    // apply: nothing is written and nothing is queued. The audit row carries the
+    // fixed reason; the next run sees the same memories and can choose again.
+    const refusal = decision === "apply" ? guardReason(operation, deps.store, context) : null;
+    if (refusal) {
+      record(deps, operation, "skipped", refusal, [], payload);
+      flags.note(operation, `The curator's change was refused by a safety check (${refusal}).`);
       summary.skipped++;
       continue;
     }
@@ -374,7 +385,9 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
       // what makes it archive the source (an apply, not a propose).
       return splitMemory(c.store, {
         sourceId: op.source_memory_id,
-        replacements: op.replacements.map((r) => buildCreateCall(c, r, [op.source_memory_id])),
+        replacements: op.replacements.map((r) =>
+          fromSplit(buildCreateCall(c, r, [op.source_memory_id]), op.source_memory_id),
+        ),
         archiveActorId: c.actorId,
       });
     case "archive":
@@ -386,6 +399,73 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
       // decideApplication routes noop → skip, never apply — fail loud.
       throw new Error("noop is never auto-applied");
   }
+}
+
+/**
+ * The guards an apply-verdict grooming operation must pass (spec 075 §4.1), read
+ * against the AUTHORITATIVE stored bodies — never the redacted, truncated evidence.
+ * The sources' open flag reasons excuse the terms they name: a correction may
+ * remove what a flag says is wrong. Returns the refusal reason, or null.
+ */
+function guardReason(
+  op: GroomingOperation,
+  store: ApplyStore,
+  context: ValidationContext,
+): string | null {
+  const stored = (id: string): string => {
+    const memory = store.getMemory(id);
+    return memory ? `${memory.title}\n${memory.body}` : "";
+  };
+  const flagReasons = (ids: string[]): string[] =>
+    context.memory.activeMemories
+      .filter((m) => ids.includes(m.id))
+      .flatMap((m) => (m.open_flags ?? []).map((flag) => flag.reason));
+  switch (op.type) {
+    case "create":
+      return checkSizeGuard(op.memory.body);
+    case "update": {
+      if (op.patch.body === undefined) return null;
+      const current = store.getMemory(op.source_memory_id);
+      if (!current) return null;
+      return (
+        checkSizeGuard(op.patch.body, current.body.length) ??
+        checkDetailGuard(
+          [`${current.title}\n${current.body}`],
+          [`${op.patch.title ?? current.title}\n${op.patch.body}`],
+          flagReasons([op.source_memory_id]),
+          "rewrite",
+        )
+      );
+    }
+    case "merge":
+      return (
+        checkSizeGuard(op.replacement.body) ??
+        checkDetailGuard(
+          op.source_memory_ids.map(stored),
+          [`${op.replacement.title}\n${op.replacement.body}`],
+          flagReasons(op.source_memory_ids),
+        )
+      );
+    case "split": {
+      for (const r of op.replacements) {
+        const size = checkSizeGuard(r.body);
+        if (size) return size;
+      }
+      return checkDetailGuard(
+        [stored(op.source_memory_id)],
+        op.replacements.map((r) => `${r.title}\n${r.body}`),
+        flagReasons([op.source_memory_id]),
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+/** Stamp split lineage on a split replacement (spec 075 §4.4). */
+function fromSplit(call: SplitReplacement, sourceId: string): SplitReplacement {
+  const note = (call.options?.curator_note ?? {}) as Record<string, unknown>;
+  return { ...call, options: { ...call.options, curator_note: { ...note, split_from: sourceId } } };
 }
 
 // Route an operation to a proposal. Returns the new proposal ids (or, for an
@@ -426,7 +506,7 @@ function proposeOp(op: GroomingOperation, c: ExecContext): string[] {
       return splitMemory(c.store, {
         sourceId: op.source_memory_id,
         replacements: op.replacements.map((r) =>
-          buildCreateCall(c, r, [op.source_memory_id], opts, prov),
+          fromSplit(buildCreateCall(c, r, [op.source_memory_id], opts, prov), op.source_memory_id),
         ),
       });
     }

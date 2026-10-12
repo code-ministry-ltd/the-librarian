@@ -53,6 +53,27 @@ otherwise:
 Lowering the threshold does not remove proposals already in the queue; review or
 reject those separately.
 
+### Changes the curator is never allowed to make
+
+Two checks run on every change the curator is about to apply, whatever the
+threshold. A change that fails one is **refused**: nothing is written, and nothing
+is sent to you.
+
+- **Size.** No memory may grow past **4,000 characters**. Long memories collect
+  unrelated facts and get harder to find; the curator files a new, focused memory
+  and links the two instead. A memory that is already longer can still be
+  corrected or shortened, but never made longer.
+- **Detail.** A merge or split may not drop the specific details its sources
+  contain, such as names, numbers, versions, ports and paths. A rewrite that
+  corrects or tidies a memory may remove some of them, but not most. A correction
+  may always remove what it corrects.
+
+When intake's change is refused, it tries once more with the reason. If that
+fails too, the item is recorded as rejected in the intake run history under
+[Settings → Curator](/dashboard/curator/).
+Grooming records a refused change as skipped and tries again on its next run. The
+curator also won't merge two memories it split from the same one.
+
 ## Choosing a model
 
 On **Settings → Curator**, add an **LLM provider** (such as Anthropic or OpenAI)

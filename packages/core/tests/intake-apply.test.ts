@@ -3,7 +3,13 @@
 // → store mutation mapping, the no-clobber guard on augment, and that a store
 // rejection becomes a `rejected` outcome rather than a throw.
 
-import { type IntakeJudgment, type IntakeApplyStore, applyIntakeJudgment } from "@librarian/core";
+import {
+  GUARD_DETAIL_REASON_PREFIX,
+  GUARD_SIZE_REASON,
+  type IntakeApplyStore,
+  type IntakeJudgment,
+  applyIntakeJudgment,
+} from "@librarian/core";
 import { describe, expect, it } from "vitest";
 
 interface SeedDoc {
@@ -573,5 +579,121 @@ describe("applyIntakeJudgment — archive and split at or above the threshold ap
     );
     expect(out).toEqual({ kind: "augmented", id: "mem_p" });
     expect(calls.create.length).toBe(0);
+  });
+});
+
+describe("applyIntakeJudgment — guards refuse unsafe writes (spec 075, ADR 0015)", () => {
+  const big = (n: number): string => "word ".repeat(Math.ceil(n / 5)).slice(0, n);
+  const zero = (store: IntakeApplyStore, submissionText?: string) => ({
+    ...deps(store, submissionText),
+    confidenceThreshold: 0,
+  });
+
+  it("refuses an augment that would grow a memory past the size cap — nothing written", () => {
+    const { store, calls } = fakeStore({ mem_big: { title: "Big", body: big(3990) } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_big", addition: "one more fact here" }),
+      zero(store),
+    );
+    expect(out).toEqual({ kind: "refused", reason: GUARD_SIZE_REASON });
+    expect(calls.update.length + calls.create.length).toBe(0);
+  });
+
+  it("still applies an augment that stays within the cap", () => {
+    const { store, calls } = fakeStore({ mem_small: { title: "Small", body: "short" } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_small", addition: "one more fact" }),
+      zero(store),
+    );
+    expect(out).toEqual({ kind: "augmented", id: "mem_small" });
+    expect(calls.update.length).toBe(1);
+  });
+
+  it("refuses a create over the cap", () => {
+    const { store, calls } = fakeStore();
+    const out = applyIntakeJudgment(
+      judgment({ action: "create", title: "Huge", body: big(4001), tags: [] }),
+      zero(store),
+    );
+    expect(out).toEqual({ kind: "refused", reason: GUARD_SIZE_REASON });
+    expect(calls.create.length).toBe(0);
+  });
+
+  it("lets a supersede shrink a memory that is already over the cap", () => {
+    const { store } = fakeStore({ mem_huge: { title: "Huge", body: big(9000) } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "supersede", target_id: "mem_huge", title: "Huge", body: big(8000) }),
+      zero(store),
+    );
+    expect(out).toEqual({ kind: "superseded", id: "mem_huge" });
+  });
+
+  it("refuses a supersede that drops specific detail the submission does not mention", () => {
+    const target =
+      "Ports: api 3838, dashboard 3000, baruch-server 8034, grafana 9126, strata 5808, tabby 8041.";
+    const { store, calls } = fakeStore({ mem_ports: { title: "Ports", body: target } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "supersede", target_id: "mem_ports", title: "Ports", body: "api 3838" }),
+      zero(store, "The api still listens on 3838."),
+    );
+    expect(out).toMatchObject({ kind: "refused" });
+    expect((out as { reason: string }).reason.startsWith(GUARD_DETAIL_REASON_PREFIX)).toBe(true);
+    expect(calls.update.length).toBe(0);
+  });
+
+  it("applies a supersede whose removed detail is what the submission corrects", () => {
+    const target = "Ports: baruch-server 8034, grafana 9126, strata 5808, tabby 8041, api 3838.";
+    const { store } = fakeStore({ mem_ports: { title: "Ports", body: target } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "supersede", target_id: "mem_ports", title: "Ports", body: "api 3838" }),
+      zero(store, "baruch-server 8034, grafana 9126, strata 5808 and tabby 8041 are retired."),
+    );
+    expect(out).toEqual({ kind: "superseded", id: "mem_ports" });
+  });
+
+  it("refuses a split that loses detail, and stamps split_from on a good one", () => {
+    const body = "Elaine: piano 1984, flat-12b. Bob: sailing 2001, boat-7c, mooring-44.";
+    const lossy = fakeStore({ mem_mix: { title: "Mix", body } });
+    expect(
+      applyIntakeJudgment(
+        judgment({
+          action: "split",
+          target_id: "mem_mix",
+          replacements: [
+            { title: "Elaine", body: "Elaine plays piano.", tags: [] },
+            { title: "Bob", body: "Bob sails.", tags: [] },
+          ],
+        }),
+        zero(lossy.store),
+      ),
+    ).toMatchObject({ kind: "refused" });
+    expect(lossy.calls.create.length + lossy.calls.archive.length).toBe(0);
+
+    const good = fakeStore({ mem_mix: { title: "Mix", body } });
+    const out = applyIntakeJudgment(
+      judgment({
+        action: "split",
+        target_id: "mem_mix",
+        replacements: [
+          { title: "Elaine", body: "Elaine: piano 1984, flat-12b.", tags: [] },
+          { title: "Bob", body: "Bob: sailing 2001, boat-7c, mooring-44.", tags: [] },
+        ],
+      }),
+      zero(good.store),
+    );
+    expect(out).toEqual({ kind: "split", id: "mem_mix" });
+    for (const c of good.calls.create) {
+      expect(c.options?.curator_note).toMatchObject({ split_from: "mem_mix" });
+    }
+  });
+
+  it("never turns a below-threshold judgment into a refusal or an apply — it still proposes", () => {
+    const { store, calls } = fakeStore({ mem_big: { title: "Big", body: big(3990) } });
+    const out = applyIntakeJudgment(
+      judgment({ action: "augment", target_id: "mem_big", addition: "more", confidence: 0.5 }),
+      deps(store),
+    );
+    expect(out).toMatchObject({ kind: "proposed" });
+    expect(calls.update.length).toBe(0);
   });
 });

@@ -286,6 +286,38 @@ describe("validateOperations — security regressions (audit)", () => {
   });
 });
 
+describe("validateOperations — split lineage (spec 075 §4.4)", () => {
+  const merge = (ids: string[]): GroomingOperation => ({
+    type: "merge",
+    source_memory_ids: ids,
+    replacement: newMem,
+    rationale: "r",
+    confidence: 0.9,
+  });
+
+  it("rejects a merge of two memories split from the same source", () => {
+    const context = ctx({
+      active: [memItem("a", { split_from: "src" }), memItem("b", { split_from: "src" })],
+    });
+    expect(only([merge(["a", "b"])], context)).toEqual({
+      decision: "reject",
+      reason: "would re-merge memories split from the same source",
+    });
+  });
+
+  it("allows a merge of memories split from different sources, or not split at all", () => {
+    const context = ctx({
+      active: [
+        memItem("a", { split_from: "src1" }),
+        memItem("b", { split_from: "src2" }),
+        memItem("c"),
+      ],
+    });
+    expect(only([merge(["a", "b"])], context)).toEqual({ decision: "accept" });
+    expect(only([merge(["a", "c"])], context)).toEqual({ decision: "accept" });
+  });
+});
+
 describe("validateOperations — batch", () => {
   it("returns one outcome per operation, in order", () => {
     const results = validateOperations(

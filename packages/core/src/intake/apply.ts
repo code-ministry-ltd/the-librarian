@@ -15,6 +15,7 @@ import {
   DEFAULT_APPLY_CONFIDENCE_THRESHOLD,
   decideApplication,
 } from "../curator-apply-policy.js";
+import { checkDetailGuard, checkSizeGuard } from "../curator-guards.js";
 import { redactSecrets } from "../grooming-redaction.js";
 import type { InboxSubmissionHints } from "../store/corpus/inbox.js";
 import { type SplitReplacement, splitMemory } from "../store/split-memory.js";
@@ -88,6 +89,9 @@ export type IntakeOutcome =
   // decision log maps it to its "proposed" verdict bucket.
   | { kind: "flagged_for_archive"; id: string }
   | { kind: "skipped" }
+  // A guard refused an apply-verdict write (spec 075, ADR 0015): nothing was
+  // written or queued. The orchestrator re-judges once with the reason.
+  | { kind: "refused"; reason: string }
   | { kind: "rejected"; reason: string };
 
 const MAX_TITLE = 80;
@@ -114,6 +118,52 @@ function deriveTitle(text: string): string {
     .find((line) => line.length > 0);
   if (!firstLine) return "Untitled note";
   return firstLine.length > MAX_TITLE ? `${firstLine.slice(0, MAX_TITLE - 1)}…` : firstLine;
+}
+
+/**
+ * The guards an apply-verdict judgment must pass (spec 075 §4.1). Reads the
+ * authoritative target body; returns the refusal reason, or null to proceed.
+ * A missing target is left to the lane's own `rejected` handling.
+ */
+function guardReason(
+  judgment: IntakeJudgment,
+  target: IntakeStoredMemory | null,
+  submissionText: string,
+): string | null {
+  const whole = (title: string, body: string): string => `${title}\n${body}`;
+  switch (judgment.action) {
+    case "create":
+      return checkSizeGuard(judgment.body);
+    case "augment":
+      return target
+        ? checkSizeGuard(augmentBody(target.body, judgment.addition), target.body.length)
+        : null;
+    case "supersede":
+      if (!target) return null;
+      return (
+        checkSizeGuard(judgment.body, target.body.length) ??
+        checkDetailGuard(
+          [whole(target.title, target.body)],
+          [whole(judgment.title, judgment.body)],
+          [submissionText],
+          "rewrite",
+        )
+      );
+    case "split": {
+      if (!target) return null;
+      for (const r of judgment.replacements) {
+        const size = checkSizeGuard(r.body);
+        if (size) return size;
+      }
+      return checkDetailGuard(
+        [whole(target.title, target.body)],
+        judgment.replacements.map((r) => whole(r.title, r.body)),
+        [submissionText],
+      );
+    }
+    default:
+      return null;
+  }
 }
 
 export function applyIntakeJudgment(
@@ -216,7 +266,11 @@ export function applyIntakeJudgment(
         const replacements: SplitReplacement[] = judgment.replacements.map((r) => ({
           input: scope({ title: r.title, body: r.body, tags: r.tags }),
           options: {
-            ...note({ proposed_action: "split", supersedes: [judgment.target_id] }),
+            ...note({
+              proposed_action: "split",
+              supersedes: [judgment.target_id],
+              split_from: judgment.target_id,
+            }),
             requires_approval: true,
           },
         }));
@@ -247,8 +301,11 @@ export function applyIntakeJudgment(
       return proposeSubmission(judgment.action);
     }
 
-    // apply — execute the judged action directly. The threshold is the only gate
-    // (ADR 0014), so a requires_approval target is written like any other.
+    // apply — the threshold said yes (ADR 0014), so a requires_approval target is
+    // written like any other. The guards (spec 075, ADR 0015) can still refuse an
+    // unsafe write: nothing is written and nothing is queued.
+    const refusal = guardReason(judgment, target, submissionText);
+    if (refusal) return { kind: "refused", reason: refusal };
     switch (judgment.action) {
       case "create": {
         // The judge curated title/body/tags; the submitter's scope still applies.
@@ -295,7 +352,7 @@ export function applyIntakeJudgment(
           sourceId: judgment.target_id,
           replacements: judgment.replacements.map((r) => ({
             input: scope({ title: r.title, body: r.body, tags: r.tags }),
-            options: note({ supersedes: [judgment.target_id] }),
+            options: note({ supersedes: [judgment.target_id], split_from: judgment.target_id }),
           })),
           archiveActorId: actorId,
         });

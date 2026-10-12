@@ -104,6 +104,10 @@ function outcomeOf(outcome: IntakeOutcome): RecordIntakeOperationInput["outcome"
       return "proposed";
     case "skipped":
       return "skipped";
+    // A guard refusal wrote nothing (spec 075) — the item was re-judged, or
+    // ended as a rejection, which is logged separately.
+    case "refused":
+      return "skipped";
     case "rejected":
       return "failed";
   }
@@ -140,7 +144,13 @@ export function recordIntakeDecision(
         action: judgment.action,
         outcome: outcomeOf(outcome),
         confidence: judgment.confidence,
-        rationale: redactSecrets(judgment.rationale).redacted,
+        // A refused judgment leads with the guard's reason, so the intake log
+        // says why nothing was written (the reason is a fixed, content-free string).
+        rationale: redactSecrets(
+          outcome.kind === "refused"
+            ? `${outcome.reason}. ${judgment.rationale}`
+            : judgment.rationale,
+        ).redacted,
         source_id: sourceId,
         target_id: targetOf(outcome),
       }),

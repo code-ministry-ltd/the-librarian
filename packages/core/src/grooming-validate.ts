@@ -9,7 +9,8 @@
 //   - slice-boundary: no op may change visibility/project or cross slices;
 //   - secret: an op carrying secret-looking content is rejected (never written);
 //   - empty/duplicate/resurrection: applied to the RESULTING content of every op
-//     (including an update's patched memory), not just brand-new memories.
+//     (including an update's patched memory), not just brand-new memories;
+//   - split lineage: no merge of two memories split from the same source (spec 075).
 // Accepted ops go on to the D13 apply decision (curator-apply-policy.ts), which
 // reads only the operation's confidence (ADR 0014).
 // Reject reasons are fixed strings — never echo operation content (audit hygiene).
@@ -52,6 +53,8 @@ interface EvidenceItem {
   body: string;
   // The evidence body was cut or masked (ADR 0013), so a rewrite would lose text.
   bodyIncomplete: boolean;
+  // The memory this one was split from (spec 075 §4.4), if any.
+  splitFrom?: string;
 }
 
 interface Gate {
@@ -81,6 +84,7 @@ export function validateOperations(
       title: m.title,
       body: m.body,
       bodyIncomplete: m.body_incomplete === true,
+      ...(m.split_from ? { splitFrom: m.split_from } : {}),
     });
   }
   for (const m of context.memory.proposedMemories) {
@@ -135,6 +139,18 @@ function validateOne(op: GroomingOperation, gate: Gate): OperationOutcome {
       if (gate.items.get(id)?.bodyIncomplete) {
         return reject("would rewrite a memory the curator could not see in full");
       }
+    }
+  }
+
+  // 3c. Split lineage — merging memories split from the same source would undo
+  //     that split on the next run, and the one after would split them again
+  //     (spec 075 §4.4). A person can still merge them by hand.
+  if (op.type === "merge") {
+    const parents = op.source_memory_ids
+      .map((id) => gate.items.get(id)?.splitFrom)
+      .filter((parent): parent is string => parent !== undefined);
+    if (new Set(parents).size < parents.length) {
+      return reject("would re-merge memories split from the same source");
     }
   }
 

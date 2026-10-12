@@ -293,4 +293,110 @@ describe("intakeInboxItem", () => {
     expect(listInbox(vault)).toEqual([]);
     expect(vault.listMarkdown("inbox/.processing")).toEqual([]);
   });
+
+  it("re-judges once with the guard's reason when the first judgment is refused (spec 075)", async () => {
+    const ref = writeInbox(vault, "Strata now preloads after a 60s wait.", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+    });
+    const { store, calls } = fakeStore({ mem_big: { title: "Marvin", body: "x ".repeat(1995) } });
+    const prompts: string[] = [];
+    const replies = [
+      { action: "augment", target_id: "mem_big", addition: "Strata waits 60s before preloading." },
+      {
+        action: "create",
+        title: "Strata Preload Wait",
+        body: "Strata waits 60s before preloading. See [[Marvin]].",
+        tags: ["strata"],
+      },
+    ];
+    const client: LlmClient = {
+      complete: async (request) => {
+        prompts.push(request.messages.map((m) => m.content).join("\n"));
+        const reply = replies[prompts.length - 1];
+        return {
+          content: JSON.stringify({ ...reply, rationale: "r", confidence: 0.95 }),
+          model: "gpt-x",
+          usage: null,
+        };
+      },
+    };
+    const result = await intakeInboxItem(ref.relPath, {
+      ...baseDeps(store, client),
+      confidenceThreshold: 0,
+    });
+
+    expect(result).toMatchObject({ status: "consolidated", outcome: { kind: "created" } });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain("GUARD FEEDBACK");
+    expect(prompts[1]).toContain("GUARD FEEDBACK");
+    expect(prompts[1]).toContain("augment was refused: guard: result exceeds the memory size cap");
+    expect(calls.update).toEqual([]); // the over-cap memory was never touched
+    expect(calls.create[0]).toMatchObject({ title: "Strata Preload Wait" });
+  });
+
+  it("rejects the item with the guard's reason when the second judgment is refused too", async () => {
+    const ref = writeInbox(vault, "another fact", { now: () => 1000, generateId: () => "inbox_a" });
+    const { store, calls } = fakeStore({ mem_big: { title: "Marvin", body: "x ".repeat(1995) } });
+    let n = 0;
+    const client: LlmClient = {
+      complete: async () => {
+        n++;
+        return {
+          content: JSON.stringify({
+            action: "augment",
+            target_id: "mem_big",
+            addition: "still more content for the big memory",
+            rationale: "r",
+            confidence: 0.95,
+          }),
+          model: "gpt-x",
+          usage: null,
+        };
+      },
+    };
+    const result = await intakeInboxItem(ref.relPath, {
+      ...baseDeps(store, client),
+      confidenceThreshold: 0,
+    });
+    expect(n).toBe(2); // exactly one retry
+    expect(result).toMatchObject({
+      status: "consolidated",
+      outcome: { kind: "rejected", reason: "guard: result exceeds the memory size cap" },
+    });
+    expect(calls.update).toEqual([]);
+    expect(listInbox(vault)).toEqual([]); // terminal, like any rejection
+  });
+
+  it("leaves the claim for retry when the re-judge reply is unusable — the submission is not lost", async () => {
+    const ref = writeInbox(vault, "a fact for the full memory", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+    });
+    const { store, calls } = fakeStore({ mem_big: { title: "Marvin", body: "x ".repeat(1995) } });
+    let n = 0;
+    const client: LlmClient = {
+      complete: async () => {
+        n++;
+        const content =
+          n === 1
+            ? JSON.stringify({
+                action: "augment",
+                target_id: "mem_big",
+                addition: "more content for the big memory",
+                rationale: "r",
+                confidence: 0.95,
+              })
+            : "not json";
+        return { content, model: "gpt-x", usage: null };
+      },
+    };
+    const result = await intakeInboxItem(ref.relPath, {
+      ...baseDeps(store, client),
+      confidenceThreshold: 0,
+    });
+    expect(result).toMatchObject({ status: "judge_error" });
+    expect(calls.update).toEqual([]);
+    expect(vault.listMarkdown("inbox/.processing")).toHaveLength(1); // still claimed, for the reaper
+  });
 });

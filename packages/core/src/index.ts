@@ -948,3 +948,12 @@ export {
   HandoffAlreadyClaimedError,
   HandoffNotFoundError,
 } from "./store/handoff-store.js";
+export {
+  AT_SIZE_CAP_CHARS,
+  GUARD_DETAIL_REASON_PREFIX,
+  GUARD_SIZE_REASON,
+  MAX_MEMORY_BODY_CHARS,
+  checkDetailGuard,
+  checkSizeGuard,
+  distinctiveTokens,
+} from "./curator-guards.js";

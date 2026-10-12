@@ -10,6 +10,10 @@ import { ConfidenceSchema, IdSchema, IsoTimestampSchema, MemoryStatusSchema } fr
 export const CuratorNoteSchema = z.object({
   text: z.string().optional(),
   supersedes: z.array(z.string()).optional(),
+  // The memory a split replacement came from (spec 075 §4.4). Grooming refuses to
+  // merge two memories split from the same source, so a split can't be undone by
+  // the next run.
+  split_from: z.string().optional(),
   // Content digest of each superseded source AS DRAFTED, keyed by memory id
   // (spec 072 D1/T3). Review recomputes these to tell whether a source moved
   // underneath the proposal while it sat in the queue; a proposal without them

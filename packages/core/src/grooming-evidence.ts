@@ -18,6 +18,7 @@
 // memory-only after the sessions rethink (sessions-rethink-spec §12): no
 // session evidence.
 
+import { MAX_MEMORY_BODY_CHARS } from "./curator-guards.js";
 import { curationContentFingerprint, curationNormalizedTitle } from "./grooming-fingerprint.js";
 import { redactSecrets } from "./grooming-redaction.js";
 
@@ -54,6 +55,8 @@ export interface GroomingMemoryRecord {
    * first. Raw (pre-redaction) reasons; gatherMemoryEvidence redacts them.
    */
   openFlags?: { reason: string; flaggedAt: string }[];
+  /** The memory this one was split from (`curator_note.split_from`, spec 075 §4.4). */
+  splitFrom?: string;
 }
 
 /**
@@ -133,6 +136,8 @@ export interface MemoryEvidenceItem {
   // length bound or had secret-looking text masked. The curator must not rewrite
   // a memory it can't see whole; validation rejects such an operation.
   body_incomplete?: true;
+  // The memory this one was split from (spec 075 §4.4). Omitted when none.
+  split_from?: string;
 }
 
 export interface TombstoneItem {
@@ -160,7 +165,9 @@ export interface MemoryEvidenceBundle {
   redactionCount: number;
 }
 
-const DEFAULT_MAX_BODY_CHARS = 4000;
+// The curator size cap IS the evidence window (spec 075 D4): grooming can always see a whole
+// memory that the guards let exist.
+const DEFAULT_MAX_BODY_CHARS = MAX_MEMORY_BODY_CHARS;
 const DEFAULT_MAX_FLAGGED_BODY_CHARS = 20_000;
 /** Flagged memories per targeted run, so each group fits one model call (ADR 0013). */
 export const FLAG_FOCUS_MAX_FLAGGED = 5;
@@ -273,6 +280,7 @@ function toItem(
         }
       : {}),
     ...(incomplete ? { body_incomplete: true as const } : {}),
+    ...(rec.splitFrom ? { split_from: rec.splitFrom } : {}),
   };
 }
 

@@ -27,6 +27,7 @@
 import type { MemoryEvidenceBundle } from "./grooming-evidence.js";
 import type { LlmMessage } from "./grooming-llm-client.js";
 import type { PrepassResult } from "./grooming-prepass.js";
+import { AT_SIZE_CAP_CHARS } from "./curator-guards.js";
 import { redactSecrets } from "./grooming-redaction.js";
 import type { IntakeCandidates } from "./intake/navigate.js";
 
@@ -65,7 +66,11 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // corrections now just fix the text (no "was A; now B" arc) in both modes.
 // v6.1 (ADR 0014) drops "archive and split always go to a person" and the
 // requires_approval rule: every operation now follows the threshold.
-export const CURATOR_PROMPT_VERSION = "v6.1";
+// v6.2 (spec 075, ADR 0015) adds the 4,000-character memory size cap and the
+// keep-every-specific-detail rule, marks intake candidates at the cap, files a
+// bundled submission's unrelated facts nowhere instead of weaving them in, and
+// carries GUARD FEEDBACK into an intake retry.
+export const CURATOR_PROMPT_VERSION = "v6.2";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -90,6 +95,7 @@ HOW TO CURATE — the judgement behind every choice:
 - Write to stand alone. A memory is read months later with none of today's conversation around it: name entities fully, convert relative time ("yesterday", "next sprint") to absolute dates, and include the context a stranger would need.
 - Minimal edit. Make the smallest change that captures what's new. An addition is ONLY the new content — never a rewrite, and never a restatement of what the doc already says.
 - Add, don't duplicate. If the new information says nothing the store doesn't already hold, noop. If it adds even a little that is genuinely new, file it.
+- Keep memories focused. No memory may exceed 4,000 characters. When adding or combining would exceed it, keep separate focused memories and [[link]] them. A merge or split must keep every specific detail of its sources (names, numbers, versions, ports, paths); remove brittle or stale detail only with an update, and never most of a memory's specifics at once. These limits are re-checked in code: a write that breaks one is refused, not applied.
 - Split SPARINGLY, and only to un-overload an EXISTING doc that has become a grab-bag conflating two or more distinct entities — spin it into focused per-entity docs. NEVER split single-entity content; that is over-fragmentation, the opposite of curation. When in doubt, do NOT split.
 - File durable knowledge, not transient noise. Memory is for what will be worth recalling later: stable facts about people, projects, preferences, conventions, infrastructure, decisions. Content that is OBVIOUSLY transient or low-value — a one-off task note, an already-resolved bug or typo, an ephemeral status update — has no lasting recall value. (When the lasting value is genuinely unclear, keep a lean note rather than discard — bias toward discarding only the obvious noise.)
 - Tag only when the exact output shape includes "tags". Tags are the corpus's organising signal: when that field is available, give a new or rewritten doc a few lowercase tags — roughly the entity plus the kind of value (a project or person name, plus "decision", "lesson", "preference", "direction") — and reuse tags already visible in the EVIDENCE rather than inventing near-synonyms. Never invent a "tags" field for a shape that omits it; existing tags remain unchanged unless the contract explicitly permits changing them.
@@ -108,7 +114,8 @@ const INTAKE_MODE = `MODE: INTAKE — a single new SUBMISSION has arrived. Using
 JUDGEMENT IN THIS MODE:
 - Extract the kernel. A submission often wraps one durable sentence in session narration, tool output, or pleasantries. Judge — and file — the durable core; drop the wrapper, and say in the rationale what you dropped. A submission that is ALL wrapper is a noop.
 - Choosing augment vs supersede: augment when everything the doc already says stays true and the submission adds to it; supersede when the submission contradicts or replaces what the doc says — and in the replacement body, state the current facts: rewrite or remove the superseded statements and keep every other durable claim. Add no "was A; now B" note unless the change itself is worth remembering; git keeps the old text.
-- A bundled submission (several unrelated durable facts in one) cannot become several docs here: file the most valuable fact under its entity, weave in the others only where they genuinely relate (with [[wikilinks]]), and name any fact you had to leave unfiled in the rationale so the human can see it.
+- A bundled submission (several unrelated durable facts in one) cannot become several docs here: file the primary fact. Add a secondary fact only when it is about the same subject; otherwise leave it out and name it in the rationale.
+- A candidate marked "at_size_cap": true cannot take more content. If the submission belongs with it, create a focused new memory and [[link]] it to that candidate.
 - Weigh the four values from above: a decision-with-why, a correction, an arc, or a stated direction outranks a bare fact; a recurring pattern outranks its latest instance; brittle code detail (paths, line numbers, snippets) is stripped even from an otherwise durable submission.
 
 DECISION GATES:
@@ -222,6 +229,11 @@ export type CuratorPromptInput =
        * non-empty. Redacted + framed as teaching data, advisory only.
        */
       intakeExamples?: string;
+      /**
+       * Why this submission's previous judgment was refused by a guard (spec 075
+       * §4.3) — a fixed, content-free string. Present only on the one retry.
+       */
+      guardFeedback?: string;
     }
   | {
       mode: "grooming";
@@ -263,11 +275,18 @@ function redact(value: string): string {
 
 function buildIntakeUserContent(input: Extract<CuratorPromptInput, { mode: "intake" }>): string {
   const evidence = {
-    candidates: input.evidence.candidates.map((memory) => ({
-      id: memory.id,
-      title: redact(String(memory.title ?? "")),
-      body: redact(String(memory.body ?? "")),
-    })),
+    candidates: input.evidence.candidates.map((memory) => {
+      const body = String(memory.body ?? "");
+      return {
+        id: memory.id,
+        title: redact(String(memory.title ?? "")),
+        body: redact(body),
+        // Measured on the stored body (spec 075 D9): the judge routes around a full
+        // memory before the size guard has to refuse the write.
+        body_chars: body.length,
+        at_size_cap: body.length >= AT_SIZE_CAP_CHARS,
+      };
+    }),
     toc: input.evidence.toc.map((entry) => ({
       id: entry.id,
       title: redact(entry.title),
@@ -289,6 +308,12 @@ function buildIntakeUserContent(input: Extract<CuratorPromptInput, { mode: "inta
   ];
   pushIntakeExamples(sections, input.intakeExamples);
   pushAddendum(sections, input.promptAddendum);
+  if (input.guardFeedback) {
+    sections.push(
+      "",
+      `GUARD FEEDBACK (your previous judgment for this submission was refused and nothing was written — choose an action that passes the rule it broke): ${input.guardFeedback}`,
+    );
+  }
   sections.push(
     "",
     `INTAKE FINAL CHECK:

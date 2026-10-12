@@ -170,14 +170,57 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v6.1 prompt version (v6.1 lets the threshold decide archive and split, ADR 0014)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v6.1");
+  it("pins the v6.2 prompt version (v6.2 adds the size cap and detail rule, spec 075)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v6.2");
+  });
+
+  it("states the 4,000-character cap and the keep-every-detail rule in both modes (spec 075)", () => {
+    for (const mode of ["intake", "grooming"] as const) {
+      const system = buildBaseCuratorPrompt(mode);
+      expect(system).toContain("No memory may exceed 4,000 characters");
+      expect(system).toContain("A merge or split must keep every specific detail");
+    }
   });
 });
 
 // ── intake mode ───────────────────────────────────────────────────────────────
 
 describe("buildCuratorPrompt — intake mode", () => {
+  it("tells the judge each candidate's size and whether it is at the cap (spec 075 D9)", () => {
+    const candidate = (id: string, body: string) =>
+      ({ id, title: id, body }) as unknown as IntakeCandidates["candidates"][number];
+    const [, user] = buildCuratorPrompt({
+      mode: "intake",
+      submissionText: "new fact",
+      evidence: {
+        candidates: [candidate("mem_small", "short"), candidate("mem_full", "x".repeat(3600))],
+        toc: [],
+      },
+    });
+    expect(user?.content).toContain('"body_chars": 5,');
+    expect(user?.content).toContain('"at_size_cap": false');
+    expect(user?.content).toContain('"body_chars": 3600,');
+    expect(user?.content).toContain('"at_size_cap": true');
+  });
+
+  it("carries GUARD FEEDBACK only on a retry (spec 075 §4.3)", () => {
+    const evidence = { candidates: [], toc: [] };
+    const [, first] = buildCuratorPrompt({ mode: "intake", submissionText: "s", evidence });
+    expect(first?.content).not.toContain("GUARD FEEDBACK");
+    const [, retry] = buildCuratorPrompt({
+      mode: "intake",
+      submissionText: "s",
+      evidence,
+      guardFeedback: "augment was refused: guard: result exceeds the memory size cap",
+    });
+    expect(retry?.content).toContain(
+      "GUARD FEEDBACK (your previous judgment for this submission was refused",
+    );
+    expect(retry?.content).toContain(
+      "augment was refused: guard: result exceeds the memory size cap",
+    );
+  });
+
   it("teaches exactly the wire shapes IntakeJudgmentSchema parses (derived, not string-twinned)", () => {
     for (const option of IntakeJudgmentSchema.options) {
       const { value, keys } = wireShape(option, "action");

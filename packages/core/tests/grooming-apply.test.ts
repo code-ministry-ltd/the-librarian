@@ -806,3 +806,223 @@ describe("applyOperations — skips, rejects and below-threshold proposals", () 
     expect(recorded()[0]?.status).toBe("proposed");
   });
 });
+
+describe("applyOperations — guards refuse unsafe writes (spec 075, ADR 0015)", () => {
+  const ports =
+    "Ports: api 3838, dashboard 3000, baruch-server 8034, grafana 9126, strata 5808, tabby 8041.";
+
+  it("refuses a merge that drops most of its sources' detail, even at threshold 0", () => {
+    const a = seed({ title: "Ports A", body: ports });
+    const b = seed({
+      title: "Ports B",
+      body: "Models: qwen3.8-27b, gemma-4-e4b, h2o-lightning-4b.",
+    });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "merge",
+          source_memory_ids: [a.id, b.id],
+          replacement: {
+            title: "Ports",
+            body: "Marvin runs several services.",
+            visibility: "common",
+          },
+          rationale: "merge",
+          confidence: 0.95,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(0),
+    );
+    expect(summary).toMatchObject({ applied: 0, skipped: 1, proposed: 0 });
+    expect(recorded()[0]).toMatchObject({ status: "skipped" });
+    expect(recorded()[0]!.rationale).toMatch(
+      /^guard: would lose detail \(\d+ distinctive terms dropped\)$/,
+    );
+    expect(s!.store.getMemory(a.id)!.status).toBe("active"); // nothing archived
+  });
+
+  it("applies a merge that keeps its sources' detail", () => {
+    const a = seed({ title: "Ports A", body: "api 3838, dashboard 3000" });
+    const b = seed({ title: "Ports B", body: "baruch-server 8034" });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "merge",
+          source_memory_ids: [a.id, b.id],
+          replacement: {
+            title: "Ports",
+            body: "api 3838, dashboard 3000, baruch-server 8034",
+            visibility: "common",
+          },
+          rationale: "merge",
+          confidence: 0.95,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(0),
+    );
+    expect(summary.applied).toBe(1);
+  });
+
+  it("refuses an update that grows a memory past the size cap", () => {
+    const a = seed({ title: "Notes", body: "short" });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: a.id,
+          patch: { body: "x".repeat(4001) },
+          rationale: "grow",
+          confidence: 0.95,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(0),
+    );
+    expect(summary).toMatchObject({ applied: 0, skipped: 1 });
+    expect(recorded()[0]!.rationale).toBe("guard: result exceeds the memory size cap");
+    expect(s!.store.getMemory(a.id)!.body).toBe("short");
+  });
+
+  it("stamps split_from on an applied split's replacements", () => {
+    const src = seed({ title: "Mix", body: "Elaine piano-1984. Bob boat-7c." });
+    applyOperations(
+      ops({
+        operation: {
+          type: "split",
+          source_memory_id: src.id,
+          replacements: [
+            { title: "Elaine", body: "Elaine piano-1984.", visibility: "common" },
+            { title: "Bob", body: "Bob boat-7c.", visibility: "common" },
+          ],
+          rationale: "split",
+          confidence: 0.95,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(0),
+    );
+    const ids = recorded()[0]!.target_memory_ids;
+    expect(ids).toHaveLength(2);
+    for (const id of ids) expect(s!.store.getMemory(id)!.curator_note?.split_from).toBe(src.id);
+  });
+
+  it("never refuses a below-threshold operation — it is proposed as before", () => {
+    const a = seed({ title: "Notes", body: "short" });
+    const summary = applyOperations(
+      ops({
+        operation: {
+          type: "update",
+          source_memory_id: a.id,
+          patch: { body: "x".repeat(4001) },
+          rationale: "grow",
+          confidence: 0.5,
+        },
+        outcome: accept(),
+      }),
+      context(),
+      deps(0.8),
+    );
+    expect(summary.proposed).toBe(1);
+  });
+});
+
+describe("applyOperations — guards never queue and never apply a refusal (spec 075 §4.5.4)", () => {
+  const ports =
+    "Ports: api 3838, dashboard 3000, baruch-server 8034, grafana 9126, strata 5808, tabby 8041.";
+  type Case = {
+    name: string;
+    op: (ids: string[]) => Parameters<typeof applyOperations>[0][number]["operation"];
+  };
+  const cases: Case[] = [
+    {
+      name: "create over the cap",
+      op: () => ({
+        type: "create",
+        memory: { title: "Huge", body: "x".repeat(4001), visibility: "common" },
+        rationale: "r",
+        confidence: 0.95,
+      }),
+    },
+    {
+      name: "update growing past the cap",
+      op: ([a]) => ({
+        type: "update",
+        source_memory_id: a!,
+        patch: { body: "x".repeat(4001) },
+        rationale: "r",
+        confidence: 0.95,
+      }),
+    },
+    {
+      name: "update gutting the memory",
+      op: ([a]) => ({
+        type: "update",
+        source_memory_id: a!,
+        patch: { body: "Ports: several." },
+        rationale: "r",
+        confidence: 0.95,
+      }),
+    },
+    {
+      name: "lossy merge",
+      op: ([a, b]) => ({
+        type: "merge",
+        source_memory_ids: [a!, b!],
+        replacement: { title: "Ports", body: "Several services.", visibility: "common" },
+        rationale: "r",
+        confidence: 0.95,
+      }),
+    },
+    {
+      name: "lossy split",
+      op: ([a]) => ({
+        type: "split",
+        source_memory_id: a!,
+        replacements: [
+          { title: "One", body: "Some ports.", visibility: "common" },
+          { title: "Two", body: "Other ports.", visibility: "common" },
+        ],
+        rationale: "r",
+        confidence: 0.95,
+      }),
+    },
+  ];
+
+  for (const c of cases) {
+    for (const threshold of [0, 0.8]) {
+      it(`${c.name} at threshold ${threshold}: refused, nothing written, nothing proposed`, () => {
+        const a = seed({ title: "Ports A", body: ports });
+        const b = seed({
+          title: "Ports B",
+          body: "Models: qwen3.8-27b, gemma-4-e4b, h2o-lightning-4b.",
+        });
+        const before = s!.store.listAll({}).length;
+        const summary = applyOperations(
+          ops({ operation: c.op([a.id, b.id]), outcome: accept() }),
+          context(),
+          deps(threshold),
+        );
+        expect(summary).toMatchObject({ applied: 0, proposed: 0, skipped: 1 });
+        expect(s!.store.listAll({}).length).toBe(before);
+        expect(s!.store.getMemory(a.id)!.body).toBe(ports);
+      });
+    }
+  }
+
+  it("a below-threshold operation is proposed as before — the guards don't run on proposals", () => {
+    const a = seed({ title: "Ports A", body: ports });
+    const op = cases[1]!.op([a.id]);
+    const summary = applyOperations(
+      ops({ operation: { ...op, confidence: 0.5 }, outcome: accept() }),
+      context(),
+      deps(0.8),
+    );
+    expect(summary).toMatchObject({ proposed: 1, applied: 0 });
+  });
+});

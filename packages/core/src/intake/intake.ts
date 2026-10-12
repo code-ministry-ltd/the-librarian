@@ -20,6 +20,7 @@ import {
 } from "./apply.js";
 import { type IntakeLogger, type LogErrorSink, recordIntakeDecision } from "./decision-log.js";
 import { judgeSubmission } from "./judge-step.js";
+import type { IntakeJudgment } from "./judge.js";
 import { navigateInbox } from "./navigate.js";
 
 export interface IntakeInboxItemDeps {
@@ -99,15 +100,18 @@ export async function intakeInboxItem(
     recall: deps.recall,
     listActive: deps.listActive,
   });
-  const judged = await judgeSubmission(
-    {
-      submissionText: item.text,
-      evidence,
-      ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
-      ...(deps.intakeExamples ? { intakeExamples: deps.intakeExamples } : {}),
-    },
-    { llmClient: deps.llmClient },
-  );
+  const judge = (guardFeedback?: string) =>
+    judgeSubmission(
+      {
+        submissionText: item.text,
+        evidence,
+        ...(deps.promptAddendum ? { promptAddendum: deps.promptAddendum } : {}),
+        ...(deps.intakeExamples ? { intakeExamples: deps.intakeExamples } : {}),
+        ...(guardFeedback ? { guardFeedback } : {}),
+      },
+      { llmClient: deps.llmClient },
+    );
+  const judged = await judge();
   if (!judged.judgment) {
     // The model output was unusable — leave the claim for the reaper to retry
     // rather than dropping the submission. (A persistently-failing model loops
@@ -126,7 +130,6 @@ export async function intakeInboxItem(
       : {}),
     ...(deps.onError ? { onError: deps.onError } : {}),
   };
-  const outcome = applyIntakeJudgment(judged.judgment, applyDeps);
   // Observational decision-log row (spec 043 C1) — full-outcome coverage: applied,
   // proposed, skipped AND failed/rejected items are all recorded. Fail-soft: a
   // log-write throw is swallowed inside recordIntakeDecision, so it can
@@ -134,14 +137,35 @@ export async function intakeInboxItem(
   // Resolve the run id NOW (not earlier): this is a handled item, so the sweep's
   // lazy resolver opens the decision-log run on this first call — an empty /
   // all-claimed-by-other sweep, which never reaches here, never opens one.
-  recordIntakeDecision(
-    deps.intakeLog,
-    deps.getIntakeRunId?.(),
-    judged.judgment,
-    outcome,
-    claimed,
-    deps.logError,
-  );
+  const record = (judgment: IntakeJudgment, outcome: IntakeOutcome): void =>
+    recordIntakeDecision(
+      deps.intakeLog,
+      deps.getIntakeRunId?.(),
+      judgment,
+      outcome,
+      claimed,
+      deps.logError,
+    );
+
+  let judgment = judged.judgment;
+  let outcome = applyIntakeJudgment(judgment, applyDeps);
+  // A guard refused the write (spec 075 §4.3): nothing was written. Re-judge ONCE
+  // with the reason, so the curator can choose a safe action (e.g. a focused new
+  // memory instead of growing one past the size cap). A second refusal ends the
+  // item as a rejection carrying the guard's reason.
+  if (outcome.kind === "refused") {
+    record(judgment, outcome);
+    const retry = await judge(`${judgment.action} was refused: ${outcome.reason}`);
+    if (!retry.judgment) {
+      // An unusable retry is a judge error, like an unusable first reply: leave the
+      // claim for the reaper, so the submission is judged again rather than lost.
+      return { status: "judge_error", parseError: retry.parseError ?? "no judgment" };
+    }
+    judgment = retry.judgment;
+    outcome = applyIntakeJudgment(judgment, applyDeps);
+    if (outcome.kind === "refused") outcome = { kind: "rejected", reason: outcome.reason };
+  }
+  record(judgment, outcome);
   // Complete on ANY outcome, including `rejected` — see the contract note above:
   // a rejection is terminal (won't be retried), so the item is removed.
   completeInboxItem(deps.vault, claimed);

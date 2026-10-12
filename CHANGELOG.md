@@ -9,6 +9,37 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.32.1] — 2026-10-12
+
+### Changed
+
+- **The curator can no longer grow a memory past 4,000 characters or drop its
+  specific details** ([ADR 0015](docs/adr/0015-guards-refuse-unsafe-curator-writes.md)).
+  On a real corpus, memories that were only ever appended to grew into grab-bags
+  of unrelated facts (the largest reached 36,000 characters), and grooming merges
+  kept only 41% of their sources' ports, versions, names and paths. Two checks now
+  run on every change the curator is about to apply:
+  - **Size.** A new or rewritten memory may be at most 4,000 characters, the most
+    grooming can see at once. A memory that is already longer can be corrected or
+    shortened but not made longer.
+  - **Detail.** A merge or split only reorganises memories, so it may drop at
+    most three of its sources' specific terms (or 10% when there are many). A
+    rewrite that corrects or tidies a memory may drop up to half of them, but not
+    more. A correction may always remove what it corrects. Replayed against the
+    audited corpus's history, 71% of past merges would have been refused.
+
+  A change that fails a check is refused: nothing is written and nothing is queued
+  for review, so a threshold of 0 still never sends you anything. Intake tries once
+  more with the reason (for example, filing a focused new memory instead of
+  growing a full one) and records the item as rejected if that fails too.
+  Grooming records the change as skipped and tries again on its next run.
+- **Curator prompt v6.2.** It states both limits, tells intake which candidates are
+  nearly full, and no longer weaves a bundled submission's unrelated facts into
+  the main target; those are named in the decision rationale instead. As with any
+  prompt change, grooming re-grooms each slice once after the upgrade.
+- **Splits stay split.** Every split marks its replacements with the memory they
+  came from, and grooming won't merge two of them back together.
+
 ## [1.32.0] — 2026-10-12
 
 ### Changed
@@ -4970,6 +5001,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.32.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.1...v1.32.0
 [1.31.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.0...v1.31.1
 [1.31.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.1...v1.31.0
