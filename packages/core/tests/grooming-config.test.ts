@@ -82,6 +82,36 @@ describe("curator config", () => {
     );
   });
 
+  it("defaults repair on with 3 splits and 5 recoveries per run (spec 075 §5)", () => {
+    const cfg = readGroomingConfig(s!.store);
+    expect(cfg.repairEnabled).toBe(true);
+    expect(cfg.repairSplitPerRun).toBe(3);
+    expect(cfg.repairRecoverPerRun).toBe(5);
+  });
+
+  it("round-trips the repair settings and rejects out-of-range counts", () => {
+    const { store } = s!;
+    writeGroomingConfig(store, {
+      repairEnabled: false,
+      repairSplitPerRun: 0,
+      repairRecoverPerRun: 50,
+    });
+    expect(readGroomingConfig(store)).toMatchObject({
+      repairEnabled: false,
+      repairSplitPerRun: 0,
+      repairRecoverPerRun: 50,
+    });
+    expect(() => writeGroomingConfig(store, { repairSplitPerRun: 21 })).toThrow(
+      /repair_split_per_run/,
+    );
+    expect(() => writeGroomingConfig(store, { repairSplitPerRun: 1.5 })).toThrow(
+      /repair_split_per_run/,
+    );
+    expect(() => writeGroomingConfig(store, { repairRecoverPerRun: -1 })).toThrow(
+      /repair_recover_per_run/,
+    );
+  });
+
   it("round-trips trigger_threshold and rejects invalid values (≥ 1 integer)", () => {
     const { store } = s!;
     writeGroomingConfig(store, { triggerThreshold: 5 });

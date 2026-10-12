@@ -30,6 +30,7 @@ export function GroomingConfigForm({
   const [error, setError] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(initial.enabled);
+  const [repairEnabled, setRepairEnabled] = useState(initial.repairEnabled);
   const [threshold, setThreshold] = useState(snapThresholdToStop(initial.applyConfidenceThreshold));
   const [intervalDays, setIntervalDays] = useState(String(initial.intervalDays));
   const [scheduleTime, setScheduleTime] = useState(initial.scheduleTime);
@@ -56,6 +57,7 @@ export function GroomingConfigForm({
     startTransition(async () => {
       const patch: GroomingConfigPatch = {
         enabled,
+        repairEnabled,
         // Avoid clobbering a newer Intake edit when only schedule changed.
         // An off-grid legacy value (e.g. 0.75) still normalises on save.
         ...(threshold !== initial.applyConfidenceThreshold
@@ -129,6 +131,25 @@ export function GroomingConfigForm({
           />
         </div>
         <p className="text-xs text-foreground/60">1 = nightly · 7 = weekly · 30 ≈ monthly</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="inline-flex items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            checked={repairEnabled}
+            onChange={(e) => {
+              setRepairEnabled(e.target.checked);
+              clearStatus();
+            }}
+            className="h-4 w-4 accent-ink-accent"
+          />
+          Repair long and merged memories after each run
+        </label>
+        <p className="text-xs text-foreground/60">
+          Splits memories over 4,000 characters and restores details lost when memories were merged,
+          a few each run.
+        </p>
       </div>
 
       <Hairline />

@@ -48,7 +48,7 @@ export type GroomingTrigger = "schedule" | "manual" | "maintenance" | "post_inta
 // A run still "running" past this age is treated as a crashed-worker lock and
 // reclaimed. Set well above the worst-case run time so a live run is never
 // reclaimed; with a serial single-process tick, reclaim only fires after a crash.
-const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
+export const DEFAULT_LOCK_TTL_MS = 60 * 60_000; // 60 minutes
 
 export interface RunDueCurationOptions {
   store: GroomingStore;

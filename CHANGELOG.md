@@ -9,6 +9,33 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.0] — 2026-10-12
+
+### Added
+
+- **Grooming repairs long and merged memories.** After each scheduled or **Run
+  now** pass, the curator now fixes damage that ordinary grooming can't reach
+  ([ADR 0015](docs/adr/0015-guards-refuse-unsafe-curator-writes.md)):
+  - **Long memories.** Up to three memories over 4,000 characters per run, largest
+    first, are split into focused, linked memories. Grooming only sees the first
+    4,000 characters of a memory, so until now these could never be split.
+  - **Details lost in merges.** Up to five archived memories per run whose
+    specific details (ports, versions, names) were dropped when they were merged
+    are checked against the memory they were merged into. Details that still
+    matter are appended to it; stale ones are left, and that decision is
+    remembered.
+
+  Repairs follow the auto-apply threshold and the size and detail checks like any
+  other change. Each memory is offered once and again only after it changes, or 30
+  days after a refused repair. The Grooming tab gains a **Repair long and merged
+  memories after each run** toggle (on by default). On a 531-memory corpus, 24
+  memories qualified for splitting and 296 archived memories for a recovery check.
+
+### Changed
+
+- **Curator prompt v6.3** adds the two repair modes. Grooming re-grooms each slice
+  once after the upgrade, as with any prompt change.
+
 ## [1.32.1] — 2026-10-12
 
 ### Changed
@@ -5001,6 +5028,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.1...v1.32.0
 [1.31.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.0...v1.31.1

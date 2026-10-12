@@ -70,11 +70,14 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // keep-every-specific-detail rule, marks intake candidates at the cap, files a
 // bundled submission's unrelated facts nowhere instead of weaving them in, and
 // carries GUARD FEEDBACK into an intake retry.
-export const CURATOR_PROMPT_VERSION = "v6.2";
+// v6.3 (spec 075 §5) adds the two REPAIR modes: split one oversized memory, and
+// recover facts an archived merge source holds that its successors lost.
+export const CURATOR_PROMPT_VERSION = "v6.3";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
-const CORE = `You are the Memory Curator for The Librarian — the curator of a single owner's long-term memory. Think library, not logbook: your job is to maintain an evolving, interlinked body of knowledge so that every fact — and everything related to it — is findable later.
+/** The shared curator core: role, values, operations, principles (exported for the repair prompt). */
+export const CURATOR_CORE = `You are the Memory Curator for The Librarian — the curator of a single owner's long-term memory. Think library, not logbook: your job is to maintain an evolving, interlinked body of knowledge so that every fact — and everything related to it — is findable later.
 
 WHAT THE COLLECTION IS FOR — it compounds four kinds of value, and you judge every piece of content by how much it serves them, not by whether it is merely true:
 - INTENT — why choices were made: the trade-offs weighed, options rejected, constraints that forced the outcome. A decision with its why outranks a bare fact.
@@ -257,7 +260,7 @@ export type CuratorPromptInput =
  * their addendum is added to. Pure static text; no secrets, no store access.
  */
 export function buildBaseCuratorPrompt(mode: "intake" | "grooming"): string {
-  return `${CORE}\n\n${mode === "intake" ? INTAKE_MODE : GROOMING_MODE}`;
+  return `${CURATOR_CORE}\n\n${mode === "intake" ? INTAKE_MODE : GROOMING_MODE}`;
 }
 
 export function buildCuratorPrompt(input: CuratorPromptInput): LlmMessage[] {
@@ -269,7 +272,7 @@ export function buildCuratorPrompt(input: CuratorPromptInput): LlmMessage[] {
   ];
 }
 
-function redact(value: string): string {
+export function redact(value: string): string {
   return redactSecrets(value).redacted;
 }
 
@@ -379,7 +382,7 @@ function pushIntakeExamples(sections: string[], intakeExamples: string | undefin
   );
 }
 
-function pushAddendum(sections: string[], promptAddendum: string | undefined): void {
+export function pushAddendum(sections: string[], promptAddendum: string | undefined): void {
   const addendum = (promptAddendum ?? "").trim();
   if (!addendum) return;
   sections.push(

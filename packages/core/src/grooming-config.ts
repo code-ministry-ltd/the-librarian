@@ -51,7 +51,18 @@ const KEYS = {
   // first) so one oversized slice can't blow past the LLM timeout. Default 200
   // (the prior implicit cap) — lower it for slow models / large slices.
   maxMemoriesPerRun: "curator.grooming.max_memories",
+  // Self-healing repair (spec 075 §5): after each scheduled or run-now pass, split
+  // memories over the size cap and recover facts lost in past merges. Default on;
+  // inert while grooming itself is off. The per-run counts bound its model calls.
+  repairEnabled: "curator.grooming.repair_enabled",
+  repairSplitPerRun: "curator.grooming.repair_split_per_run",
+  repairRecoverPerRun: "curator.grooming.repair_recover_per_run",
 } as const;
+
+export const DEFAULT_REPAIR_SPLIT_PER_RUN = 3;
+export const DEFAULT_REPAIR_RECOVER_PER_RUN = 5;
+const MAX_REPAIR_SPLIT_PER_RUN = 20;
+const MAX_REPAIR_RECOVER_PER_RUN = 50;
 
 // Grooming enablement key (spec 043 D-E). Dashboard-editable string setting
 // ("true"/"false"), replacing the legacy `curator.enabled` setting. The intake
@@ -155,6 +166,12 @@ export interface GroomingConfig {
    * 200 (the prior implicit cap).
    */
   maxMemoriesPerRun: number;
+  /** Run the self-healing repair step after each scheduled or run-now pass (spec 075 §5). */
+  repairEnabled: boolean;
+  /** Oversized memories offered for splitting per repair run (0–20). */
+  repairSplitPerRun: number;
+  /** Archived merge sources offered for fact recovery per repair run (0–50). */
+  repairRecoverPerRun: number;
 }
 
 export interface GroomingConfigPatch {
@@ -165,6 +182,9 @@ export interface GroomingConfigPatch {
   triggerThreshold?: number;
   debounceMinutes?: number;
   maxMemoriesPerRun?: number;
+  repairEnabled?: boolean;
+  repairSplitPerRun?: number;
+  repairRecoverPerRun?: number;
 }
 
 // Input validation for the admin API. Permissive shape (all optional); the deeper
@@ -178,6 +198,9 @@ export const GroomingConfigPatchSchema = z.strictObject({
   triggerThreshold: z.number().optional(),
   debounceMinutes: z.number().optional(),
   maxMemoriesPerRun: z.number().optional(),
+  repairEnabled: z.boolean().optional(),
+  repairSplitPerRun: z.number().optional(),
+  repairRecoverPerRun: z.number().optional(),
 });
 
 // The slices of the store this module needs. Grooming-specific keys are all plain
@@ -212,6 +235,16 @@ export function readGroomingConfig(store: ConfigReader): GroomingConfig {
     maxMemoriesPerRun: parseNumber(
       store.getSetting(KEYS.maxMemoriesPerRun),
       DEFAULT_MAX_MEMORIES_PER_RUN,
+    ),
+    // Default on: only an explicit "false" turns repair off.
+    repairEnabled: store.getSetting(KEYS.repairEnabled) !== "false",
+    repairSplitPerRun: parseNumber(
+      store.getSetting(KEYS.repairSplitPerRun),
+      DEFAULT_REPAIR_SPLIT_PER_RUN,
+    ),
+    repairRecoverPerRun: parseNumber(
+      store.getSetting(KEYS.repairRecoverPerRun),
+      DEFAULT_REPAIR_RECOVER_PER_RUN,
     ),
   };
 }
@@ -372,6 +405,23 @@ export function writeGroomingConfig(store: ConfigWriter, patch: GroomingConfigPa
     }
   }
 
+  if (patch.repairSplitPerRun !== undefined) {
+    const n = patch.repairSplitPerRun;
+    if (!Number.isInteger(n) || n < 0 || n > MAX_REPAIR_SPLIT_PER_RUN) {
+      throw new Error(
+        `repair_split_per_run must be an integer between 0 and ${MAX_REPAIR_SPLIT_PER_RUN}`,
+      );
+    }
+  }
+  if (patch.repairRecoverPerRun !== undefined) {
+    const n = patch.repairRecoverPerRun;
+    if (!Number.isInteger(n) || n < 0 || n > MAX_REPAIR_RECOVER_PER_RUN) {
+      throw new Error(
+        `repair_recover_per_run must be an integer between 0 and ${MAX_REPAIR_RECOVER_PER_RUN}`,
+      );
+    }
+  }
+
   // First write: the shared knob's writer validates [0,1] itself and throws
   // before anything else here is persisted (keeps validate-then-persist intact).
   if (patch.applyConfidenceThreshold !== undefined)
@@ -386,4 +436,10 @@ export function writeGroomingConfig(store: ConfigWriter, patch: GroomingConfigPa
     store.setSetting(KEYS.debounceMinutes, String(patch.debounceMinutes));
   if (patch.maxMemoriesPerRun !== undefined)
     store.setSetting(KEYS.maxMemoriesPerRun, String(patch.maxMemoriesPerRun));
+  if (patch.repairEnabled !== undefined)
+    store.setSetting(KEYS.repairEnabled, patch.repairEnabled ? "true" : "false");
+  if (patch.repairSplitPerRun !== undefined)
+    store.setSetting(KEYS.repairSplitPerRun, String(patch.repairSplitPerRun));
+  if (patch.repairRecoverPerRun !== undefined)
+    store.setSetting(KEYS.repairRecoverPerRun, String(patch.repairRecoverPerRun));
 }

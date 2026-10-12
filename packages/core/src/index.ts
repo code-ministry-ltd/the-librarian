@@ -62,6 +62,7 @@ export {
   buildBaseCuratorPrompt,
   buildCuratorPrompt,
 } from "./curator-prompt.js";
+export { type RepairPromptInput, buildRepairPrompt } from "./curator-repair-prompt.js";
 export {
   type GroomingMemoryInput,
   type GroomingMemoryPatch,
@@ -957,3 +958,15 @@ export {
   checkSizeGuard,
   distinctiveTokens,
 } from "./curator-guards.js";
+export {
+  MAX_REPAIR_BODY_CHARS,
+  REPAIR_LEDGER_KEY,
+  type RepairLedger,
+  type RepairLedgerEntry,
+  type RepairOutcome,
+  type RepairSelection,
+  type RunRepairOptions,
+  readRepairLedger,
+  runRepair,
+  selectRepairItems,
+} from "./grooming-repair.js";

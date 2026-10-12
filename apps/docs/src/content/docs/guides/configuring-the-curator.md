@@ -22,7 +22,10 @@ The Curator settings contain three distinct jobs, configured side by side under
   when you press *Run now*, and automatically after intake has added enough new
   material to be worth a tidy-up. It also corrects memories an agent has
   [flagged](/dashboard/flagged/) as wrong or outdated, about 10 minutes after the
-  flag: it rewrites or removes the stale statement and keeps the rest.
+  flag: it rewrites or removes the stale statement and keeps the rest. After a
+  scheduled or manual pass it also
+  [repairs](#repairing-memories-that-are-already-damaged) a few long or merged
+  memories.
 - **Chronicle** writes a searchable weekly review under `references/chronicle/`.
   Its factual digest does not require an LLM; a configured model adds an optional
   narrative and possible blog seeds. It never changes memories. See
@@ -73,6 +76,25 @@ fails too, the item is recorded as rejected in the intake run history under
 [Settings → Curator](/dashboard/curator/).
 Grooming records a refused change as skipped and tries again on its next run. The
 curator also won't merge two memories it split from the same one.
+
+### Repairing memories that are already damaged
+
+After each scheduled or **Run now** grooming pass, the curator also repairs a few
+memories that ordinary grooming can't fix:
+
+- **Long memories.** It splits up to three memories over 4,000 characters per run,
+  largest first, into focused memories linked to each other. Ordinary grooming only
+  sees the first 4,000 characters of a memory, so it can never split these itself.
+- **Details lost in merges.** It looks at up to five archived memories per run that
+  were merged into another memory but whose specific details (ports, versions,
+  names) appear in no active memory. If those details still matter, it adds them
+  back to the memory they were merged into; if they were rightly dropped, it leaves
+  them and remembers that decision.
+
+Repairs follow the same threshold and the same two checks as every other change.
+Each memory is offered once and isn't offered again until it changes; a refused
+repair is retried after 30 days. Turn repair off with **Repair long and merged
+memories after each run** on the Grooming tab.
 
 ## Choosing a model
 

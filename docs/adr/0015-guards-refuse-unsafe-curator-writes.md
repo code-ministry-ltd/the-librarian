@@ -60,7 +60,16 @@ reliably do so, and at threshold 0 nobody reviews the result.
 4. **Splits are not undone.** Every split stamps `curator_note.split_from` on its
    replacements. Grooming validation rejects a merge of two memories split from
    the same source; a person can still merge them by hand.
-5. **The prompt says so.** Curator prompt v6.2 states the cap and the
+5. **Grooming repairs what the guards came too late for** (prompt v6.3). After a
+   scheduled or run-now pass, a repair step splits a few memories over the cap
+   (sent whole, one per model call, up to 60,000 characters) and offers a few
+   archived merge sources whose specific terms survive in no active memory,
+   together with their active successors, for recovery. Repair deliberately shows
+   the model an archived body, which grooming's tombstones never do; recovery may
+   only append to a successor or create a linked memory, never touch the archived
+   source. Repairs follow the threshold and the guards like any other operation.
+   A ledger in settings stops an item being offered again until it changes.
+6. **The prompt says so.** Curator prompt v6.2 states the cap and the
    keep-every-detail rule in both modes, marks intake candidates at 3,600
    characters or more as `at_size_cap`, and stops weaving a bundled submission's
    unrelated facts into the primary target.

@@ -113,6 +113,9 @@ const config: GroomingConfig = {
   triggerThreshold: 20,
   debounceMinutes: 60,
   maxMemoriesPerRun: 200,
+  repairEnabled: true,
+  repairSplitPerRun: 3,
+  repairRecoverPerRun: 5,
 };
 
 describe("GroomingConfigForm", () => {

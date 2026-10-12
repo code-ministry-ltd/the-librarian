@@ -220,4 +220,38 @@ describe("runGroomingTick — token undecryptable without the master key", () =>
     const result = await runGroomingTick({ store: store!, buildClient: () => noOpClient });
     expect(result).toEqual({ ran: false, reason: "no_token" });
   });
+
+  it("runs the repair step after a run-now pass, but not after the post-intake trigger (spec 075 §5)", async () => {
+    configureGrooming({ token: "sk-test" });
+    writeGroomingConfig(store!, { enabled: true });
+    // One memory over the size cap — the repair step's only work.
+    store!.createMemory({ agent_id: "agent-a", title: "Big", body: "word ".repeat(1000) });
+    const prompts: string[] = [];
+    const client: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        prompts.push(request.messages[0]?.content ?? "");
+        return { content: JSON.stringify({ operations: [] }), model: "m", usage: null };
+      },
+    };
+    await runGroomingTick({ store: store!, trigger: "post_intake", buildClient: () => client });
+    expect(prompts.some((p) => p.includes("MODE: REPAIR"))).toBe(false);
+
+    await runGroomingTick({ store: store!, trigger: "manual", buildClient: () => client });
+    expect(prompts.some((p) => p.includes("MODE: REPAIR — SPLIT"))).toBe(true);
+  });
+
+  it("skips the repair step when it is switched off", async () => {
+    configureGrooming({ token: "sk-test" });
+    writeGroomingConfig(store!, { enabled: true, repairEnabled: false });
+    store!.createMemory({ agent_id: "agent-a", title: "Big", body: "word ".repeat(1000) });
+    const prompts: string[] = [];
+    const client: LlmClient = {
+      complete: async (request: LlmCompletionRequest) => {
+        prompts.push(request.messages[0]?.content ?? "");
+        return { content: JSON.stringify({ operations: [] }), model: "m", usage: null };
+      },
+    };
+    await runGroomingTick({ store: store!, trigger: "manual", buildClient: () => client });
+    expect(prompts.some((p) => p.includes("MODE: REPAIR"))).toBe(false);
+  });
 });

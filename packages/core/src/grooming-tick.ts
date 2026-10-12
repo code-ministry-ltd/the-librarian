@@ -39,6 +39,7 @@ import {
   runDueCuration,
 } from "./grooming-enqueue.js";
 import { type LlmClient, createGroomingLlmClient } from "./grooming-llm-client.js";
+import { runRepair } from "./grooming-repair.js";
 import { isScheduleDue } from "./grooming-schedule.js";
 import type { RunCurationCaps } from "./grooming-worker.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
@@ -171,17 +172,40 @@ export async function runGroomingTick(options: GroomingTickOptions): Promise<Gro
     reclaimedStaleLocks: 0,
     errored: 0,
   };
+  // Self-healing repair (spec 075 §5) follows each shelf's pass on a scheduled or
+  // run-now groom — never the post-intake trigger or a flag groom, which are
+  // targeted and should stay cheap. It is fail-soft: a repair failure is recorded on
+  // its own run and never fails the grooming pass.
+  const trigger = baseRun.trigger;
+  const repairs = config.repairEnabled && (trigger === "schedule" || trigger === "manual");
   for (const shelf of shelves) {
-    const shelfSummary = await runDueCuration({
-      store: store.groomingStoreForShelf(shelf),
-      ...baseRun,
-    });
+    const shelfStore = store.groomingStoreForShelf(shelf);
+    const shelfSummary = await runDueCuration({ store: shelfStore, ...baseRun });
     summary.due += shelfSummary.due;
     summary.ran += shelfSummary.ran;
     summary.skippedLocked += shelfSummary.skippedLocked;
     summary.skippedIdempotent += shelfSummary.skippedIdempotent;
     summary.reclaimedStaleLocks += shelfSummary.reclaimedStaleLocks;
     summary.errored += shelfSummary.errored;
+    if (repairs) {
+      try {
+        await runRepair({
+          store: shelfStore,
+          ledgerStore: store,
+          shelfId: shelf.id,
+          llmClient,
+          actorId: baseRun.actorId,
+          confidenceThreshold: baseRun.confidenceThreshold,
+          ...(baseRun.promptAddendum ? { promptAddendum: baseRun.promptAddendum } : {}),
+          model: baseRun.model,
+          splitPerRun: config.repairSplitPerRun,
+          recoverPerRun: config.repairRecoverPerRun,
+          now: baseRun.now,
+        });
+      } catch {
+        summary.errored += 1;
+      }
+    }
   }
   return { ran: true, summary };
 }

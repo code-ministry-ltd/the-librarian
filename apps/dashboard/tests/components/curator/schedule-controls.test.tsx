@@ -20,6 +20,9 @@ const config: GroomingConfig = {
   triggerThreshold: 20,
   debounceMinutes: 60,
   maxMemoriesPerRun: 200,
+  repairEnabled: true,
+  repairSplitPerRun: 3,
+  repairRecoverPerRun: 5,
 };
 
 // --- Intake: "Run every [N] minutes" ------------------------------------------
@@ -114,6 +117,16 @@ describe("GroomingConfigForm — grooming schedule", () => {
 
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onSave.mock.calls[0]![0]).toMatchObject({ intervalDays: 7, scheduleTime: "04:30" });
+  });
+
+  it("saves the repair toggle (spec 075 §5)", async () => {
+    const onSave = vi.fn(async (_patch: GroomingConfigPatch) => ({ ok: true as const }));
+    render(<GroomingConfigForm initial={config} onSave={onSave} />);
+    const toggle = screen.getByRole("checkbox", { name: /repair long and merged memories/i });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(toggle);
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ repairEnabled: false });
   });
 
   it("shows the cadence hint (1 = nightly · 7 = weekly · 30 ≈ monthly)", () => {

@@ -15,6 +15,7 @@ import {
   IntakeJudgmentSchema,
   buildBaseCuratorPrompt,
   buildCuratorPrompt,
+  buildRepairPrompt,
 } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -170,8 +171,33 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v6.2 prompt version (v6.2 adds the size cap and detail rule, spec 075)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v6.2");
+  it("pins the v6.3 prompt version (v6.3 adds the repair modes, spec 075)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v6.3");
+  });
+
+  it("builds the repair prompts with the narrowed contract for each mode (spec 075 §5.2)", () => {
+    const item = {
+      id: "mem_a",
+      title: "Big",
+      body: "body",
+      agentId: null,
+      status: "active" as const,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      isGlobal: false,
+    };
+    const [splitSystem, splitUser] = buildRepairPrompt({ kind: "split", memory: item });
+    expect(splitSystem?.content).toContain("MODE: REPAIR — SPLIT");
+    expect(splitSystem?.content).not.toContain('"type": "merge"');
+    expect(splitUser?.content).toContain('"id": "mem_a"');
+    const [recoverSystem, recoverUser] = buildRepairPrompt({
+      kind: "recover",
+      archivedSource: { id: "mem_old", title: "Old", body: "baruch-server 8034" },
+      successors: [item],
+    });
+    expect(recoverSystem?.content).toContain("Noop is the expected outcome for stale material");
+    expect(recoverUser?.content).toContain('"archived_source"');
+    expect(recoverUser?.content).toContain("baruch-server 8034");
   });
 
   it("states the 4,000-character cap and the keep-every-detail rule in both modes (spec 075)", () => {
