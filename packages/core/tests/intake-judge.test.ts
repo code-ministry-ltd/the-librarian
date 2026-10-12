@@ -141,4 +141,15 @@ describe("parseIntakeJudgment", () => {
     );
     expect(parsed.judgment).toBeUndefined();
   });
+
+  it("accepts up to five unfiled facts on any action and rejects more (spec 076)", () => {
+    const base = { action: "noop", rationale: "r", confidence: 0.9 };
+    expect(
+      parseIntakeJudgment(JSON.stringify({ ...base, unfiled: ["a", "b", "c", "d", "e"] })).judgment,
+    ).toMatchObject({ unfiled: ["a", "b", "c", "d", "e"] });
+    expect(
+      parseIntakeJudgment(JSON.stringify({ ...base, unfiled: ["a", "b", "c", "d", "e", "f"] }))
+        .parseError,
+    ).toBeDefined();
+  });
 });

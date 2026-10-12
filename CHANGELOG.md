@@ -9,6 +9,18 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.3] — 2026-10-12
+
+### Fixed
+
+- **Intake no longer drops the extra facts in a bundled submission.** When one
+  `remember` call or captured turn holds several unrelated facts, intake files the
+  main one. Since 1.32.1 the others were only named in the decision rationale.
+  Now intake puts each of them (up to five) back in the inbox as its own
+  submission, to be filed separately on the next sweep. A fact split out this way
+  is never split again. Curator prompt v6.4; grooming re-grooms each slice once
+  after the upgrade, as with any prompt change.
+
 ## [1.33.2] — 2026-10-12
 
 ### Fixed
@@ -5056,6 +5068,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.2...v1.33.3
 [1.33.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.1...v1.33.2
 [1.33.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.0...v1.33.1
 [1.33.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.1...v1.33.0

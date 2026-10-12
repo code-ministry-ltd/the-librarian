@@ -72,7 +72,9 @@ import type { IntakeCandidates } from "./intake/navigate.js";
 // carries GUARD FEEDBACK into an intake retry.
 // v6.3 (spec 075 §5) adds the two REPAIR modes: split one oversized memory, and
 // recover facts an archived merge source holds that its successors lost.
-export const CURATOR_PROMPT_VERSION = "v6.3";
+// v6.4 (spec 076 §5) lets every intake judgment list a bundled submission's
+// other durable facts in "unfiled"; intake files each as its own submission.
+export const CURATOR_PROMPT_VERSION = "v6.4";
 
 // ── the shared core ───────────────────────────────────────────────────────────
 
@@ -117,7 +119,7 @@ const INTAKE_MODE = `MODE: INTAKE — a single new SUBMISSION has arrived. Using
 JUDGEMENT IN THIS MODE:
 - Extract the kernel. A submission often wraps one durable sentence in session narration, tool output, or pleasantries. Judge — and file — the durable core; drop the wrapper, and say in the rationale what you dropped. A submission that is ALL wrapper is a noop.
 - Choosing augment vs supersede: augment when everything the doc already says stays true and the submission adds to it; supersede when the submission contradicts or replaces what the doc says — and in the replacement body, state the current facts: rewrite or remove the superseded statements and keep every other durable claim. Add no "was A; now B" note unless the change itself is worth remembering; git keeps the old text.
-- A bundled submission (several unrelated durable facts in one) cannot become several docs here: file the primary fact. Add a secondary fact only when it is about the same subject; otherwise leave it out and name it in the rationale.
+- A bundled submission (several unrelated durable facts in one): file the primary fact. Add a secondary fact only when it is about the same subject; list every other durable fact in "unfiled" as a self-contained statement (at most 5) — each is filed separately later. Never list wrapper, transient or duplicate material there.
 - A candidate marked "at_size_cap": true cannot take more content. If the submission belongs with it, create a focused new memory and [[link]] it to that candidate.
 - Weigh the four values from above: a decision-with-why, a correction, an arc, or a stated direction outranks a bare fact; a recurring pattern outranks its latest instance; brittle code detail (paths, line numbers, snippets) is stripped even from an otherwise durable submission.
 
@@ -134,7 +136,7 @@ OUTPUT CONTRACT — respond with a single JSON object and nothing else, exactly 
 - { "action": "archive", "target_id": string, "rationale": string, "confidence": number } — an existing doc is now stale, with no replacement.
 - { "action": "split", "target_id": string, "replacements": [{ "title": string, "body": string, "tags": string[] }, …], "rationale": string, "confidence": number } — RARE. An existing CANDIDATE doc ("target_id") has become an overloaded grab-bag conflating ≥2 distinct entities, and this submission belongs to one of them; spin that doc into ≥2 focused per-entity docs ("replacements"). Use ONLY when the submission is primarily about a different, already well-supported candidate entity. "target_id" MUST be one of the CANDIDATE ids. Applied without review when you are confident, so score it honestly. Do NOT split a single-entity / non-overloaded submission.
 - { "action": "noop", "rationale": string, "confidence": number } — nothing worth filing: a duplicate, OR a submission that is obviously transient or low-value with no lasting recall value.
-These shapes are exact: use exactly the fields shown for that action and no others. Tags belong only in "create" and inside "split" replacements.
+These shapes are exact: use exactly the fields shown for that action and no others, except that ANY action may also carry "unfiled": string[] (see the bundled-submission rule). Tags belong only in "create" and inside "split" replacements.
 (Cross-doc merge is not an intake judgment — grooming consolidates docs. A submission that merely duplicates an existing doc is a noop.)
 
 RULES (re-checked in code after you respond — a judgment that breaks one is discarded):

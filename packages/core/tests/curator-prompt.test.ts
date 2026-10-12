@@ -171,8 +171,8 @@ describe("buildCuratorPrompt — shared core", () => {
     }
   });
 
-  it("pins the v6.3 prompt version (v6.3 adds the repair modes, spec 075)", () => {
-    expect(CURATOR_PROMPT_VERSION).toBe("v6.3");
+  it("pins the v6.4 prompt version (v6.4 adds unfiled facts, spec 076)", () => {
+    expect(CURATOR_PROMPT_VERSION).toBe("v6.4");
   });
 
   it("builds the repair prompts with the narrowed contract for each mode (spec 075 §5.2)", () => {

@@ -56,6 +56,12 @@ export interface InboxSubmissionHints {
    * carried through and applied to a NEW consolidated memory.
    */
   appliesTo?: string[];
+  /**
+   * The inbox item this submission was split out of (spec 076 §5): a fact the
+   * judge left unfiled from a bundled submission. A derived item never spawns
+   * further items, so the split recurses one level only.
+   */
+  derivedFrom?: string;
 }
 
 /** Write options: clock/id injection (for determinism) + the submission hints to persist. */
@@ -102,7 +108,7 @@ function quote(value: string): string {
 /** Serialize an inbox submission to its on-disk markdown (frontmatter + text). */
 export function serializeInboxItem(item: InboxItem): string {
   const lines = [`id: ${quote(item.id)}`, `created: ${quote(item.created)}`];
-  const { agentId, tags, appliesTo } = item.hints;
+  const { agentId, tags, appliesTo, derivedFrom } = item.hints;
   // Hints are written only when present, so an inbox item with none stays minimal.
   if (agentId !== undefined) lines.push(`agent_id: ${quote(agentId)}`);
   if (tags !== undefined) {
@@ -117,6 +123,7 @@ export function serializeInboxItem(item: InboxItem): string {
         : "applies_to: []",
     );
   }
+  if (derivedFrom !== undefined) lines.push(`derived_from: ${quote(derivedFrom)}`);
   if (item.attempts) lines.push(`attempts: ${item.attempts}`);
   const head = `---\n${lines.join("\n")}\n---\n`;
   const body = item.text.trim();
@@ -135,6 +142,7 @@ export function parseInboxItem(raw: string): InboxItem {
   if (Array.isArray(d.applies_to)) {
     hints.appliesTo = d.applies_to.filter((a): a is string => typeof a === "string");
   }
+  if (typeof d.derived_from === "string") hints.derivedFrom = d.derived_from;
   const attempts =
     typeof d.attempts === "number" && Number.isInteger(d.attempts) && d.attempts > 0
       ? d.attempts

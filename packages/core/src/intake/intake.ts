@@ -9,7 +9,12 @@
 // a value-free status rather than throwing.
 
 import type { LlmClient } from "../grooming-llm-client.js";
-import { claimInboxItem, completeInboxItem, parseInboxItem } from "../store/corpus/inbox.js";
+import {
+  claimInboxItem,
+  completeInboxItem,
+  parseInboxItem,
+  writeInbox,
+} from "../store/corpus/inbox.js";
 import type { Vault } from "../store/corpus/vault.js";
 import type { Memory } from "../store/memory-store.js";
 import {
@@ -166,6 +171,21 @@ export async function intakeInboxItem(
     if (outcome.kind === "refused") outcome = { kind: "rejected", reason: outcome.reason };
   }
   record(judgment, outcome);
+  // A bundled submission's other facts (spec 076 §5): each fact the judge left
+  // unfiled goes back to this shelf's inbox as its own submission, so it is
+  // judged on its own next sweep instead of being dropped. One level only — a
+  // derived item never spawns more.
+  if (!item.hints.derivedFrom) {
+    for (const fact of judgment.unfiled ?? []) {
+      writeInbox(deps.vault, fact, {
+        ...(deps.now ? { now: deps.now } : {}),
+        hints: {
+          ...(item.hints.agentId !== undefined ? { agentId: item.hints.agentId } : {}),
+          derivedFrom: item.id,
+        },
+      });
+    }
+  }
   // Complete on ANY outcome, including `rejected` — see the contract note above:
   // a rejection is terminal (won't be retried), so the item is removed.
   completeInboxItem(deps.vault, claimed);

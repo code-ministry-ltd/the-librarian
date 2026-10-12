@@ -16,6 +16,12 @@ import { z } from "zod";
 
 const rationale = z.string().min(1);
 const confidence = z.number().min(0).max(1);
+/**
+ * The durable facts in a bundled submission that this judgment did not file
+ * (spec 076 §5), each a self-contained statement. Intake files each one as its
+ * own submission. Optional on every action.
+ */
+const unfiled = z.array(z.string().min(1).max(2000)).max(5).optional();
 
 /** Novel fact with no good existing home → a fresh doc (S1). */
 const CreateJudgment = z.strictObject({
@@ -25,6 +31,7 @@ const CreateJudgment = z.strictObject({
   tags: z.array(z.string()).default([]),
   rationale,
   confidence,
+  unfiled,
 });
 /** Weave the new fact into an existing doc (S2/S18) — minimal-edit at apply time. */
 const AugmentJudgment = z.strictObject({
@@ -33,6 +40,7 @@ const AugmentJudgment = z.strictObject({
   addition: z.string().min(1),
   rationale,
   confidence,
+  unfiled,
 });
 /** The submission contradicts/updates an existing doc → replace it (S4). */
 const SupersedeJudgment = z.strictObject({
@@ -42,6 +50,7 @@ const SupersedeJudgment = z.strictObject({
   body: z.string().min(1),
   rationale,
   confidence,
+  unfiled,
 });
 /** An existing doc is now stale (no replacement). */
 const ArchiveJudgment = z.strictObject({
@@ -49,12 +58,14 @@ const ArchiveJudgment = z.strictObject({
   target_id: z.string().min(1),
   rationale,
   confidence,
+  unfiled,
 });
 /** Nothing to do — a duplicate or non-actionable submission. */
 const NoopJudgment = z.strictObject({
   action: z.literal("noop"),
   rationale,
   confidence,
+  unfiled,
 });
 /**
  * Split an overloaded existing doc into ≥2 focused docs (spec 043 D-B). NARROW:
@@ -79,6 +90,7 @@ const SplitJudgment = z.strictObject({
     .min(2),
   rationale,
   confidence,
+  unfiled,
 });
 
 export const IntakeJudgmentSchema = z.discriminatedUnion("action", [

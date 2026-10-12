@@ -16,7 +16,9 @@ The Curator settings contain three distinct jobs, configured side by side under
 
 - **Intake** consolidates each new submission as it arrives — gathering the evidence
   around it and then creating, updating, or merging against what you already know.
-  This is what turns "remember that…" into a filed memory.
+  This is what turns "remember that…" into a filed memory. When one submission
+  bundles several unrelated facts, intake files the main one and puts each of the
+  others (up to five) back in the inbox, to be filed on its own.
 - **Grooming** tends the *existing* collection slice by slice — de-duplicating,
   archiving stale notes, refining. Grooming is **triggered, not scheduled**: it runs
   when you press *Run now*, and automatically after intake has added enough new

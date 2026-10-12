@@ -14,6 +14,7 @@ import {
   intakeInboxItem,
   createVault,
   listInbox,
+  parseInboxItem,
   writeInbox,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -398,5 +399,50 @@ describe("intakeInboxItem", () => {
     expect(result).toMatchObject({ status: "judge_error" });
     expect(calls.update).toEqual([]);
     expect(vault.listMarkdown("inbox/.processing")).toHaveLength(1); // still claimed, for the reaper
+  });
+
+  it("files a bundled submission's unfiled facts as their own inbox items (spec 076)", async () => {
+    const ref = writeInbox(vault, "Elaine moved to Berlin. Also, the NAS backs up nightly.", {
+      now: () => 1000,
+      generateId: () => "inbox_a",
+      hints: { agentId: "codex", tags: ["misc"] },
+    });
+    const { store } = fakeStore();
+    const client = fakeClient(
+      JSON.stringify({
+        action: "create",
+        title: "Elaine",
+        body: "Elaine lives in Berlin.",
+        tags: ["person"],
+        rationale: "primary fact",
+        confidence: 0.95,
+        unfiled: ["The NAS backs up nightly."],
+      }),
+    );
+    await intakeInboxItem(ref.relPath, baseDeps(store, client));
+    const pending = listInbox(vault);
+    expect(pending).toHaveLength(1);
+    const derived = parseInboxItem(vault.readText(pending[0]!));
+    expect(derived.text).toBe("The NAS backs up nightly.");
+    expect(derived.hints).toEqual({ agentId: "codex", derivedFrom: "inbox_a" });
+  });
+
+  it("does not split a derived item again — one level only", async () => {
+    const ref = writeInbox(vault, "The NAS backs up nightly. And another thing.", {
+      now: () => 1000,
+      generateId: () => "inbox_b",
+      hints: { derivedFrom: "inbox_a" },
+    });
+    const { store } = fakeStore();
+    const client = fakeClient(
+      JSON.stringify({
+        action: "noop",
+        rationale: "r",
+        confidence: 0.95,
+        unfiled: ["And another thing."],
+      }),
+    );
+    await intakeInboxItem(ref.relPath, baseDeps(store, client));
+    expect(listInbox(vault)).toEqual([]);
   });
 });
