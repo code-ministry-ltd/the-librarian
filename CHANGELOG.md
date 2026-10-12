@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.1] — 2026-10-12
+
+### Fixed
+
+- **Flagged memories now rank lower in recall.** `flag_memory` has always said a
+  flag demotes the memory, but only the keyword fallback did; the search every
+  query actually uses ignored flags. A flagged memory now moves three places down
+  the results. It still appears when it is a strong match, so an agent can see
+  it and the curator's correction. The `flag_memory` description now says "ranks
+  the memory lower in recall", which is what happens (Pi extension 1.22.1).
+
 ## [1.33.0] — 2026-10-12
 
 ### Added
@@ -5028,6 +5039,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.0...v1.33.1
 [1.33.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.1...v1.32.0

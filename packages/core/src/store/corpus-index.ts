@@ -272,6 +272,9 @@ export async function searchReferences(
   return out;
 }
 
+/** Places a flagged memory moves down in recall (spec 076 D1). */
+export const FLAG_RANK_PENALTY = 3;
+
 export interface RecallMemoriesDeps {
   /** A built (and ideally cached) corpus index — see buildCorpusIndex. */
   index: CorpusIndex;
@@ -304,10 +307,19 @@ export async function recallMemories(
   const limit = options.limit ?? 8;
   const hits = await deps.index.recall(query, { limit: Math.max(limit * 4, 24) });
   const tagSet = new Set(options.tags ?? []);
+  // Resolve, then demote flagged memories (spec 076 §3): an open flag moves a hit
+  // down FLAG_RANK_PENALTY places — lower, never excluded, matching the keyword
+  // path's "small penalty", so a strongly relevant flagged memory still surfaces.
+  const resolved = hits
+    .map((hit, rank) => ({ hit, rank, memory: deps.getMemory(hit.id) }))
+    .filter((entry): entry is typeof entry & { memory: Memory } => entry.memory !== null)
+    .map((entry) => ({
+      ...entry,
+      position: entry.rank + ((entry.memory.flags ?? []).length > 0 ? FLAG_RANK_PENALTY + 0.5 : 0),
+    }))
+    .sort((a, b) => a.position - b.position);
   const out: RecalledMemory[] = [];
-  for (const hit of hits) {
-    const memory = deps.getMemory(hit.id);
-    if (!memory) continue; // stale id (vault changed mid-flight) — skip
+  for (const { hit, memory } of resolved) {
     if (tagSet.size && !(memory.tags ?? []).some((tag) => tagSet.has(tag))) continue;
     // The best-matching section rides along for the agent-facing excerpt (spec
     // 075); consumers that read only title/body (intake navigation) ignore it.

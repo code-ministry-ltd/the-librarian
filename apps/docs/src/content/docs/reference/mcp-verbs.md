@@ -38,7 +38,7 @@ Save a durable fact, preference, or decision the moment you learn it — not tra
 
 ## `flag_memory`
 
-A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` (required: say what is wrong and, if you know it, what is true now; never include secrets). Never call while private. The curator reviews flagged memories shortly afterwards: it may correct the memory in place, propose a correction for a person to approve, or leave the flag for human review. The flag also demotes the memory below unflagged matches in recall. Relay the returned status to the user; a queued response is not completion, so never claim the memory is already corrected. Use sparingly, only when a memory actively led you astray.
+A recalled memory is wrong, misleading, or outdated—flag it with a short free-text `reason` (required: say what is wrong and, if you know it, what is true now; never include secrets). Never call while private. The curator reviews flagged memories shortly afterwards: it may correct the memory in place, propose a correction for a person to approve, or leave the flag for human review. The flag also ranks the memory lower in recall. Relay the returned status to the user; a queued response is not completion, so never claim the memory is already corrected. Use sparingly, only when a memory actively led you astray.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

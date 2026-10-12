@@ -4,8 +4,9 @@ description: Review memories an agent reported as wrong, misleading, or out of d
 ---
 
 When an agent recalls a memory that looks wrong, it can **flag** it with a reason
-rather than changing or archiving it on its own. Flagging demotes the memory below
-unflagged matches in recall and asks the curator to look at it again.
+rather than changing or archiving it on its own. Flagging moves the memory a few places
+lower in recall (it still appears when it is a strong match) and asks the curator
+to look at it again.
 
 ![The Flagged memories page](../../../assets/screenshots/flagged.png)
 

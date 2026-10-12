@@ -142,7 +142,7 @@ describe("MCP tool descriptions carry their protocols (rethink T12)", () => {
     expect(flagDescription).toMatch(/correct the memory in place/i);
     expect(flagDescription).toMatch(/propose a correction for a person to approve/i);
     expect(flagDescription).toMatch(/leave the flag for human review/i);
-    expect(flagDescription).toMatch(/demotes the memory below unflagged matches/i);
+    expect(flagDescription).toMatch(/ranks the memory lower in recall/i);
     expect(flagDescription).toMatch(/relay the returned status to the user/i);
     expect(flagDescription).toMatch(/queued response is not completion/i);
     expect(flagDescription).toMatch(/never claim the memory is already corrected/i);

@@ -248,9 +248,9 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "is true now; never include secrets). Never call while private. The curator "
                 "reviews flagged memories shortly afterwards: it may correct the memory in "
                 "place, propose a correction for a person to approve, or leave the flag for "
-                "human review. The flag also demotes the memory below unflagged matches in "
-                "recall. Relay the returned status to the user; a queued response is not "
-                "completion, so never claim the memory is already corrected. Use sparingly, "
+                "human review. The flag also ranks the memory lower in recall. Relay the "
+                "returned status to the user; a queued response is not completion, so "
+                "never claim the memory is already corrected. Use sparingly, "
                 "only when a memory actively led you astray."
             ),
             "parameters": {
