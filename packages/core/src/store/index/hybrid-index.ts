@@ -65,7 +65,7 @@ export interface HybridIndex {
 }
 
 /** How many times `needle` appears as a contiguous run of tokens in `hay`. */
-function countContiguous(hay: string[], needle: string[]): number {
+export function countContiguous(hay: string[], needle: string[]): number {
   if (needle.length === 0 || needle.length > hay.length) return 0;
   let count = 0;
   for (let i = 0; i + needle.length <= hay.length; i++) {

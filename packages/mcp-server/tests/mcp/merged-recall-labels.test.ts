@@ -72,4 +72,31 @@ describe("MCP recall provenance labels (spec 062 SC 5)", () => {
     expect(text).not.toMatch(/^- \[/m); // no bracketed provenance token anywhere
     expect(text).not.toContain("[main]"); // the default shelf's id never leaks into the text
   });
+
+  it("labels an `ids` fetch the same way under a multi-shelf router (spec 075)", async () => {
+    const twoShelfRouter: VaultRouter = { shelves: () => [SARAH, TEAM], writeTarget: () => SARAH };
+    const store = storeWith(twoShelfRouter);
+    const sarah = store
+      .forShelf(SARAH)
+      .createMemory(
+        { title: "Sarah note", body: "piano tuning secrets", agent_id: "x" },
+        {},
+      ).memory;
+    const team = store
+      .forShelf(TEAM)
+      .createMemory({ title: "Team note", body: "piano tuning roster", agent_id: "x" }, {}).memory;
+
+    const res = (await handleMcpPayload(store, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "recall", arguments: { agent_id: "x", ids: [team.id, sarah.id] } },
+    })) as { result: { content: { text: string }[] } };
+
+    expect(res.result.content[0].text).toBe(
+      "Relevant Memories\n\n" +
+        "- [team] Team note: piano tuning roster\n" +
+        "- [Sarah's shelf (members/x)] Sarah note: piano tuning secrets",
+    );
+  });
 });

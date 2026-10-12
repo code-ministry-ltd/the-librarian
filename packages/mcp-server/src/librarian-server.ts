@@ -693,6 +693,13 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     if (chronicleScheduler) {
       void chronicleScheduler.runNow().catch(() => logger.error("chronicle boot scan failed"));
     }
+    // Warm the recall index in the background (spec 075): building it embeds every memory's
+    // sections, which after an upgrade can take minutes on CPU. A recall that arrives
+    // mid-build awaits the same cached build instead of starting its own; recall is
+    // read-only, so this warm-up writes nothing.
+    void store
+      .recall({ query: "warm-up", limit: 1 })
+      .catch((error) => logger.error({ err: error }, "recall index warm-up failed"));
     // Boot scan for the settle-sweep: drain any capture buffers a previous run left
     // settled (e.g. a crash before the first tick), and reap orphaned `.processing`
     // claims. Gated on the scheduler being live, like the intake/grooming boot scans;

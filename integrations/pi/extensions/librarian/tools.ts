@@ -57,12 +57,14 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
         "preference, or past decision could change your answer. Memories only: " +
         "long-form reference docs are NOT here — search those with " +
         "`search_references`. Query by free text; `tags` narrows to memories " +
-        "carrying any of the supplied tags. Pass `include_ids: true` to prefix " +
-        "each result with its memory id, so a memory that turns out to be wrong " +
-        "can be passed straight to `flag_memory`.",
+        "carrying any of the supplied tags. Long memories come back as the " +
+        "best-matching excerpt; pass `ids` to fetch whole memories. Pass " +
+        "`include_ids: true` to prefix each result with its memory id, so a memory " +
+        "that turns out to be wrong can be passed straight to `flag_memory`.",
       parameters: Type.Object({
         query: Type.Optional(Type.String()),
         tags: Type.Optional(Type.Array(Type.String())),
+        ids: Type.Optional(Type.Array(Type.String())),
         include_ids: Type.Optional(Type.Boolean()),
         limit: Type.Optional(Type.Number()),
       }),

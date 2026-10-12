@@ -4,8 +4,9 @@
 //   - memories/<id>.md   → the recall index (active only; archived are excluded)
 //   - references/**.md   → search_references (raw markdown, retrieved on demand)
 //
-// recall runs on the plain hybrid index (keyword+vector RRF) + the wikilink
-// graph — no namespace wrapper. References are never part of the recall index
+// recall runs on the sectioned memory index (spec 075: each memory matched
+// section by section, keyword+vector+title+phrase RRF) + the wikilink graph —
+// no namespace wrapper. References are never part of the recall index
 // (recall is memories-only by construction, S8); search_references builds its
 // own references-only index per call.
 //
@@ -33,6 +34,12 @@ import {
   embedChunksWithCache,
   recallFromIndex,
 } from "./index/index.js";
+import { splitMemorySections } from "./index/memory-sections.js";
+import {
+  type SectionedMemoryDoc,
+  buildSectionedIndex,
+  sectionEmbeddingText,
+} from "./index/sectioned-index.js";
 import { parseMemoryDocument } from "./markdown/memory-doc.js";
 import type { Memory } from "./memory-store.js";
 
@@ -92,7 +99,8 @@ export async function buildCorpusIndex(
   // Full vault-relative cache key (see cacheKeyPrefix): keeps a SHARED embedding cache's records
   // and prune scoping disjoint across shelves. Empty for the OSS default shelf ⇒ unchanged keys.
   const keyPrefix = options.cacheKeyPrefix ?? "";
-  const docs: { id: string; text: string; vector?: number[] }[] = [];
+  const docs: SectionedMemoryDoc[] = [];
+  const linkTexts: { id: string; body: string }[] = [];
   const liveMemoryPaths: string[] = [];
 
   for (const relPath of vault.listMarkdown(CORPUS_DIR)) {
@@ -113,28 +121,40 @@ export async function buildCorpusIndex(
     // approval) and archived memories must not surface in recall.
     if (memory.status !== MemoryStatus.Active) continue;
     const text = `${memory.title} ${memory.body} ${memory.tags.join(" ")}`;
-    // Persistent cache (T23): a memory is a single "chunk" — its composed
-    // searchable text, keyed under the memory's file path. The hash covers the
-    // composed text (not the raw file), so a frontmatter-only edit that doesn't
-    // change what's indexed stays a hit, while any title/body/tag change misses.
-    const vector = cache
-      ? (await embedChunksWithCache(cache, options.embedder, cacheKey, text, [text]))[0]
+    const sections = splitMemorySections(memory.body);
+    // Persistent cache (T23): one vector per section (spec 075), keyed under the
+    // memory's file path like a reference's chunks. The content hash covers the
+    // composed text, so any title/body/tag change re-embeds; a frontmatter-only
+    // edit stays a hit.
+    const sectionVectors = cache
+      ? await embedChunksWithCache(
+          cache,
+          options.embedder,
+          cacheKey,
+          text,
+          sections.map((section) => sectionEmbeddingText(memory.title, section)),
+        )
       : undefined;
-    docs.push({ id: memory.id, text, ...(vector ? { vector } : {}) });
+    docs.push({
+      id: memory.id,
+      title: memory.title,
+      body: memory.body,
+      tags: memory.tags,
+      sections,
+      ...(sectionVectors ? { sectionVectors } : {}),
+    });
+    linkTexts.push({ id: memory.id, body: text });
   }
   // Opportunistic orphan cleanup: entries for memory files that no longer exist
   // (archived = moved out of memories/, or deleted) leave the cache. Prune is scoped to THIS
   // shelf's `<prefix>memories/` so it never evicts another shelf's records.
   cache?.prune(`${keyPrefix}${CORPUS_DIR}/`, liveMemoryPaths);
 
-  const hybrid = await buildHybridIndex(docs, options.embedder);
+  const hybrid = await buildSectionedIndex(docs, options.embedder);
   // restrictToKnownIds: recall is memories-only (spec §5.1), so a memory that
   // wikilinks a reference path or a dangling target must not pull that non-memory
   // id into recall via backlink expansion.
-  const linkGraph = buildLinkGraph(
-    docs.map((doc) => ({ id: doc.id, body: doc.text })),
-    { restrictToKnownIds: true },
-  );
+  const linkGraph = buildLinkGraph(linkTexts, { restrictToKnownIds: true });
 
   return {
     recall: (query, recallOptions) => recallFromIndex({ hybrid, linkGraph }, query, recallOptions),
@@ -280,16 +300,18 @@ export async function recallMemories(
   deps: RecallMemoriesDeps,
   query: string,
   options: RecallMemoriesOptions = {},
-): Promise<Memory[]> {
+): Promise<RecalledMemory[]> {
   const limit = options.limit ?? 8;
   const hits = await deps.index.recall(query, { limit: Math.max(limit * 4, 24) });
   const tagSet = new Set(options.tags ?? []);
-  const out: Memory[] = [];
+  const out: RecalledMemory[] = [];
   for (const hit of hits) {
     const memory = deps.getMemory(hit.id);
     if (!memory) continue; // stale id (vault changed mid-flight) — skip
     if (tagSet.size && !(memory.tags ?? []).some((tag) => tagSet.has(tag))) continue;
-    out.push(memory);
+    // The best-matching section rides along for the agent-facing excerpt (spec
+    // 075); consumers that read only title/body (intake navigation) ignore it.
+    out.push(hit.section !== undefined ? { ...memory, matchedSection: hit.section } : memory);
     if (out.length >= limit) break;
   }
   return out;
@@ -306,6 +328,8 @@ export async function recallMemories(
 export interface RecalledMemory extends Memory {
   shelfId?: string;
   shelfLabel?: string;
+  /** The memory's best-matching section for this query (spec 075); absent for backlink hits. */
+  matchedSection?: string;
 }
 
 /** One shelf's ranked recall hits (index 0 = best), paired with the shelf they came from. */

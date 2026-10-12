@@ -76,6 +76,54 @@ describe("buildCorpusIndex", () => {
     expect(hits[0]?.matchedDirectly).toBe(true);
   });
 
+  it("ranks a long memory first when the query matches one section deep inside it (spec 075)", async () => {
+    const store = createLibrarianStore({ dataDir, backend: "markdown" });
+    let longId = "";
+    try {
+      // A long, many-topic memory whose LAST paragraph holds the fact. Whole-memory
+      // ranking dilutes that paragraph under ~2,100 words of other material;
+      // 175-word paragraphs keep the fact in a section of its own.
+      const filler = Array.from(
+        { length: 12 },
+        (_, i) =>
+          `Topic ${i}: ` +
+          Array.from({ length: 175 }, (_, j) => `subject${i}word${j % 40}`).join(" "),
+      );
+      longId = store.createMemory({
+        agent_id: "codex",
+        title: "Workstation notes",
+        body: [...filler, "The zigzag proxy listens on port 9431 behind caddy."].join("\n\n"),
+      }).memory.id;
+      // Short memories that share some of the query's words.
+      store.createMemory({
+        agent_id: "codex",
+        title: "Caddy setup",
+        body: "caddy terminates tls for the proxy and the dashboard",
+      });
+      store.createMemory({
+        agent_id: "codex",
+        title: "Port inventory",
+        body: "the proxy and the dashboard each have a port",
+      });
+    } finally {
+      store.close();
+    }
+    const index = await buildCorpusIndex(createVault({ dataDir }), {
+      embedder: createHashEmbedder(),
+    });
+    const hits = await index.recall("which port does the zigzag proxy listen on behind caddy");
+    expect(hits[0]?.id).toBe(longId);
+    expect(hits[0]?.section).toBe("The zigzag proxy listens on port 9431 behind caddy.");
+  });
+
+  it("ranks identically across two builds of the same vault (spec 075)", async () => {
+    seed();
+    const build = () =>
+      buildCorpusIndex(createVault({ dataDir }), { embedder: createHashEmbedder() });
+    const [a, b] = await Promise.all([build(), build()]);
+    expect(await a.recall("piano boats water")).toEqual(await b.recall("piano boats water"));
+  });
+
   it("excludes archived memories from recall", async () => {
     const ids = seed();
     const index = await buildCorpusIndex(createVault({ dataDir }), {

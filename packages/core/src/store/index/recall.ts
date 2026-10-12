@@ -8,7 +8,7 @@
 // Returns ranked ids + provenance; fetching + formatting the markdown bundle
 // is the caller's (recall verb) concern.
 
-import type { HybridIndex } from "./hybrid-index.js";
+import type { HybridHit, HybridIndex } from "./hybrid-index.js";
 import type { LinkGraph } from "./link-graph.js";
 
 export interface RecalledDoc {
@@ -16,6 +16,11 @@ export interface RecalledDoc {
   score: number;
   /** True = matched the query; false = pulled in via a backlink neighbour. */
   matchedDirectly: boolean;
+  /**
+   * The memory's best-matching section (spec 075), when the index is sectioned.
+   * Direct matches only — a backlink neighbour matched nothing itself.
+   */
+  section?: string;
 }
 
 export interface RecallDeps {
@@ -47,9 +52,18 @@ export async function recallFromIndex(
   const expand = options.expandBacklinks ?? true;
   const decay = options.neighborDecay ?? 0.5; // expected in [0,1]; neighbours are decayed, never boosted
 
-  const primary = await deps.hybrid.search(query, Math.max(SEED_CAP, limit));
-  const entries = new Map<string, { score: number; direct: boolean }>();
-  for (const hit of primary) entries.set(hit.id, { score: hit.score, direct: true });
+  const primary: (HybridHit & { section?: string })[] = await deps.hybrid.search(
+    query,
+    Math.max(SEED_CAP, limit),
+  );
+  const entries = new Map<string, { score: number; direct: boolean; section?: string }>();
+  for (const hit of primary) {
+    entries.set(hit.id, {
+      score: hit.score,
+      direct: true,
+      ...(hit.section !== undefined ? { section: hit.section } : {}),
+    });
+  }
 
   if (expand) {
     // Single-hop only: neighbours of the direct matches (never neighbours of
@@ -68,10 +82,11 @@ export async function recallFromIndex(
     }
   }
 
-  const ranked = [...entries.entries()].map(([id, value]) => ({
+  const ranked: RecalledDoc[] = [...entries.entries()].map(([id, value]) => ({
     id,
     score: value.score,
     matchedDirectly: value.direct,
+    ...(value.section !== undefined ? { section: value.section } : {}),
   }));
   // Direct matches outrank decayed neighbours; id tie-break for determinism.
   ranked.sort(

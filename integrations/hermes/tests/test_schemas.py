@@ -29,11 +29,10 @@ EXPECTED_NAMES = [
 ]
 
 # Adapter-advertised required params. These mirror the server's `required`
-# lists minus `agent_id` (provider-injected from config); `recall` additionally
-# tightens `query` to required (the server leaves it optional, but an
-# unqueried recall is never what the model wants).
+# lists minus `agent_id` (provider-injected from config). `recall` leaves
+# `query` optional like the server: `ids` (spec 075) fetches without one.
 EXPECTED_REQUIRED: dict[str, list[str]] = {
-    "recall": ["query"],
+    "recall": [],
     "remember": ["title", "body"],
     "flag_memory": ["memory_id", "reason"],
     "store_handoff": ["title", "document_md"],

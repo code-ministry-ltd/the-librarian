@@ -433,7 +433,7 @@ export {
   type CallerBackfillReport,
   backfillCallerIds,
 } from "./caller-backfill.js";
-export { formatRecall } from "./formatters/index.js";
+export { EXCERPT_MIN_BODY_CHARS, type RecallItem, formatRecall } from "./formatters/index.js";
 export {
   type DiffableMemory,
   memoryContentDigest,
@@ -557,11 +557,16 @@ export {
   type RecalledDoc,
   type ReferenceChunk,
   type ResolveEmbedderOptions,
+  type SectionedHit,
+  type SectionedIndex,
+  type SectionedMemoryDoc,
   type VectorHit,
   type VectorIndex,
   DEFAULT_CHUNK_OVERLAP_CHARS,
   DEFAULT_MAX_CHUNK_CHARS,
+  MAX_SECTION_WORDS,
   buildHybridIndex,
+  buildSectionedIndex,
   buildKeywordIndex,
   buildLinkGraph,
   buildVectorIndex,
@@ -576,6 +581,8 @@ export {
   extractRelevantSection,
   recallFromIndex,
   resolveEmbedder,
+  sectionEmbeddingText,
+  splitMemorySections,
   truncateToTokenLimit,
 } from "./store/index/index.js";
 export {

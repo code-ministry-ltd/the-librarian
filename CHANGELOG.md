@@ -9,6 +9,38 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.32.0] — 2026-10-12
+
+### Changed
+
+- **Recall matches each part of a memory, not the memory as a whole.**
+  Memories are now indexed in sections of up to 180 words. A fact deep inside a
+  long memory is matched on its own words instead of being diluted by everything
+  else the memory says, and a memory's title counts towards its rank. On a real
+  corpus of 531 memories this raised the share of real agent queries whose top
+  result was directly relevant from 50% to 70%. Intake ranks its filing
+  candidates with the same search, so its choice of candidates may change too.
+- **Recall returns the matching part of a long memory.** When a memory is over
+  1,500 characters and has more than one section, an agent now receives the
+  section that best matches its query, followed by a note saying how many words
+  were left out and how to fetch the rest. Shorter memories come back whole, as
+  before. On the same corpus, the median recall response fell from 14 KB to 9 KB
+  and the largest from 62 KB to 11 KB. The dashboard's Recall tab still shows
+  whole memories, in the order agents get them.
+- **The first start after upgrading re-embeds every memory once.** Section
+  vectors replace whole-memory vectors in the embedding cache. The server now
+  starts building the recall index in the background at boot; on CPU this takes
+  about two minutes per 500 memories, and a recall made meanwhile waits for it.
+
+### Added
+
+- **`recall` takes `ids` to fetch memories whole.** Pass up to 10 memory ids
+  (the excerpt note names the one to use) and recall returns those memories in
+  full, in the order given, ignoring `query`, `tags` and `limit`. Archived,
+  pending and unknown ids are left out without comment. The Pi and Hermes
+  adapters expose the new parameter (Pi extension 1.22.0); Hermes no longer
+  requires `query`.
+
 ## [1.31.1] — 2026-10-08
 
 ### Added
@@ -4938,6 +4970,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.32.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.1...v1.32.0
 [1.31.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.31.0...v1.31.1
 [1.31.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.1...v1.31.0
 [1.30.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.30.0...v1.30.1

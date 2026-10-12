@@ -48,3 +48,11 @@ export {
   recallFromIndex,
 } from "./recall.js";
 export { extractRelevantSection } from "./reference-section.js";
+export { MAX_SECTION_WORDS, splitMemorySections } from "./memory-sections.js";
+export {
+  type SectionedHit,
+  type SectionedIndex,
+  type SectionedMemoryDoc,
+  buildSectionedIndex,
+  sectionEmbeddingText,
+} from "./sectioned-index.js";

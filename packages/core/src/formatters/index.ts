@@ -3,6 +3,8 @@
 // HandoverPayload type) were retired with the rest of the session
 // subsystem in sessions-rethink PR 7.
 
+import { splitMemorySections } from "../store/index/memory-sections.js";
+
 export interface RecallItem {
   id?: string;
   title: string;
@@ -16,6 +18,8 @@ export interface RecallItem {
    */
   shelfId?: string;
   shelfLabel?: string;
+  /** The best-matching section for the query (spec 075); absent for backlink hits. */
+  matchedSection?: string;
 }
 
 export interface FormatRecallOptions {
@@ -24,6 +28,30 @@ export interface FormatRecallOptions {
   // existing prose-only output stays byte-identical for system-prompt injection
   // and other consumers that don't need ids.
   includeIds?: boolean;
+  // When true, a long memory renders as its best-matching section plus a footer
+  // telling the agent how to fetch the rest (spec 075). Only the agent-facing
+  // `recall` verb turns this on; every other consumer keeps whole bodies.
+  excerpts?: boolean;
+}
+
+/** Bodies at or under this length are always returned whole (spec 075 D2). */
+export const EXCERPT_MIN_BODY_CHARS = 1500;
+
+const countWords = (text: string): number => text.split(/\s+/).filter(Boolean).length;
+
+/** The body text an agent sees for one hit: the whole body, or an excerpt + footer. */
+function recallBody(memory: RecallItem, excerpts: boolean): string {
+  if (
+    !excerpts ||
+    memory.matchedSection === undefined ||
+    memory.body.length <= EXCERPT_MIN_BODY_CHARS ||
+    splitMemorySections(memory.body).length < 2
+  ) {
+    return memory.body;
+  }
+  const remaining = countWords(memory.body) - countWords(memory.matchedSection);
+  const fetch = memory.id ? `; recall with ids ["${memory.id}"] for all of it` : "";
+  return `${memory.matchedSection}\n(excerpt — ${remaining} more words in this memory${fetch})`;
 }
 
 export function formatRecall(
@@ -48,7 +76,7 @@ export function formatRecall(
         ? `[${shelfLabel ? `${shelfLabel} (${shelfId})` : shelfId}] `
         : "";
       const idPrefix = options.includeIds && memory.id ? `[${memory.id}] ` : "";
-      return `- ${shelfPrefix}${idPrefix}${memory.title}: ${memory.body}`;
+      return `- ${shelfPrefix}${idPrefix}${memory.title}: ${recallBody(memory, options.excerpts === true)}`;
     })
     .join("\n")}`;
 }

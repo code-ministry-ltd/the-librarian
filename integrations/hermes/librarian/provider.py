@@ -187,8 +187,8 @@ def load_config(hermes_home: str, env: dict[str, str]) -> LibrarianConfig | None
 #     injected from config (see _scoped_args), not asked of the model;
 #   - `include_ids` is always set to true on recall so flag_memory has a
 #     target;
-#   - recall tightens `query` to required (the server leaves it optional, but
-#     an unqueried recall is never what the model wants);
+#   - recall leaves `query` optional, like the server, because `ids` (spec
+#     075) fetches whole memories without one;
 #   - the retired `conv_id` and curator-side fields (visibility/scope/
 #     confidence/applies_to) are not advertised.
 # tests/test_schemas.py pins this parity against the TS sources.
@@ -203,18 +203,21 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "Search durable memory before acting — at task start, or whenever "
                 "prior context, a stored preference, or a past decision would help. "
                 "Query by free text; `tags` narrows to memories carrying any of the "
-                "supplied tags. Each result is prefixed with its memory id (e.g. "
-                "`[mem_…]`) — if a recalled memory turns out to be wrong, misleading, "
-                "or outdated, pass that id to `flag_memory` with a `reason`."
+                "supplied tags. Long memories come back as the best-matching excerpt; "
+                "pass `ids` to fetch whole memories. Each result is prefixed with its "
+                "memory id (e.g. `[mem_…]`) — if a recalled memory turns out to be "
+                "wrong, misleading, or outdated, pass that id to `flag_memory` with a "
+                "`reason`."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
+                    "ids": {"type": "array", "items": {"type": "string"}},
                     "limit": {"type": "number"},
                 },
-                "required": ["query"],
+                "required": [],
             },
         },
         {

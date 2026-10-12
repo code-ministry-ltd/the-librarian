@@ -12,13 +12,14 @@ you never pass them.
 
 ## `recall`
 
-Search the owner's durable memories. Call this before answering anything that may have prior context — at task start, and whenever a stored fact, preference, or past decision could change your answer. Memories only: long-form reference docs are NOT here — search those with `search_references`. Query by free text; `tags` narrows to memories carrying any of the supplied tags. Pass `include_ids: true` to prefix each result with its memory id, so a memory that turns out to be wrong can be passed straight to `flag_memory`.
+Search the owner's durable memories. Call this before answering anything that may have prior context — at task start, and whenever a stored fact, preference, or past decision could change your answer. Memories only: long-form reference docs are NOT here — search those with `search_references`. Query by free text; `tags` narrows to memories carrying any of the supplied tags. Long memories come back as the best-matching excerpt; pass `ids` to fetch whole memories. Pass `include_ids: true` to prefix each result with its memory id, so a memory that turns out to be wrong can be passed straight to `flag_memory`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `agent_id` | `string` | server-populated | Server-populated from your authenticated token, not supplied by you — it identifies the calling agent. |
 | `query` | `string` | optional | Free-text search over the owner's durable memories; matches are ranked by relevance. |
 | `tags` | `string[]` | optional | Narrow the search to memories carrying any of these tags. |
+| `ids` | `string[]` | optional | Fetch these memories whole (up to 10), e.g. the id named in an excerpt's footer. When given, query, tags and limit are ignored. |
 | `include_ids` | `boolean` | optional | When true, prefix each result with its memory id, so a memory that turns out to be wrong can be passed straight to flag_memory. |
 | `limit` | `number` | optional | Maximum number of memories to return. |
 

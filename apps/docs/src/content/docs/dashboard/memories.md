@@ -17,9 +17,11 @@ The page has three tabs:
   filter by text, and narrow further with the chips for **Agent**, **From date**,
   and **To date**. When your account can see more than one shelf, a **Shelf**
   filter appears too. A sort control orders by created or updated time.
-- **Recall** — runs the same hybrid search your agents use. Enter a question,
+- **Recall** — runs the same search your agents use. Enter a question,
   optionally add comma-separated tags and a result limit, and press **Recall** to
-  see exactly what an agent would get back.
+  see the memories an agent would get back, in the same order. The tab shows each
+  memory whole; an agent gets a long memory (over 1,500 characters) as the part
+  that best matches its question, with a note telling it how to fetch the rest.
 - **References** — searches the long-form reference documents (the big background
   files you file here), using the same `search_references` action agents use.
   **Add reference** puts a new one in: give it a URL to fetch, choose a `.md`
