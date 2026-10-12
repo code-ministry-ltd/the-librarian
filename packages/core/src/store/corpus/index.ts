@@ -9,7 +9,12 @@ export {
   parseDocument,
   serializeDocument,
 } from "./frontmatter.js";
-export { type Wikilink, parseWikilinks, renameWikilinkTarget } from "./wikilink.js";
+export {
+  type Wikilink,
+  parseWikilinks,
+  renameWikilinkTarget,
+  repointWikilinkTargets,
+} from "./wikilink.js";
 export {
   type Vault,
   type VaultOptions,
@@ -18,7 +23,7 @@ export {
   resolveVaultPath,
   scopeVault,
 } from "./vault.js";
-export { relinkVault } from "./link-integrity.js";
+export { type RepointLinksStore, relinkVault, repointMemoryLinks } from "./link-integrity.js";
 export {
   type VaultLinkIndex,
   type VaultLinkIndexOptions,

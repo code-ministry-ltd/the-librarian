@@ -9,6 +9,23 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.2] — 2026-10-12
+
+### Fixed
+
+- **Recall follows links written as titles.** Recall pulls in memories linked to
+  the ones it finds, so a fact filed under either of two related memories can be
+  found from the other. The curator writes those links as `[[Title]]`, but recall
+  only followed links written as memory ids, so on a real corpus just 2 of 883
+  links counted. Title links now count too (matched case-insensitively). A title
+  that two memories share links to neither.
+- **Links follow a merge.** When memories are merged, whether by the curator, from
+  the dashboard, or by approving a proposal that replaces them, links to the old
+  memories now point at the merged one. Until now they were left pointing at
+  archived memories; on the same corpus that was true of 53% of links. Splits
+  and plain archives leave links as they are, since there is no single new
+  memory to point at.
+
 ## [1.33.1] — 2026-10-12
 
 ### Fixed
@@ -5039,6 +5056,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.1...v1.33.2
 [1.33.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.0...v1.33.1
 [1.33.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.32.0...v1.32.1

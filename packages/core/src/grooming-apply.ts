@@ -28,6 +28,7 @@ import { redactSecrets } from "./grooming-redaction.js";
 import type { ValidatedOperation, ValidationContext } from "./grooming-validate.js";
 import type { RecordCurationOperationInput } from "./store/curation-store.js";
 import type { MemoryFlagReview } from "./store/memory-types.js";
+import { repointMemoryLinks } from "./store/corpus/link-integrity.js";
 import { mergeMemory } from "./store/merge-memory.js";
 import { type SplitReplacement, splitMemory } from "./store/split-memory.js";
 
@@ -372,13 +373,7 @@ function applyOp(op: GroomingOperation, c: ExecContext): string[] {
       // partial failure the duplicate stays active rather than losing a source);
       // pass the actor so it archives the superseded sources (an apply, not a
       // propose).
-      return [
-        mergeMemory(c.store, {
-          replacement: buildCreateCall(c, op.replacement, op.source_memory_ids),
-          sourceIds: op.source_memory_ids,
-          archiveActorId: c.actorId,
-        }),
-      ];
+      return [applyMerge(op, c)];
     case "split":
       // Auto-applied split: create every replacement, then archive the source.
       // The shared primitive owns that data-loss-safe ordering; the actor is
@@ -460,6 +455,36 @@ function guardReason(
     default:
       return null;
   }
+}
+
+/**
+ * An applied merge: create the replacement, archive the sources, then repoint
+ * links to the sources at the replacement (spec 076 §4) so they don't dangle.
+ */
+function applyMerge(op: Extract<GroomingOperation, { type: "merge" }>, c: ExecContext): string {
+  const sources = op.source_memory_ids
+    .map((id) => c.store.getMemory(id))
+    .filter((m): m is StoredMemory => m !== null);
+  const id = mergeMemory(c.store, {
+    replacement: buildCreateCall(c, op.replacement, op.source_memory_ids),
+    sourceIds: op.source_memory_ids,
+    archiveActorId: c.actorId,
+  });
+  repointMemoryLinks(
+    {
+      listActive: () =>
+        c.store.listMemoriesUncapped({ status: "active" }).memories as unknown as {
+          id: string;
+          title: string;
+          body: string;
+        }[],
+      updateBody: (memoryId, body) =>
+        c.store.updateMemory(memoryId, { body }, c.actorId, { allowProtected: true }),
+    },
+    sources,
+    { id, title: op.replacement.title },
+  );
+  return id;
 }
 
 /** Stamp split lineage on a split replacement (spec 075 §4.4). */

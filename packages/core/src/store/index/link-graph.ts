@@ -25,6 +25,12 @@ export interface LinkGraphOptions {
    * id that isn't an indexed memory.
    */
   restrictToKnownIds?: boolean;
+  /**
+   * Map a link's target to a document id before adding the edge (spec 076 §4):
+   * the recall index resolves `[[Title]]` links, which is how the curator writes
+   * them, to memory ids. Returning undefined keeps the raw target.
+   */
+  resolveTarget?: (target: string) => string | undefined;
 }
 
 export function buildLinkGraph(
@@ -46,7 +52,7 @@ export function buildLinkGraph(
 
   for (const doc of documents) {
     for (const link of parseWikilinks(doc.body)) {
-      const target = link.target;
+      const target = options.resolveTarget?.(link.target) ?? link.target;
       if (knownIds && !knownIds.has(target)) continue; // skip dangling / non-indexed targets
       add(outbound, doc.id, target);
       add(inbound, target, doc.id);

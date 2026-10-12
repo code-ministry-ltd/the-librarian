@@ -9,7 +9,7 @@
 // relinking matches `[[id]]` rather than path-form links.
 
 import type { Vault } from "./vault.js";
-import { renameWikilinkTarget } from "./wikilink.js";
+import { renameWikilinkTarget, repointWikilinkTargets } from "./wikilink.js";
 
 /**
  * Rewrite every wikilink whose target equals `from` to `to` across the
@@ -24,6 +24,41 @@ export function relinkVault(vault: Vault, from: string, to: string): string[] {
     if (body === document.body) continue;
     vault.writeDocument(relPath, { ...document, body });
     changed.push(relPath);
+  }
+  return changed;
+}
+
+/** The memory surface {@link repointMemoryLinks} reads and writes through. */
+export interface RepointLinksStore {
+  /** The active memories whose links may need repointing. */
+  listActive: () => { id: string; title: string; body: string }[];
+  /** Persist one memory's new body (one write, attributed by the caller). */
+  updateBody: (id: string, body: string) => void;
+}
+
+/**
+ * Links follow a merge (spec 076 §4). When `replacement` supersedes `sources`,
+ * every other active memory that links to a source's title is rewritten to link
+ * to the replacement's title instead. Returns the ids rewritten. A source whose
+ * title equals the replacement's needs nothing; the replacement itself is left
+ * alone (its links to its own sources are the curator's to write).
+ */
+export function repointMemoryLinks(
+  store: RepointLinksStore,
+  sources: readonly { title: string }[],
+  replacement: { id: string; title: string },
+): string[] {
+  const from = sources
+    .map((source) => source.title)
+    .filter((title) => title.trim().toLowerCase() !== replacement.title.trim().toLowerCase());
+  if (from.length === 0) return [];
+  const changed: string[] = [];
+  for (const memory of store.listActive()) {
+    if (memory.id === replacement.id) continue;
+    const body = repointWikilinkTargets(memory.body, from, replacement.title);
+    if (body === memory.body) continue;
+    store.updateBody(memory.id, body);
+    changed.push(memory.id);
   }
   return changed;
 }

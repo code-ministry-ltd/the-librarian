@@ -75,3 +75,25 @@ function renderWikilink(link: Wikilink): string {
   const alias = link.alias ? `|${link.alias}` : "";
   return `${link.embed ? "!" : ""}[[${link.target}${heading}${alias}]]`;
 }
+
+/**
+ * Rewrite every wikilink whose target matches one of `from` — case-insensitively,
+ * trimmed — to point at `to`, preserving embed flag, heading anchor and alias
+ * (spec 076 §4: links follow a merge). Titles are how the curator links memories,
+ * and Obsidian resolves them case-insensitively, so the match does too.
+ */
+export function repointWikilinkTargets(
+  markdown: string,
+  from: readonly string[],
+  to: string,
+): string {
+  const wanted = new Set(from.map((target) => target.trim().toLowerCase()));
+  let out = "";
+  let cursor = 0;
+  for (const link of parseWikilinks(markdown)) {
+    if (!wanted.has(link.target.toLowerCase())) continue;
+    out += markdown.slice(cursor, link.start) + renderWikilink({ ...link, target: to });
+    cursor = link.end;
+  }
+  return out + markdown.slice(cursor);
+}

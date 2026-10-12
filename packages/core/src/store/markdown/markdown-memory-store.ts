@@ -22,6 +22,7 @@ import {
 } from "../../constants.js";
 import { MemoryStatus } from "../../schemas/common.js";
 import { commitSubject } from "../commit-message.js";
+import { repointMemoryLinks } from "../corpus/link-integrity.js";
 import type { Vault } from "../corpus/vault.js";
 import { formatContextPackage, uniqueById } from "../memory-context.js";
 import { cleanPatch } from "../memory-patch.js";
@@ -451,6 +452,21 @@ export function createMarkdownMemoryStore(deps: MarkdownMemoryStoreDeps): Memory
     // (they all supersede the same source by construction) alive when one of
     // them is approved: split archives nothing, so nothing cascades.
     if (archivedSourceIds.length > 0) withdrawInvalidatedProposals(id, archivedSourceIds, agent_id);
+    // Links follow the replacement (spec 076 §4): every other active memory that
+    // linked to a source it replaced now links to the approved memory's title.
+    if (archivedSourceIds.length > 0 && approved) {
+      repointMemoryLinks(
+        {
+          listActive: () => listAll({ status: MemoryStatus.Active }),
+          updateBody: (memoryId, body) =>
+            updateMemory(memoryId, { body }, agent_id, { allowProtected: true }),
+        },
+        archivedSourceIds
+          .map((sourceId) => getMemory(sourceId))
+          .filter((m): m is Memory => m !== null),
+        { id: approved.id, title: approved.title },
+      );
+    }
     return approved;
   }
 

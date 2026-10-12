@@ -154,7 +154,19 @@ export async function buildCorpusIndex(
   // restrictToKnownIds: recall is memories-only (spec §5.1), so a memory that
   // wikilinks a reference path or a dangling target must not pull that non-memory
   // id into recall via backlink expansion.
-  const linkGraph = buildLinkGraph(linkTexts, { restrictToKnownIds: true });
+  // Links resolve by id, else by case-insensitive title (spec 076 §4) — the
+  // curator writes `[[Title]]`. A title two memories share resolves to neither.
+  const idSet = new Set(docs.map((doc) => doc.id));
+  const byTitle = new Map<string, string | null>();
+  for (const doc of docs) {
+    const key = doc.title.trim().toLowerCase();
+    byTitle.set(key, byTitle.has(key) ? null : doc.id);
+  }
+  const linkGraph = buildLinkGraph(linkTexts, {
+    restrictToKnownIds: true,
+    resolveTarget: (target) =>
+      idSet.has(target) ? target : (byTitle.get(target.trim().toLowerCase()) ?? undefined),
+  });
 
   return {
     recall: (query, recallOptions) => recallFromIndex({ hybrid, linkGraph }, query, recallOptions),

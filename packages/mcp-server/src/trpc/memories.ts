@@ -33,6 +33,7 @@ import {
   augmentBody,
   driftedSources,
   mergeMemory,
+  repointMemoryLinks,
   normaliseCallerId,
   preservesOriginal,
   proposalDrift,
@@ -840,6 +841,9 @@ export const memoriesRouter = router({
     // trailer on the create + on each source archive — ALWAYS the acting principal, spec 064 F3).
     const owner = input.agent_id ?? ctx.principal.actorId;
     const auditActor = ctx.principal.actorId;
+    const sources = input.source_ids
+      .map((sourceId) => ctx.store.getMemory(sourceId))
+      .filter((memory): memory is NonNullable<typeof memory> => memory !== null);
     const id = rethrowAsNotFound(
       () =>
         mergeMemory(ctx.store, {
@@ -848,6 +852,16 @@ export const memoriesRouter = router({
           archiveActorId: auditActor,
         }),
       "Memory not found",
+    );
+    // Links follow the merge (spec 076 §4): repoint [[Source]] to the merged title.
+    repointMemoryLinks(
+      {
+        listActive: () => ctx.store.listAll({ status: "active" }),
+        updateBody: (memoryId, body) =>
+          ctx.store.updateMemory(memoryId, { body }, auditActor, { allowProtected: true }),
+      },
+      sources,
+      { id, title: String(input.replacement.title) },
     );
     return /* SAFETY: id was just created by mergeMemory in this store. */ ctx.store.getMemory(
       id,
