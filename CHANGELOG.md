@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.6] — 2026-10-23
+
+### Added
+
+- **Build files for Anthropic's OSS Scanner.** `.oss-scanner/Dockerfile` builds
+  the whole workspace with everything its tests need, so the scanner can run them
+  without a network. `.oss-scanner/threat_model.md` tells it where untrusted input
+  enters, which components matter most and how we rate severity. Nothing changes
+  for anyone running The Librarian.
+
 ## [1.33.5] — 2026-10-23
 
 ### Security
@@ -5094,6 +5104,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.5...v1.33.6
 [1.33.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.4...v1.33.5
 [1.33.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.3...v1.33.4
 [1.33.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.2...v1.33.3

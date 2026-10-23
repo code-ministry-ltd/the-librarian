@@ -1,0 +1,34 @@
+# Used instead of the root .dockerignore when building .oss-scanner/Dockerfile
+# (BuildKit's per-Dockerfile ignore file). The root file drops .github, which the
+# installer-cli tests read; the scanner image needs everything the tests need.
+
+.git
+.DS_Store
+node_modules
+data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+npm-debug.log
+
+# Build outputs (regenerated inside the image)
+packages/*/dist
+apps/*/.next
+apps/*/dist
+**/*.tsbuildinfo
+
+# Editor / IDE
+.vscode
+.idea
+.claude
+
+# Local-only files
+.env
+.env.local
+*.log
+
+# Test artefacts
+coverage
+playwright-report
+test-results
+apps/dashboard/test-results
