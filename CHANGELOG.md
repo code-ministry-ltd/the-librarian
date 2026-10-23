@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.5] — 2026-10-23
+
+### Security
+
+- **Zod moves to 4.6.7.** A new high-severity advisory (GHSA-mrhx-c7xc-m3w5):
+  Zod before 4.6.6 can exhaust memory validating an oversized constrained
+  collection. The server's memory and handoff schemas and its admin API inputs
+  are Zod schemas. The advisory also failed the production dependency audit,
+  which blocks every PR.
+
 ## [1.33.4] — 2026-10-23
 
 ### Security
@@ -5084,6 +5094,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.4...v1.33.5
 [1.33.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.3...v1.33.4
 [1.33.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.2...v1.33.3
 [1.33.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.1...v1.33.2

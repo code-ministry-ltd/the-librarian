@@ -256,7 +256,7 @@ importers:
     devDependencies:
       '@earendil-works/pi-coding-agent':
         specifier: ^0.84.1
-        version: 0.84.1(ws@8.21.3)(zod@4.4.3)
+        version: 0.84.1(ws@8.21.3)(zod@4.6.7)
       '@librarian/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
@@ -307,8 +307,8 @@ importers:
         specifier: ^3.19.1
         version: 3.19.1(typescript@6.0.3)
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -338,8 +338,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -366,8 +366,8 @@ importers:
         specifier: ^13.1.3
         version: 13.1.3
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -5396,9 +5396,6 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
-
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
@@ -5411,11 +5408,11 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@anthropic-ai/sdk@0.91.1(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.91.1(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@asamuzakjp/css-color@6.0.7':
     dependencies:
@@ -5574,7 +5571,7 @@ snapshots:
     dependencies:
       sitemap: 9.0.1
       stream-replace-string: 2.0.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   '@astrojs/starlight@0.41.7(astro@7.3.8(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(typescript@6.0.3)':
     dependencies:
@@ -5975,9 +5972,9 @@ snapshots:
 
   '@ctrl/tinycolor@4.2.0': {}
 
-  '@earendil-works/pi-agent-core@0.84.1(ws@8.21.3)(zod@4.4.3)':
+  '@earendil-works/pi-agent-core@0.84.1(ws@8.21.3)(zod@4.6.7)':
     dependencies:
-      '@earendil-works/pi-ai': 0.84.1(ws@8.21.3)(zod@4.4.3)
+      '@earendil-works/pi-ai': 0.84.1(ws@8.21.3)(zod@4.6.7)
       '@earendil-works/pi-telemetry': 0.84.1
       diff: 8.0.4
       ignore: 7.0.5
@@ -5991,9 +5988,9 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.84.1(ws@8.21.3)(zod@4.4.3)':
+  '@earendil-works/pi-ai@0.84.1(ws@8.21.3)(zod@4.6.7)':
     dependencies:
-      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
       '@aws-sdk/client-bedrock-runtime': 3.1048.0
       '@earendil-works/pi-telemetry': 0.84.1
       '@google/genai': 1.52.0
@@ -6002,7 +5999,7 @@ snapshots:
       '@smithy/node-http-handler': 4.7.3
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
-      openai: 6.26.0(ws@8.21.3)(zod@4.4.3)
+      openai: 6.26.0(ws@8.21.3)(zod@4.6.7)
       partial-json: 0.1.7
       typebox: 1.3.7
     transitivePeerDependencies:
@@ -6017,10 +6014,10 @@ snapshots:
     dependencies:
       '@earendil-works/pi-protocol': 0.84.1
 
-  '@earendil-works/pi-coding-agent@0.84.1(ws@8.21.3)(zod@4.4.3)':
+  '@earendil-works/pi-coding-agent@0.84.1(ws@8.21.3)(zod@4.6.7)':
     dependencies:
-      '@earendil-works/pi-agent-core': 0.84.1(ws@8.21.3)(zod@4.4.3)
-      '@earendil-works/pi-ai': 0.84.1(ws@8.21.3)(zod@4.4.3)
+      '@earendil-works/pi-agent-core': 0.84.1(ws@8.21.3)(zod@4.6.7)
+      '@earendil-works/pi-ai': 0.84.1(ws@8.21.3)(zod@4.6.7)
       '@earendil-works/pi-client': 0.84.1
       '@earendil-works/pi-protocol': 0.84.1
       '@earendil-works/pi-tui': 0.84.1
@@ -6489,8 +6486,8 @@ snapshots:
     dependencies:
       '@opentelemetry/semantic-conventions': 1.43.0
       ws: 8.21.3
-      zod: 4.4.3
-      zod-to-json-schema: 3.25.2(zod@4.4.3)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
     transitivePeerDependencies:
@@ -9626,10 +9623,10 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
-  openai@6.26.0(ws@8.21.3)(zod@4.4.3):
+  openai@6.26.0(ws@8.21.3)(zod@4.6.7):
     optionalDependencies:
       ws: 8.21.3
-      zod: 4.4.3
+      zod: 4.6.7
 
   optionator@0.9.4:
     dependencies:
@@ -10869,11 +10866,9 @@ snapshots:
 
   yoctocolors@2.2.0: {}
 
-  zod-to-json-schema@3.25.2(zod@4.4.3):
+  zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
-      zod: 4.4.3
-
-  zod@4.4.3: {}
+      zod: 4.6.7
 
   zod@4.6.7: {}
 
