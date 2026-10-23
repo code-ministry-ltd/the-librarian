@@ -45,6 +45,9 @@ describe("dependency security policy", () => {
       "tar@<=7.5.21": "7.5.22",
       "undici@>=8.0.0 <8.10.2": "8.10.2",
       "devalue@<5.9.3": "5.9.3",
+      "smol-toml@<1.9.0": "1.9.1",
+      "postcss-selector-parser@<7.1.6": "7.1.7",
+      "fast-copy@>=4.0.0 <4.1.0": "4.1.2",
     };
     const packageOverrides = rootPackage.pnpm?.overrides;
     const workspaceOverrides = parseWorkspaceOverrides(workspace);

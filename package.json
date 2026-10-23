@@ -1,6 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "1.33.3",
+  "version": "1.33.4",
   "description": "A portable, agent-agnostic memory system for AI agents.",
   "private": true,
   "type": "module",
@@ -26,7 +26,10 @@
       "simple-git@<4.0.2": "4.0.2",
       "@simple-git/argv-parser@<2.0.1": "2.0.1",
       "http-cache-semantics@<=4.2.0": "4.3.0",
-      "@xmldom/xmldom@<0.9.12": "0.9.12"
+      "@xmldom/xmldom@<0.9.12": "0.9.12",
+      "smol-toml@<1.9.0": "1.9.1",
+      "postcss-selector-parser@<7.1.6": "7.1.7",
+      "fast-copy@>=4.0.0 <4.1.0": "4.1.2"
     }
   },
   "scripts": {

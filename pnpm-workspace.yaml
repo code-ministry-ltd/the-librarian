@@ -6,7 +6,7 @@ packages:
 
 catalog:
   typescript: ^6.0.3
-  vite: ^8.2.1
+  vite: ^8.2.4
   vitest: ^4.1.10
 
 # pnpm 11 reads dependency-resolution settings here; keep these selectors in
@@ -32,3 +32,6 @@ overrides:
   "@babel/core@<7.29.7": "7.29.7"
   "protobufjs@<7.6.5": "7.6.5"
   "@xmldom/xmldom@<0.9.12": "0.9.12"
+  "smol-toml@<1.9.0": "1.9.1"
+  "postcss-selector-parser@<7.1.6": "7.1.7"
+  "fast-copy@>=4.0.0 <4.1.0": "4.1.2"

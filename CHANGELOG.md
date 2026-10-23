@@ -9,6 +9,22 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.4] — 2026-10-23
+
+### Security
+
+- **Patched dependencies with new advisories.** New Next.js, Vite and Astro
+  advisories failed the production dependency audit, which blocks every PR.
+  - The dashboard moves to Next.js 15.5.28. That fixes a denial of service
+    through Server Actions and two cache-poisoning issues. It also clears a
+    critical image-optimisation advisory, whose cause is `sharp` before 0.35.5;
+    1.30.1 already pinned `sharp` to 0.35.5, so images from 1.30.1 on were
+    not exposed to that one.
+  - Vite (a build and dev-server tool here, not served by the server) moves
+    to 8.3.5, and the docs site to Astro 7.3.8.
+  - `smol-toml`, `postcss-selector-parser` and `fast-copy` are pinned to fixed
+    releases.
+
 ## [1.33.3] — 2026-10-12
 
 ### Fixed
@@ -5068,6 +5084,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.3...v1.33.4
 [1.33.3]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.2...v1.33.3
 [1.33.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.1...v1.33.2
 [1.33.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.0...v1.33.1
