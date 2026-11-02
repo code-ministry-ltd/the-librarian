@@ -38,11 +38,15 @@ changes from this point forward are catalogued here.
 
 ### Fixed
 
-- **Journal search finds the last word of a sentence.** The shared tokenizer keeps
-  `.` so names like `config.ts` stay whole, which also turned a sentence-final
-  "importer." into a token that "importer" never matched. Journal search (the
-  `journal` tool and the dashboard) now drops punctuation that ends a word before
-  ranking; dotted names still match.
+- **`recall` now matches the last word of a sentence.** The shared tokenizer keeps
+  `.`, `/` and `-` so names like `config.ts`, `docs/release.md` and `1.2.3` stay
+  whole, but it also kept them at the end of a word, so "We kept the importer."
+  indexed `importer.` and a search for "importer" never matched it through the
+  keyword half of recall. Punctuation at either edge of a word is now trimmed;
+  inner punctuation is kept, so dotted, slashed and hyphenated names match as
+  before. The same tokenizer drives duplicate detection, reference search and the
+  new journal search, which all benefit; the recall index is rebuilt at startup, so
+  nothing needs migrating.
 
 ## [1.36.0] — 2026-11-02
 
