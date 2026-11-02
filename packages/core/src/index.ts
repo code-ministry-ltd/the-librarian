@@ -303,11 +303,19 @@ export {
 } from "./journal/summarize.js";
 export { JOURNAL_DIR, type JournalFileStore } from "./store/journal-types.js";
 export {
+  type JournalViewEpisode,
+  type JournalViewPeriod,
+  decodeJournalText,
+  journalView,
+} from "./journal/view.js";
+export {
   type JournalQueryInput,
+  type JournalSearchHit,
   JOURNAL_QUERY_DEFAULTS,
   JournalQueryError,
   parseJournalQueryArgs,
   queryJournal,
+  searchJournal,
 } from "./journal/query.js";
 export {
   type GroomingMemoryRecord,

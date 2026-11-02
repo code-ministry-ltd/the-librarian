@@ -169,6 +169,12 @@ describe("queryJournal — search mode (SC11)", () => {
     expect(text).not.toContain("zebra in alpha");
   });
 
+  it("finds a word that ends a sentence, while keeping dotted names like file.ts searchable", () => {
+    entry("2026-10-01", "a#s1", ["Shipped the importer.", "Renamed config.ts to settings.ts."]);
+    expect(queryJournal(files, { query: "importer" }, TODAY)).toContain("[entry, 2026-10-01]");
+    expect(queryJournal(files, { query: "settings.ts" }, TODAY)).toContain("[entry, 2026-10-01]");
+  });
+
   it("suggests what to try when nothing matches", () => {
     entry("2026-10-01", "a#s1", ["something else"]);
     expect(queryJournal(files, { query: "zebra" }, TODAY)).toContain(

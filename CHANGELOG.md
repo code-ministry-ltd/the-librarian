@@ -9,6 +9,41 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.37.0] — 2026-11-02
+
+### Added
+
+- **The Journal page.** A new **Journal** tab in the dashboard shows the
+  [journal](https://librarian-docs.codeministry.net/guides/journal/) newest first:
+  days entry by entry, each with its time, harness and project, then the weekly and
+  monthly summaries.
+  - **Where you are, always.** A large date beside the page names the period you're
+    reading and how long ago it was. A timeline beneath it runs from today to the
+    oldest entry, with a marker that glides as you scroll. The timeline is stretched
+    towards the present, like the journal, so the last fortnight gets as much room
+    as the months before it.
+  - **Travel through time.** Click or drag along the timeline, or use it as a
+    keyboard slider (arrows, Page Up/Down, Home, End); <kbd>J</kbd> / <kbd>K</kbd>
+    step to the next older or newer period anywhere on the page.
+  - **Search with the agents' engine.** <kbd>/</kbd> searches the journal exactly as
+    the `journal` MCP tool does — same matching, ranking, range defaults and
+    project/harness filters — and plots the matches on the timeline.
+  - **Delete** an entry, a day, or a week or month summary, after a confirmation
+    that names it.
+  - Narrow screens pin the date and a horizontal timeline under the navigation. All
+    motion is skipped under reduced-motion settings. Checked with axe against WCAG
+    2.1 AA in both themes.
+- tRPC `journal.entries`, `journal.search`, `journal.deleteEpisode` and
+  `journal.deletePeriod` back the page.
+
+### Fixed
+
+- **Journal search finds the last word of a sentence.** The shared tokenizer keeps
+  `.` so names like `config.ts` stay whole, which also turned a sentence-final
+  "importer." into a token that "importer" never matched. Journal search (the
+  `journal` tool and the dashboard) now drops punctuation that ends a word before
+  ranking; dotted names still match.
+
 ## [1.36.0] — 2026-11-02
 
 ### Added
@@ -5205,6 +5240,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.37.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.7...v1.34.0

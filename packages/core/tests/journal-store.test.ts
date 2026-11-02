@@ -15,8 +15,10 @@ import {
   appendEpisode,
   createLibrarianStore,
   deleteEpisode,
+  decodeJournalText,
   deletePeriod,
   episodeTiming,
+  journalView,
   renderRecentWindow,
   resolveSecretKey,
 } from "@librarian/core";
@@ -214,5 +216,22 @@ describe("episodeTiming", () => {
       date: "2026-11-03",
       time: "09:07",
     });
+  });
+});
+
+describe("journalView (the dashboard's structured read)", () => {
+  it("lists periods newest first with entries decoded for plain-text display", () => {
+    appendEpisode(files, "2026-10-30", episode("a#s1", ["Kept <html> as text & ![x](y) inert."]));
+    files.write(
+      "weeks/2026-W30.md",
+      "# Week 2026-W30\n<!-- sources:  -->\n\n- &lt;b&gt;summary\n",
+      "t",
+    );
+    const view = journalView(files);
+    expect(view.map((p) => p.path)).toEqual(["days/2026-10-30.md", "weeks/2026-W30.md"]);
+    expect(view[0]!.episodes[0]!.bullets[0]).toBe("Kept <html> as text & ![x](y) inert.");
+    // Summaries stay entity-encoded for the markdown renderer, which shows them as text.
+    expect(view[1]!.body).toBe("- &lt;b&gt;summary");
+    expect(decodeJournalText("&lt;b&gt; &#33;[i]")).toBe("<b> ![i]");
   });
 });

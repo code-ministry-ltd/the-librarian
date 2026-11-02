@@ -45,6 +45,8 @@ interface Unit {
   date: string;
   text: string;
   /** Episode metadata (day units only). */
+  key: string | null;
+  time: string | null;
   harness: string | null;
   project: string | null;
   tierLabel: string;
@@ -116,6 +118,8 @@ function unitsOf(file: JournalFile): Unit[] {
         period: file.period,
         date: file.period.last,
         text: renderForAgent(file),
+        key: null,
+        time: null,
         harness: null,
         project: null,
         tierLabel: label,
@@ -129,6 +133,8 @@ function unitsOf(file: JournalFile): Unit[] {
       `## ${file.period.label} ${e.time} · ${e.harness} · ${e.project ?? "—"}`,
       ...e.bullets.map((b) => `- ${b}`),
     ].join("\n"),
+    key: e.key,
+    time: e.time,
     harness: e.harness,
     project: e.project,
     tierLabel: "entry",
@@ -169,6 +175,106 @@ function headed(unit: Unit, byText: boolean, withLabel: boolean): string {
   return `[${unit.tierLabel}, ${range}${note}]\n${unit.text}`;
 }
 
+type Candidate = { unit: Unit; byText: boolean };
+
+/** The units in range after filters — shared by retrieve, search and the dashboard. */
+function candidatesFor(
+  files: JournalFileStore,
+  input: JournalQueryInput,
+  from: string,
+  to: string,
+): Candidate[] {
+  return listJournalFiles(files)
+    .filter((file) => overlaps(file.period, from, to))
+    .flatMap(unitsOf)
+    .map((unit) => filterUnit(unit, input))
+    .filter((hit): hit is Candidate => hit !== null);
+}
+
+/**
+ * Text as the journal indexes it. The shared tokenizer keeps `.`, `/` and `-` so
+ * `config.ts` and `1.2.3` stay whole — which also leaves a sentence's last word as
+ * `importer.`, unmatchable by `importer`. Journal entries are prose, so drop that
+ * punctuation where it ENDS a word (inner dots survive). Applied to query and text alike.
+ */
+function searchable(text: string): string {
+  return text.replace(/[./-]+(?=\s|$|[)\]"'»”])/g, "");
+}
+
+/** BM25 over the candidates; newest first among equal scores. */
+function rankUnits(
+  candidates: Candidate[],
+  query: string,
+  limit: number,
+): (Candidate & { score: number })[] {
+  const byId = new Map(candidates.map((c, i) => [String(i), c]));
+  return buildKeywordIndex(
+    candidates.map((c, i) => ({ id: String(i), text: searchable(c.unit.text) })),
+  )
+    .search(searchable(query))
+    .flatMap((hit) => {
+      const entry = byId.get(hit.id);
+      return entry ? [{ ...entry, score: hit.score }] : [];
+    })
+    .sort((a, b) => b.score - a.score || (a.unit.date < b.unit.date ? 1 : -1))
+    .slice(0, limit);
+}
+
+/** One ranked match, structured for a UI (the dashboard's Journal search). */
+export interface JournalSearchHit {
+  tier: JournalPeriod["tier"];
+  label: string;
+  first: string;
+  last: string;
+  path: string;
+  /** The entry's key for a day hit; null for a week/month summary. */
+  episodeKey: string | null;
+  time: string | null;
+  harness: string | null;
+  project: string | null;
+  /** True when a project/harness filter matched a summary by its text (a looser match). */
+  matchedByText: boolean;
+  score: number;
+}
+
+/**
+ * The `journal` tool's search (spec 077 §4.5) as structured hits — same range
+ * defaults, filters, BM25 ranking and tie-break the agents get, so the dashboard
+ * finds exactly what an agent would. `input.query` is required.
+ */
+export function searchJournal(
+  files: JournalFileStore,
+  input: JournalQueryInput,
+  today: string,
+): { from: string; to: string; hits: JournalSearchHit[] } {
+  const d = JOURNAL_QUERY_DEFAULTS;
+  if (input.query === undefined) throw new JournalQueryError("`query` is required to search");
+  const to = input.to ?? today;
+  const from = input.from ?? addDays(to, -d.searchDays);
+  const hits = rankUnits(
+    candidatesFor(files, input, from, to),
+    input.query,
+    input.limit ?? d.limit,
+  );
+  return {
+    from,
+    to,
+    hits: hits.map(({ unit, byText, score }) => ({
+      tier: unit.period.tier,
+      label: unit.period.label,
+      first: unit.period.first,
+      last: unit.period.last,
+      path: unit.period.path,
+      episodeKey: unit.key,
+      time: unit.time,
+      harness: unit.harness,
+      project: unit.project,
+      matchedByText: byText,
+      score,
+    })),
+  };
+}
+
 /**
  * Run a journal query (spec 077 §4.5) and return the text the agent receives. Retrieve
  * mode (no `query`) returns every unit in range oldest-first, dropping the OLDEST when
@@ -187,11 +293,7 @@ export function queryJournal(
   const maxChars = (input.maxTokens ?? d.maxTokens) * 4;
   const scope = `${from} to ${to}${describeFilters(input)}`;
 
-  const candidates = listJournalFiles(files)
-    .filter((file) => overlaps(file.period, from, to))
-    .flatMap(unitsOf)
-    .map((unit) => filterUnit(unit, input))
-    .filter((hit): hit is { unit: Unit; byText: boolean } => hit !== null);
+  const candidates = candidatesFor(files, input, from, to);
 
   if (!search) {
     if (candidates.length === 0) {
@@ -218,17 +320,7 @@ export function queryJournal(
   }
 
   const query = input.query as string;
-  const byId = new Map(candidates.map((c, i) => [String(i), c]));
-  const hits = buildKeywordIndex(candidates.map((c, i) => ({ id: String(i), text: c.unit.text })))
-    .search(query)
-    .map((hit) => ({ hit, entry: byId.get(hit.id) }))
-    .filter(
-      (h): h is { hit: (typeof h)["hit"]; entry: { unit: Unit; byText: boolean } } =>
-        h.entry !== undefined,
-    )
-    .sort((a, b) => b.hit.score - a.hit.score || (a.entry.unit.date < b.entry.unit.date ? 1 : -1))
-    .slice(0, input.limit ?? d.limit);
-
+  const hits = rankUnits(candidates, query, input.limit ?? d.limit);
   if (hits.length === 0) {
     return (
       `No journal entries match "${query}" in ${scope}. ` +
@@ -237,7 +329,7 @@ export function queryJournal(
   }
   const blocks: string[] = [];
   let total = 0;
-  for (const { entry } of hits) {
+  for (const entry of hits) {
     const block = headed(entry.unit, entry.byText, true);
     if (blocks.length > 0 && total + block.length > maxChars) break;
     blocks.push(block);

@@ -19,11 +19,12 @@ import {
 describe("routes — command palette contents", () => {
   // The full palette nav-target set, ids + labels + hrefs + hints, in order.
   // Byte-identical to the hand-written `NAV_ITEMS` this replaced.
-  it("derives all 14 palette items with exact ids, labels and hints", () => {
+  it("derives all 15 palette items with exact ids, labels and hints", () => {
     expect(PALETTE_ITEMS).toEqual([
       { id: "nav-vault", label: "Go to Vault", href: "/", hint: "G V" },
       { id: "nav-curator", label: "Go to Curator", href: "/curator", hint: "" },
       { id: "nav-memories", label: "Go to Memories", href: "/memories", hint: "G M" },
+      { id: "nav-journal", label: "Go to Journal", href: "/journal", hint: "" },
       { id: "nav-handoffs", label: "Go to Handoffs", href: "/handoffs", hint: "G H" },
       { id: "nav-analytics", label: "Go to Analytics", href: "/analytics", hint: "" },
       { id: "nav-proposals", label: "Go to Proposals", href: "/proposals", hint: "" },
@@ -70,11 +71,12 @@ describe("routes — isChromeFree table", () => {
 });
 
 describe("routes — nav strip derivation", () => {
-  it("derives the eight primary tabs in order", () => {
+  it("derives the nine primary tabs in order", () => {
     expect(TABS.map((t) => [t.label, t.href])).toEqual([
       ["Vault", "/"],
       ["Curator", "/curator"],
       ["Memories", "/memories"],
+      ["Journal", "/journal"],
       ["Handoffs", "/handoffs"],
       ["Analytics", "/analytics"],
       ["Proposals", "/proposals"],

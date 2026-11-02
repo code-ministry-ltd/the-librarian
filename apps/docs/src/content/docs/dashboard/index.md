@@ -25,6 +25,7 @@ A bar across the top of every page holds the main areas. From left to right:
   opens here).
 - **[Curator](/dashboard/curator/)** — chat with the curator and teach it.
 - **[Memories](/dashboard/memories/)** — browse, search, and create memories.
+- **[Journal](/guides/journal/#reading-it-in-the-dashboard)** — read, search and prune the dated history of your conversations with your agents.
 - **[Handoffs](/dashboard/handoffs/)** — read work handed between agents.
 - **[Analytics](/dashboard/analytics/)** — corpus and curator-usage figures.
 - **[Proposals](/dashboard/proposals/)** — the curator's review queue.
