@@ -75,7 +75,7 @@ export default function librarian(pi: ExtensionAPI): void {
   // per-turn delta to POST /transcript. Default-on; the LIBRARIAN_AUTO_SAVE=false
   // kill-switch + forward-only private mode are enforced at fire time inside the
   // handler (so a mid-session env change takes effect without a re-install), and
-  // it stays inert when the server's curator.intake.enabled gate is off. The hook
+  // it stays inert when the server's capture gate (intake and journal) is off. The hook
   // is registered only when the extension is configured (the dormant branch above
   // returns before reaching here, so an unconfigured install captures nothing).
   registerCaptureHook(pi, resolveDataDir(process.env), (cwd) => journal.projectFor(cwd));

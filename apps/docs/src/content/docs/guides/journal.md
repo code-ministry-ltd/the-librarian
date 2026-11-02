@@ -13,8 +13,11 @@ tried X, it broke Y, so we moved to Z" survives in the journal as a story, where
 memory would keep three separate facts.
 
 The journal is **off by default**. Turn it on under **Settings → Curator → Intake
-→ Journal**. It only runs while [intake](/guides/configuring-the-curator/) is
-enabled, because it is written from the same captured conversations, by the same
+→ Journal**. It has its own switch, independent of
+[intake](/guides/configuring-the-curator/): turning either one on captures your
+conversations, and each settled conversation is journalled while the journal is
+on and mined for memories while intake is on. You can run the journal without
+intake, for a history of what you did with no memories filed. Both use the intake
 model.
 
 ## What it costs

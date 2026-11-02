@@ -14,6 +14,7 @@
 //   - INTERNAL(LIBRARIAN_TRPC_HOST:LIBRARIAN_TRPC_PORT) → /trpc/* only
 //                                                    /mcp, /healthz → 404
 
+import { JOURNAL_ENABLED_KEY, createLibrarianStore } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import {
   cleanupTempDir,
@@ -108,7 +109,7 @@ describe("two-listener split (ADR 0008 P1)", () => {
     }
   });
 
-  it("reports capture status on /healthz off the curator intake gate (T5/SC9)", async () => {
+  it("reports capture status on /healthz: on while intake OR the journal is on (T5/SC9)", async () => {
     // Capture is disabled by default (the intake gate is off on a fresh spawn).
     const offDir = makeTempDir();
     const off = await startHttpServer({ dataDir: offDir });
@@ -125,11 +126,32 @@ describe("two-listener split (ADR 0008 P1)", () => {
     const onDir = makeTempDir();
     const on = await startHttpServer({ dataDir: onDir, intake: "on" });
     try {
-      const body = (await (await fetch(`${on.url}/healthz`)).json()) as { capture: string };
+      const body = (await (await fetch(`${on.url}/healthz`)).json()) as {
+        capture: string;
+        intake: string;
+      };
       expect(body.capture).toBe("enabled");
+      expect(body.intake).toBe("enabled");
     } finally {
       await on.stop();
       cleanupTempDir(onDir);
+    }
+
+    // Journal only: capture is on, but `intake` says nothing is mined for memories.
+    const journalDir = makeTempDir();
+    const seed = createLibrarianStore({ dataDir: journalDir });
+    seed.setSetting(JOURNAL_ENABLED_KEY, "true");
+    seed.close();
+    const journalOnly = await startHttpServer({ dataDir: journalDir });
+    try {
+      const body = (await (await fetch(`${journalOnly.url}/healthz`)).json()) as Record<
+        string,
+        string
+      >;
+      expect(body).toMatchObject({ capture: "enabled", intake: "disabled", journal: "enabled" });
+    } finally {
+      await journalOnly.stop();
+      cleanupTempDir(journalDir);
     }
   });
 

@@ -225,6 +225,7 @@ export {
   DEFAULT_TRANSCRIPT_REAPER_TTL_MS,
   runTranscriptSweepTick,
 } from "./transcript-sweep.js";
+export { isCaptureEnabled } from "./capture-config.js";
 export {
   type JournalConfig,
   type JournalConfigPatch,

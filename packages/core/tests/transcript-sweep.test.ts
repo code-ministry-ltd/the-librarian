@@ -460,8 +460,8 @@ describe("runTranscriptSweepTick — hygiene + reaper (SC6)", () => {
 });
 
 describe("runTranscriptSweepTick — gate coherence (SC7)", () => {
-  it("extracts nothing and leaves buffers untouched when intake is disabled", async () => {
-    // Intake gate OFF (do NOT call enableCapture).
+  it("extracts nothing and leaves buffers untouched when intake and the journal are off", async () => {
+    // Intake gate OFF (do NOT call enableCapture); the journal is off by default.
     store!.setSetting(INTAKE_ENABLED_KEY, "false");
     const buf = writeBuffer("conv-gated", "### user\n\nwould-be content\n", IDLE_MS + 60_000);
     const submitSpy = vi.spyOn(store!, "submitToInbox");
@@ -817,6 +817,36 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     expect(day).toContain("<!-- episode: conv-j#s4 -->");
     expect(day).toContain("- Chose privacy first.");
     expect(fs.existsSync(bufferPath)).toBe(false);
+  });
+
+  it("journal only: with intake off, writes the episode, submits no facts, and finishes the buffer", async () => {
+    enableCapture(); // configures the model the journal uses
+    store!.setSetting(INTAKE_ENABLED_KEY, "false");
+    store!.setSetting("curator.journal.enabled", "true");
+    const bufferPath = writeBuffer("conv-jo", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const client = bothClient({
+      facts: ["Must not be extracted."],
+      bullets: ["Chose privacy first."],
+    });
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
+    expect(client.calls).toEqual({ facts: 0, journal: 1 });
+    expect(submitSpy).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ extracted: 1, facts: 0, episodes: 1 });
+    expect(dayFile()).toContain("- Chose privacy first.");
+    expect(fs.existsSync(bufferPath)).toBe(false);
+  });
+
+  it("does nothing, leaving the buffer, when intake and the journal are both off", async () => {
+    enableCapture();
+    store!.setSetting(INTAKE_ENABLED_KEY, "false");
+    store!.setSetting("curator.journal.enabled", "false");
+    const bufferPath = writeBuffer("conv-none", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    const client = bothClient({ facts: ["x"], bullets: ["y"] });
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
+    expect(summary).toMatchObject({ extracted: 0, reason: "disabled" });
+    expect(client.calls).toEqual({ facts: 0, journal: 0 });
+    expect(fs.existsSync(bufferPath)).toBe(true);
   });
 
   it("writes no journal at all while the journal setting is off", async () => {

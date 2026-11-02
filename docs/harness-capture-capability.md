@@ -56,10 +56,13 @@ These are contract-level, not per-harness:
   contract](./slash-commands.md#automatic-capture-default-on-with-two-gates)):
   the per-machine **`LIBRARIAN_AUTO_SAVE=false`** kill-switch and per-turn
   **private-mode skip** (`[librarian:private=on]`).
-- **Server-authoritative intake gate.** Even with the client shipping, the
-  server buffers only when its curator intake gate (`curator.intake.enabled`) is
-  on; if off it refuses and buffers nothing (no raw text at rest for a dead
-  pipeline). The Claude **SessionStart banner** surfaces both gate states.
+- **Server-authoritative capture gate.** Even with the client shipping, the
+  server buffers only while curator intake (`curator.intake.enabled`) **or** the
+  journal (`curator.journal.enabled`) is on; with both off it refuses and buffers
+  nothing (no raw text at rest for a dead pipeline). Intake mines the buffer for
+  memories and the journal writes a dated entry, each only while its own switch is
+  on. The Claude **SessionStart banner** surfaces the gate states, including
+  "journal only", when no memories are filed.
 - **Fail-soft.** A capture/guard/extraction error never blocks the user's turn,
   never leaks a stack trace into the model's context, and errs toward *not*
   capturing on any uncertainty.

@@ -15,15 +15,14 @@ const MAX_BUDGET = 100_000;
 
 /**
  * The journal's two settings (spec 077 §4.7): on/off and the session-start injection budget.
- * It sits in the Intake tab because the journal rides the intake sweep and its model.
+ * It sits in the Intake tab because it reads the same captured conversations and uses the
+ * intake model — but its switch is independent of intake's: either one turns capture on.
  */
 export function JournalConfigForm({
   initial,
-  intakeEnabled,
   onSave,
 }: {
   initial: JournalConfig;
-  intakeEnabled: boolean;
   onSave: (patch: JournalConfigPatch) => Promise<SaveConfigResult>;
 }) {
   const router = useRouter();
@@ -86,12 +85,6 @@ export function JournalConfigForm({
         Keep a journal of captured conversations
       </label>
 
-      {enabled && !intakeEnabled ? (
-        <p className="text-xs text-foreground">
-          The journal only runs while intake is enabled — turn intake on above.
-        </p>
-      ) : null}
-
       <div className="flex flex-col gap-1.5">
         <SectionLabel as="label" htmlFor="journal-budget">
           Session-start budget (tokens)
@@ -114,9 +107,10 @@ export function JournalConfigForm({
       </div>
 
       <p className="max-w-3xl text-xs text-foreground/60">
-        Each settled conversation costs one extra call to the intake model. Entries are stored in
-        the vault under <span className="font-mono">journal/</span>; recent days stay detailed and
-        older ones are summarised by week and month every night.
+        Each settled conversation costs one call to the intake model (set above), whether or not
+        intake itself is on. Entries are stored in the vault under{" "}
+        <span className="font-mono">journal/</span>; recent days stay detailed and older ones are
+        summarised by week and month every night.
       </p>
 
       {error ? (

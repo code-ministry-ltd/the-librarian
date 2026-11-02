@@ -128,8 +128,8 @@ Privacy + control (it always defers to you):
   does not cancel queued work.
 - **Per-machine kill-switch.** Set `LIBRARIAN_AUTO_SAVE=false` in your
   environment and capture ships nothing on this machine.
-- **Inert when intake is off.** If the server's curator intake gate is disabled,
-  the endpoint buffers nothing — no raw text at rest for a dead pipeline.
+- **Inert when intake and the journal are off.** With both disabled on the
+  server, the endpoint buffers nothing — no raw text at rest for a dead pipeline.
 
 > Status: capture's full end-to-end behaviour against a *running* opencode is
 > verified at the unit + live-server-contract level (the delta validates against
