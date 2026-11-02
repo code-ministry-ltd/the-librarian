@@ -240,7 +240,7 @@ export function handleTranscriptIntake(
     // run together; an empty `turns[]` (or an all-private delta) is a valid no-op.
     fs.appendFileSync(bufferPath, turns.length ? `${block}\n` : "", "utf8");
 
-    // HARNESS PROVENANCE (Chronicle F6): record the adapter beside the buffer so
+    // HARNESS PROVENANCE: record the adapter beside the buffer so
     // the settle-sweep can stamp `harness:<name>` on every extracted fact. The
     // marker is write-once for one BUFFER GENERATION: a later caller cannot relabel
     // existing turns. The sweep claims it with the `.md` before awaiting extraction,

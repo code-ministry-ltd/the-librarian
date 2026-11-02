@@ -1,6 +1,6 @@
 "use client";
 
-// Per-consumer (intake / grooming / Chronicle) provider + model selector — editorial
+// Per-consumer (intake / grooming) provider + model selector — editorial
 // rebuild. Provider dropdown + model field (datalist-backed: picks from
 // the provider's listModels, accepts free text when the probe yields
 // nothing), plus the job's output limit and optional thinking level. No card
@@ -33,7 +33,6 @@ const THINKING_OPTIONS: { value: ThinkingChoice; label: string }[] = [
 const CONSUMER_LABEL: Record<ConfigurableJobConsumer, string> = {
   intake: "Intake",
   grooming: "Grooming",
-  chronicle: "Chronicle",
 };
 
 export function ConsumerModelSelector({

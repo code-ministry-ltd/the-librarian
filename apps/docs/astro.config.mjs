@@ -14,6 +14,8 @@ export default defineConfig({
   // emits relative canonicals. Served at the subdomain root, so no `base`.
   site: "https://librarian-docs.codeministry.net",
   output: "static",
+  // Chronicle was retired in 1.40.0; the journal does its job, so old links land there.
+  redirects: { "/guides/chronicle/": "/guides/journal/" },
   integrations: [
     starlight({
       title: "The Librarian",
@@ -120,7 +122,6 @@ export default defineConfig({
             { slug: "guides/private-mode" },
             { slug: "guides/backups-restore" },
             { slug: "guides/configuring-the-curator" },
-            { slug: "guides/chronicle" },
             { slug: "guides/journal" },
           ],
         },

@@ -5,11 +5,6 @@
 export { type JsonSettingsStoreDeps, createJsonSettingsStore } from "./settings-store.js";
 export { type JsonCurationStoreDeps, createJsonCurationStore } from "./curation-store.js";
 export {
-  type JsonChronicleStoreDeps,
-  CHRONICLE_RUNS_FILE,
-  createJsonChronicleStore,
-} from "./chronicle-store.js";
-export {
   type JsonIntakeStoreDeps,
   INTAKE_RUNS_FILE,
   LEGACY_INTAKE_RUNS_FILE,

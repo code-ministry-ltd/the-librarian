@@ -6,7 +6,7 @@
 // {ran:false,reason} skip states into plain English so the operator sees
 // *why* nothing ran rather than a silent no-op (spec 045 / plan 046 T11).
 
-import type { ChronicleTickResult, GroomingTickResult, IntakeTickResult } from "@librarian/core";
+import type { GroomingTickResult, IntakeTickResult } from "@librarian/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui-v2/button";
@@ -44,13 +44,6 @@ export function renderIntakeResult(
     ? " Stopped early: the model timed out or was unavailable, so the rest wait for the next run."
     : "";
   return `Ran — ${consolidated} item(s) consolidated.${parkedNote}${stoppedNote}`;
-}
-
-/** Chronicle pass: one digest per writable system shelf, optionally narrated. */
-export function renderChronicleResult(result: ChronicleTickResult): string {
-  if (!result.ran) return skipLabel(result.reason);
-  const failures = result.failed > 0 ? `, ${result.failed} failed` : "";
-  return `Ran — ${result.completed} of ${result.attempted} shelves written — ${result.generated} narrated, ${result.digestOnly} digest only${failures}.`;
 }
 
 export type RunActionResult<R> = { ok: true; result: R } | { ok: false; error: string };

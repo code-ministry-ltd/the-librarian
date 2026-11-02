@@ -154,7 +154,6 @@ if (allowNoAuth) {
 const backupTickMs = Number(process.env.LIBRARIAN_BACKUP_TICK_MS ?? 5 * 60_000);
 const intakePollMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 60_000);
 const groomingPollMs = Number(process.env.LIBRARIAN_GROOMING_TICK_MS ?? 15 * 60_000);
-const chroniclePollMs = Number(process.env.LIBRARIAN_CHRONICLE_TICK_MS ?? 15 * 60_000);
 const transcriptSweepTickMs = Number(process.env.LIBRARIAN_TRANSCRIPT_SWEEP_TICK_MS ?? 5 * 60_000);
 const journalPollMs = Number(process.env.LIBRARIAN_JOURNAL_TICK_MS ?? 15 * 60_000);
 const transcriptIdleMs = process.env.LIBRARIAN_TRANSCRIPT_IDLE_MS
@@ -190,7 +189,6 @@ const server = createLibrarianServer({
   backupTickMs,
   intakePollMs,
   groomingPollMs,
-  chroniclePollMs,
   transcriptSweepTickMs,
   journalPollMs,
   ...(transcriptIdleMs !== undefined ? { transcriptIdleMs } : {}),

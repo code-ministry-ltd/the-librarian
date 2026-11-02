@@ -2,9 +2,9 @@
 // is made of, their vault-relative paths, and the age arithmetic compaction and the
 // recent window run on. Pure + clock-injected, so every boundary is unit-testable.
 //
-// Every date here is a SERVER-LOCAL calendar date (`YYYY-MM-DD`), matching how
-// Chronicle labels its weeks: the journal is read by a person in one timezone, and a
-// conversation that ends at 00:30 local belongs to that local day.
+// Every date here is a SERVER-LOCAL calendar date (`YYYY-MM-DD`): the journal is read
+// by a person in one timezone, and a conversation that ends at 00:30 local belongs to
+// that local day.
 
 /** The three tiers a journal file can belong to. */
 export type JournalTier = "day" | "week" | "month";

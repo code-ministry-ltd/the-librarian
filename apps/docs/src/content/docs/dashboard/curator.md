@@ -45,5 +45,3 @@ experiment freely.
 For provider and scheduling settings (which model the curator uses, and when it
 runs), see [Settings → Curator](/dashboard/settings/#curator) and the guide
 [Configuring the curator](/guides/configuring-the-curator/).
-The third settings job, [Chronicle](/guides/chronicle/), writes weekly reviews and
-has no chat or guidance addendum.

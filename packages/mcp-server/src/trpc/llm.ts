@@ -34,13 +34,13 @@ import { z } from "zod";
 import { fetchProviderModels, probeProviderConnection } from "./llm-models.js";
 import { adminProcedure, router } from "./trpc.js";
 
-// The per-consumer LLM config surface covers the three curator JOBS (intake /
-// grooming / chronicle) PLUS the config-only `chat` consumer (spec 044 D-8) — D6b's curator
+// The per-consumer LLM config surface covers the two curator JOBS (intake /
+// grooming) PLUS the config-only `chat` consumer (spec 044 D-8) — D6b's curator
 // chat endpoint's LLM, which falls back to the grooming consumer when its own
 // config is unset (handled in core's readConsumerConfig / resolveConsumerToken).
 // `chat` has no enablement, so a `setConsumerConfig({consumer:"chat", enabled})`
 // is rejected at the core boundary.
-const ConsumerSchema = z.enum(["intake", "grooming", "chronicle", "chat"]);
+const ConsumerSchema = z.enum(["intake", "grooming", "chat"]);
 
 // A model query may target an already-saved provider (token resolved from the
 // vault) OR an inline draft `{ endpoint, token }`, so the dashboard can test a
@@ -93,7 +93,7 @@ export const llmRouter = router({
       return listProviders(ctx.store);
     }),
 
-  // Per-consumer provider+model selection (intake / grooming / chronicle / chat). Reading
+  // Per-consumer provider+model selection (intake / grooming / chat). Reading
   // the `chat` consumer returns its grooming-fallback-resolved view when chat's
   // own config is unset (spec 044 D-8).
   consumerConfig: adminProcedure

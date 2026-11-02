@@ -255,7 +255,7 @@ binary `the-librarian` (`rebuild`, `seed`, `backup`, `export`, `auth`, `handoffs
 locked. See
 [Self-host → admin from the host](apps/docs/src/content/docs/deploy-and-operate/self-host.md).
 
-## Curator and Chronicle
+## Curator
 
 The curator engine does two corpus-maintenance jobs, configured and observed from
 **Settings → Curator** and discussed in the dashboard **Curator** cockpit
@@ -269,12 +269,6 @@ human review below it. Set the threshold to 0 and nothing waits for you. The cur
 of the server's own credentials that `LIBRARIAN_SECRET_KEY` encrypts; the master
 key protects those creds, not the vault (your memories stay plaintext markdown by
 design; ADR 0008).
-
-The same settings area has a third, independent job: **Chronicle** writes one
-searchable weekly review per writable system shelf at
-`references/chronicle/YYYY-Www.md`. Its deterministic evidence digest always
-works; an optional LLM adds narrative and up to three possible blog seeds. See
-[The Chronicle](apps/docs/src/content/docs/guides/chronicle.md).
 
 You teach the curator through use — editing each job's advisory, git-versioned
 **addendum** and judging the real proposals it produces. The full operator guide,

@@ -27,7 +27,6 @@ import {
   AuditSourceError,
   buildAuditEvents,
 } from "./audit-export.js";
-import type { ChronicleStore } from "./chronicle-types.js";
 import { commitSubject } from "./commit-message.js";
 import {
   type InboxItemRef,
@@ -77,7 +76,6 @@ import {
   type RecordRefusalInput,
   type RefusalLogErrorSink,
   REFUSAL_LOG_FILE,
-  createJsonChronicleStore,
   createJsonIntakeStore,
   createJsonCurationStore,
   createJsonSettingsStore,
@@ -242,7 +240,7 @@ export class MemoryMoveUnsafePathError extends Error {
 }
 
 export interface LibrarianStore
-  extends MemoryStore, CurationStore, IntakeStore, ChronicleStore, SettingsStore, PrimerStore {
+  extends MemoryStore, CurationStore, IntakeStore, SettingsStore, PrimerStore {
   handoffs: HandoffStore;
   /**
    * The dashboard's Obsidian-lite vault explorer/editor surface (rethink
@@ -446,14 +444,6 @@ export interface LibrarianStore
    * and the other principal-attributed paths use.
    */
   systemSubmitToInbox(shelf: Shelf, text: string, hints?: InboxSubmissionHints): InboxItemRef;
-  /**
-   * Write the one derived Chronicle reference for an ISO week into a writable shelf. This narrow
-   * system seam owns the fixed path + `chronicle:` commit subject; callers cannot select either.
-   */
-  systemWriteChronicle(
-    shelf: Shelf,
-    input: { isoWeek: string; content: string },
-  ): { path: string; hash: string };
   /**
    * The journal files of one shelf (spec 077 §4.1): `<prefix>journal/{days,weeks,months}/`.
    * A narrow SYSTEM seam — like {@link systemSubmitToInbox} it is shelf-scoped, not
@@ -727,10 +717,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
   const markdownIntake = createJsonIntakeStore({
     filePath: resolveIntakeRunsPath(dataDir),
     shelfId: DEFAULT_SHELF.id,
-  });
-  const chronicleRuns = createJsonChronicleStore({
-    filePath: path.join(dataDir, "chronicle-runs.json"),
-    ...deterministicDeps,
   });
   const refusalLog = createRefusalLog({
     filePath: path.join(dataDir, REFUSAL_LOG_FILE),
@@ -1544,23 +1530,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     hints?: InboxSubmissionHints,
   ): InboxItemRef => coreForShelf(shelf).rawSubmitToInbox(text, hints);
 
-  const systemWriteChronicle = (
-    shelf: Shelf,
-    input: { isoWeek: string; content: string },
-  ): { path: string; hash: string } => {
-    if (!shelf.writable) throw new ShelfNotWritableError(shelf);
-    if (!/^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(input.isoWeek)) {
-      throw new Error(`Chronicle ISO week '${input.isoWeek}' must use YYYY-Www`);
-    }
-    const path = `${shelf.prefix}references/chronicle/${input.isoWeek}.md`;
-    const written = coreForShelf(shelf).rawFiles.upsertSystemReference(
-      path,
-      input.content,
-      commitSubject.chronicle(input.isoWeek),
-    );
-    return { path, hash: written.hash };
-  };
-
   const systemJournal = (shelf: Shelf): JournalFileStore => {
     const scoped = coreForShelf(shelf).scopedVault;
     const checked = (relPath: string): string => {
@@ -1600,7 +1569,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     ...mainHandle.memory,
     ...markdownCuration,
     ...markdownIntake,
-    ...chronicleRuns,
     ...jsonSettings,
     handoffs: mainHandle.handoffs,
     vaultFiles: mainHandle.vaultFiles,
@@ -1626,7 +1594,6 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     countReferencesForPrincipal,
     groomingStoreForShelf,
     systemSubmitToInbox,
-    systemWriteChronicle,
     submitToInbox: mainHandle.submitToInbox,
     recordRefusal: refusalLog.record,
     flushRefusals: refusalLog.flush,

@@ -30,7 +30,7 @@
 // Imports the compiled artifact (../dist), like per-surface-role.test.ts.
 
 import type { AddressInfo } from "node:net";
-import { type SerialScheduler, writeChronicleConfig, writeGroomingConfig } from "@librarian/core";
+import { type SerialScheduler, writeGroomingConfig } from "@librarian/core";
 import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir } from "../../../test/helpers.js";
 import type { PluginRoute } from "../dist/http/routes.js";
@@ -149,14 +149,7 @@ function makeRuntime(
   };
 }
 
-const SCHEDULER_NAMES = [
-  "backup",
-  "intake",
-  "grooming",
-  "chronicle",
-  "transcript",
-  "flag-groom",
-] as const;
+const SCHEDULER_NAMES = ["backup", "intake", "grooming", "transcript", "flag-groom"] as const;
 
 // Base options with every configurable poller OFF.
 function baseOptions(dataDir: string): LibrarianServerOptions {
@@ -176,7 +169,6 @@ function baseOptions(dataDir: string): LibrarianServerOptions {
     backupTickMs: 0,
     intakePollMs: 0,
     groomingPollMs: 0,
-    chroniclePollMs: 0,
     transcriptSweepTickMs: 0,
   };
 }
@@ -214,38 +206,6 @@ describe("createLibrarianServer — handle shape (spec 060 SC 1)", () => {
       cleanupTempDir(dataDir);
     }
   });
-
-  it("the assembled Chronicle scheduler runs the real due-check and writes a weekly entry", async () => {
-    const dataDir = makeTempDir();
-    try {
-      const server = createLibrarianServer({
-        ...baseOptions(dataDir),
-        chroniclePollMs: 60_000,
-      });
-      try {
-        writeChronicleConfig(server.store, {
-          enabled: true,
-          dayOfWeek: "monday",
-          scheduleTime: "00:00",
-        });
-        expect(server.internals.schedulers).toHaveLength(1);
-
-        await server.internals.schedulers[0]!.runNow();
-
-        expect(server.store.listChronicleRuns()[0]).toMatchObject({
-          trigger: "schedule",
-          status: "completed",
-        });
-        expect(server.store.listChronicleRuns()[0]?.path).toMatch(
-          /^references\/chronicle\/\d{4}-W\d{2}\.md$/,
-        );
-      } finally {
-        server.store.close();
-      }
-    } finally {
-      cleanupTempDir(dataDir);
-    }
-  });
 });
 
 describe("server lifecycle order (spec 060 SC 3)", () => {
@@ -263,7 +223,6 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "backup.start",
       "intake.start",
       "grooming.start",
-      "chronicle.start",
       "transcript.start",
       "flag-groom.start",
       "public.banner",
@@ -290,7 +249,6 @@ describe("server lifecycle order (spec 060 SC 3)", () => {
       "backup.stop",
       "intake.stop",
       "grooming.stop",
-      "chronicle.stop",
       "transcript.stop",
       "flag-groom.stop",
       "store.flushRefusals",
