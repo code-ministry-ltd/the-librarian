@@ -9,7 +9,7 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
-## [1.40.1] — 2026-11-02
+## [1.41.0] — 2026-11-02
 
 ### Fixed
 
@@ -5358,7 +5358,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
-[1.40.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.40.0...v1.40.1
+[1.41.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.40.0...v1.41.0
 [1.40.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.37.0...v1.38.0
