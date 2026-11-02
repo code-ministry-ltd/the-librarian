@@ -169,7 +169,7 @@ describe("probe → banner against a live server (SC9)", () => {
       LIBRARIAN_AGENT_TOKEN: server.agentToken,
     };
     const status = await banner.probeStatus(env);
-    expect(status).toEqual({ reachable: true, captureEnabled: true });
+    expect(status).toEqual({ reachable: true, captureEnabled: true, journalSupported: true });
     const text = banner.buildBanner({ status, env });
     expect(text).toMatch(/capture is active/i);
     expect(text).not.toMatch(/⚠/);
@@ -182,7 +182,7 @@ describe("probe → banner against a live server (SC9)", () => {
       LIBRARIAN_AGENT_TOKEN: server.agentToken,
     };
     const status = await banner.probeStatus(env);
-    expect(status).toEqual({ reachable: true, captureEnabled: false });
+    expect(status).toEqual({ reachable: true, captureEnabled: false, journalSupported: true });
     const text = banner.buildBanner({ status, env });
     expect(text).toMatch(/⚠/);
     expect(text).toMatch(/dashboard/i);

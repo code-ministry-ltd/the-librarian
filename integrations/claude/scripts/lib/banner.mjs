@@ -51,7 +51,7 @@ export function deriveHealthzUrl(mcpUrl) {
  *
  * @param {Record<string,string|undefined>} env
  * @param {{fetch?: typeof globalThis.fetch}} [deps]
- * @returns {Promise<{reachable: boolean, captureEnabled?: boolean}>}
+ * @returns {Promise<{reachable: boolean, captureEnabled?: boolean, journalSupported?: boolean}>}
  */
 export async function probeStatus(env, deps = {}) {
   const doFetch = deps.fetch ?? globalThis.fetch;
@@ -67,9 +67,13 @@ export async function probeStatus(env, deps = {}) {
     const response = await doFetch(url, { headers, redirect: "error", signal: controller.signal });
     if (!response.ok) return { reachable: false };
     const json = await response.json();
+    const isObject = Boolean(json && typeof json === "object");
     return {
       reachable: true,
-      captureEnabled: Boolean(json && typeof json === "object" && json.capture === "enabled"),
+      captureEnabled: isObject && json.capture === "enabled",
+      // Spec 077: the `journal` key's PRESENCE (enabled or not) means this server accepts
+      // the optional `project` on /transcript.
+      journalSupported: isObject && Object.prototype.hasOwnProperty.call(json, "journal"),
     };
   } catch {
     return { reachable: false };

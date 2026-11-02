@@ -142,6 +142,7 @@ remember the verbs (spec `2026-06-16-harness-auto-capture`, ADR 0009):
 | `UserPromptSubmit` (primary), `Stop`, `SessionEnd` | `on-stop.mjs` | Tail the conversation transcript from a byte-offset cursor and ship each turn's delta to the server (`POST /transcript`), which extracts durable lessons for you — **zero agent memory calls**. Driven by `UserPromptSubmit` (primary), with `Stop` / `SessionEnd` wired for redundancy; `SessionEnd` is the explicit-end accelerator (the server extracts immediately instead of waiting out the idle window). The `UserPromptSubmit` routing also worked around Claude bug [#29767](https://github.com/anthropics/claude-code/issues/29767), where plugin-scoped `Stop` hooks didn't fire — since fixed in Claude Code 2.1.179. |
 | `PreToolUse` (`Write\|Edit\|MultiEdit`) | `block-memory-write.mjs` | Block writes to Claude's **native memory store** (`**/.claude/**/memory/**`) and redirect you to the `remember` tool — durable facts belong in the shared Librarian, not a local `MEMORY.md` the next session/agent/harness can't see. Narrow by design (only the native store) and **fail-open**. |
 | `SessionStart` | `on-session-start.mjs` | Inject a deterministic banner: you have `recall`/`remember`, plus the current **capture status** (warns, with the fix, when capture is off). Re-fires after a compaction, so the awareness survives it. |
+| `SessionStart` | `on-session-start-journal.mjs` | Inject the recent [journal](https://librarian-docs.codeministry.net/guides/journal/) window (`GET /journal.md`) when the server has the journal on. Claude Code moves any hook output over **10,000 characters** to a file the model is never told to read, so this hook asks for at most 9,500: the server keeps the newest entries, drops older ones whole, and ends with a pointer to the `journal` tool. Its own hook, so it doesn't share the banner's allowance. Prints nothing on any failure. |
 
 **Capture is default-on**, gated two ways:
 
@@ -152,6 +153,11 @@ remember the verbs (spec `2026-06-16-harness-auto-capture`, ADR 0009):
   queued work.
 - **`LIBRARIAN_AUTO_SAVE=false`** — the per-machine kill-switch: set it and the
   capture hook ships and buffers nothing on this machine.
+- **Project label.** Each delta carries `project` — the name of the git repository
+  around the session's working directory, or the folder name — so journal entries
+  say what they were about. It is sent only after the SessionStart probe has seen a
+  server that advertises the journal (older servers reject unknown fields); the
+  answer is cached in `server-features.json` in the plugin data dir.
 - **Server-authoritative** — the server buffers only when its curator intake gate
   (`curator.intake.enabled`, toggled in the dashboard) is on; the SessionStart
   banner warns when it is off.
@@ -174,6 +180,7 @@ hook-firing unverified; Pi and Hermes tracked in Phase 2B), see the
 | `LIBRARIAN_MCP_URL` | yes | Librarian HTTP MCP URL, e.g. `https://librarian.example.com/mcp` |
 | `LIBRARIAN_AGENT_TOKEN` | yes | Bearer token (only ever sent in the request header) |
 | `LIBRARIAN_AUTO_SAVE` | no | Set to `false` to disable automatic capture on this machine (default-on). Anything else (unset, `true`, …) leaves capture on. |
+| `LIBRARIAN_JOURNAL` | no | Set to `off` (or `false` / `0` / `no`) to stop injecting the journal at session start on this machine. The `journal` tool stays available. |
 
 ### Remote Librarian
 

@@ -729,6 +729,10 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
   return sendJson(res, intake.body, intake.status);
 }
 
+/** Bounds for `GET /journal.md?max_chars=` (spec 077 §4.9). */
+const JOURNAL_MIN_MAX_CHARS = 1_000;
+const JOURNAL_MAX_MAX_CHARS = 400_000;
+
 async function handleJournal(ctx: RouteContext): Promise<void> {
   const { req, res, store } = ctx;
   // The journal's recent window (spec 077 §4.4): what session-start hooks inject. Same
@@ -752,11 +756,32 @@ async function handleJournal(ctx: RouteContext): Promise<void> {
         "Settings → Curator → Intake → Journal (it also needs intake to be enabled).",
     );
   }
+  // Optional `?max_chars=` (spec 077 §4.9): a harness whose injection channel has a hard
+  // size cap (Claude Code: 10,000 characters per hook output) asks for no more than that.
+  const url = new URL(req.url || "/journal.md", `http://${req.headers.host ?? "localhost"}`);
+  const rawMax = url.searchParams.get("max_chars");
+  let maxChars: number | undefined;
+  if (rawMax !== null) {
+    const n = Number(rawMax);
+    if (!/^\d+$/.test(rawMax) || n < JOURNAL_MIN_MAX_CHARS || n > JOURNAL_MAX_MAX_CHARS) {
+      return sendJson(
+        res,
+        {
+          error:
+            `Expected max_chars as a whole number from ${JOURNAL_MIN_MAX_CHARS} to ` +
+            `${JOURNAL_MAX_MAX_CHARS}, got '${rawMax.slice(0, 40)}'`,
+        },
+        400,
+      );
+    }
+    maxChars = n;
+  }
   // The caller's own shelf: where its conversations' episodes were written.
   const shelf = store.resolveWriteTarget(authed.principal);
   const text = renderRecentWindow(
     store.systemJournal(shelf),
     readJournalConfig(store).injectBudgetTokens,
+    maxChars === undefined ? {} : { maxChars },
   );
   if (text === null) {
     return notFound(
