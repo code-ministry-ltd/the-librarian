@@ -12,6 +12,7 @@ import type {
   GroomingConfigPatch,
   CuratorJob,
   GroomingTickResult,
+  JournalConfigPatch,
   LlmProvider,
   LlmProviderInput,
   LlmProviderPatch,
@@ -149,6 +150,20 @@ export async function runChronicleNowAction(): Promise<RunChronicleNowResult> {
     const result = await serverTRPC.chronicle.runNow.mutate();
     revalidatePath("/settings/curator");
     return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
+// --- Journal (spec 077) --------------------------------------------------------
+
+export async function saveJournalConfigAction(
+  patch: JournalConfigPatch,
+): Promise<SaveConfigResult> {
+  try {
+    await serverTRPC.journal.setConfig.mutate(patch);
+    revalidatePath("/settings/curator");
+    return { ok: true };
   } catch (error) {
     return { ok: false, error: message(error) };
   }

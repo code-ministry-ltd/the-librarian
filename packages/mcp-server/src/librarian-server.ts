@@ -41,6 +41,7 @@ import {
   runBackupTick,
   runScheduledChronicle,
   runGroomingTick,
+  runJournalCompactionTick,
   runIntakeTick,
   runScheduledGrooming,
   runTranscriptSweepTick,
@@ -129,6 +130,11 @@ export interface LibrarianServerOptions {
   chroniclePollMs: number;
   /** Transcript settle-sweep poll cadence in ms; 0 disables the scheduler entirely. */
   transcriptSweepTickMs: number;
+  /**
+   * Journal compaction due-check poll cadence in ms (spec 077 §4.3); absent or 0 disables
+   * the scheduler. The bin passes LIBRARIAN_JOURNAL_TICK_MS (default 15 min).
+   */
+  journalPollMs?: number;
   /** Transcript idle settle window in ms; absent → the core default. */
   transcriptIdleMs?: number;
   /** Transcript size-cap safety valve in bytes; absent → the core default. */
@@ -287,6 +293,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     transcriptMaxBytes,
     legacyIntakeEnv,
   } = options;
+  const journalPollMs = options.journalPollMs ?? 0;
   const bootstrapClaim = options.bootstrapClaim ?? createInertBootstrapClaimHandle();
 
   // The store construction site — the vaultRouter provider seam's delivery point (spec 062 T1,
@@ -637,6 +644,36 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
+  // Journal compaction scheduler (spec 077 §4.3): the interval is only a due-check
+  // resolution; the job runs once a day after 02:30 local and self-gates on the journal
+  // switch (+ intake) and the restore pause. Value-free logging: counts only.
+  async function runJournalCompaction(s: LibrarianStore): Promise<void> {
+    const summary = await runJournalCompactionTick({
+      store: s,
+      warn: (info, msg) => logger.warn(info, msg),
+    });
+    if (!summary.ran) return;
+    logger.info(
+      {
+        rolledWeeks: summary.rolledWeeks,
+        rolledMonths: summary.rolledMonths,
+        recovered: summary.recovered,
+        failed: summary.failed,
+        stoppedEarly: summary.stoppedEarly,
+      },
+      "journal compaction completed",
+    );
+  }
+
+  const journalScheduler =
+    journalPollMs > 0
+      ? createSerialScheduler({
+          task: () => runJournalCompaction(store),
+          intervalMs: journalPollMs,
+          onError: () => logger.error("journal compaction tick failed"),
+        })
+      : null;
+
   const transcriptSweepScheduler =
     transcriptSweepTickMs > 0
       ? createSerialScheduler({
@@ -657,6 +694,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     chronicleScheduler,
     transcriptSweepScheduler,
     flagGroomScheduler,
+    journalScheduler,
   ].filter((scheduler): scheduler is SerialScheduler => scheduler !== null);
 
   const onInternalListening = (): void => {

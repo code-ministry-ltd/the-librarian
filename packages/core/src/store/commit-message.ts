@@ -99,6 +99,14 @@ export const commitSubject = {
   // ── Chronicle (librarian-store.ts) ──────────────────────────────────────────
   chronicle: (isoWeek: string): string => `chronicle: ${oneLine(isoWeek)}`,
 
+  // ── Journal (librarian-store.ts, spec 077) ──────────────────────────────────
+  /** A settled conversation's episode appended to a day file. */
+  journalEpisode: (date: string): string => `journal: episode ${oneLine(date)}`,
+  /** Day/week files rolled up into a week/month summary by compaction. */
+  journalRollup: (label: string): string => `journal: rollup ${oneLine(label)}`,
+  /** The owner deleted an episode or a rolled-up period from the dashboard. */
+  journalDelete: (target: string): string => `journal: delete ${oneLine(target)}`,
+
   // ── backup (librarian-store.ts) ──────────────────────────────────────────────
   backupSnapshot: (): string => "backup: snapshot",
 

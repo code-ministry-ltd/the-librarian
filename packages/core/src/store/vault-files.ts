@@ -206,9 +206,15 @@ const HIDDEN_TOP_LEVEL = new Set([".git", ".index", "inbox"]);
 // (spec 062, `validateShelfSet`) reject a shelf prefix whose first segment shadows a
 // canonical name, reusing the SAME source-of-truth list instead of duplicating it.
 export const CANONICAL_TOP_LEVEL = new Map(
-  [...HIDDEN_TOP_LEVEL, ".curator", "memories", "handoffs", "references", PRIMER_PATH].map(
-    (name) => [name.toLowerCase(), name] as const,
-  ),
+  [
+    ...HIDDEN_TOP_LEVEL,
+    ".curator",
+    "memories",
+    "handoffs",
+    "references",
+    "journal", // spec 077: the conversation journal's day/week/month files
+    PRIMER_PATH,
+  ].map((name) => [name.toLowerCase(), name] as const),
 );
 
 /** Is this tree entry part of the visible explorer surface? */

@@ -95,6 +95,6 @@ export const config = {
   // are still gated — only the exact /api, /_next, /login subtrees and favicon are
   // skipped.
   matcher: [
-    "/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|claim(?:/|$)|settings/auth/reset(?:/|$)|healthz(?:/|$)|primer\\.md(?:/|$)|mcp(?:/|$)|transcript(?:/|$)|ingest(?:/|$)).*)",
+    "/((?!api(?:/|$)|_next/|favicon.ico|login(?:/|$)|claim(?:/|$)|settings/auth/reset(?:/|$)|healthz(?:/|$)|primer\\.md(?:/|$)|journal\\.md(?:/|$)|mcp(?:/|$)|transcript(?:/|$)|ingest(?:/|$)).*)",
   ],
 };

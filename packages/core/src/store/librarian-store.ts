@@ -62,6 +62,8 @@ import {
 import type { HandoffStore } from "./handoff-store.js";
 import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
+import { periodFromPath } from "../journal/periods.js";
+import { JOURNAL_DIR, type JournalFileStore } from "./journal-types.js";
 import {
   createMarkdownHandoffStore,
   createMarkdownMemoryStore,
@@ -452,6 +454,13 @@ export interface LibrarianStore
     shelf: Shelf,
     input: { isoWeek: string; content: string },
   ): { path: string; hash: string };
+  /**
+   * The journal files of one shelf (spec 077 §4.1): `<prefix>journal/{days,weeks,months}/`.
+   * A narrow SYSTEM seam — like {@link systemSubmitToInbox} it is shelf-scoped, not
+   * writability-gated, because the journal is derived system output. It accepts only the three
+   * canonical journal path shapes and owns the `journal:` commit subjects.
+   */
+  systemJournal(shelf: Shelf): JournalFileStore;
   /**
    * Submit raw text to the intake inbox (the inbox lives in the vault).
    * Fire-and-forget: stored + committed instantly; the intake files it
@@ -1552,6 +1561,41 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     return { path, hash: written.hash };
   };
 
+  const systemJournal = (shelf: Shelf): JournalFileStore => {
+    const scoped = coreForShelf(shelf).scopedVault;
+    const checked = (relPath: string): string => {
+      if (periodFromPath(relPath) === null) {
+        throw new Error(
+          `Journal path '${relPath}' must be days/YYYY-MM-DD.md, weeks/YYYY-Www.md or months/YYYY-MM.md`,
+        );
+      }
+      return `${JOURNAL_DIR}/${relPath}`;
+    };
+    const full = (shelfRel: string): string => shelf.prefix + shelfRel;
+    return {
+      shelf,
+      list: () =>
+        scoped.exists(JOURNAL_DIR)
+          ? scoped
+              .listMarkdown(JOURNAL_DIR)
+              .map((rel) => rel.slice(JOURNAL_DIR.length + 1))
+              .filter((rel) => periodFromPath(rel) !== null)
+          : [],
+      read: (relPath) => scoped.tryReadText(checked(relPath)),
+      write: (relPath, content, subject) => {
+        const rel = checked(relPath);
+        scoped.writeText(rel, content);
+        git.commitPaths([full(rel)], subject);
+      },
+      remove: (relPaths, subject) => {
+        const rels = relPaths.map(checked).filter((rel) => scoped.exists(rel));
+        if (rels.length === 0) return;
+        for (const rel of rels) scoped.removeFile(rel);
+        git.commitPaths(rels.map(full), subject);
+      },
+    };
+  };
+
   return {
     ...mainHandle.memory,
     ...markdownCuration,
@@ -1563,6 +1607,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     vaultRouter,
     forShelf,
     resolveWriteTarget,
+    systemJournal,
     searchReferences: mainHandle.searchReferences,
     // "references" mirrors corpus-index's REFERENCES_DIR — the exact set
     // searchReferences indexes, so this is a faithful "searched" denominator.

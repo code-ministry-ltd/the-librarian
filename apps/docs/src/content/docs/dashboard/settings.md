@@ -47,6 +47,10 @@ the job's **output limit** and **thinking level**), run history, and a **Run now
 button. Chronicle's model is optional: its factual
 digest is always available.
 
+The Intake tab also holds the **Journal** settings: whether to keep a dated
+journal of captured conversations, and how much of it agents get at the start of
+a session. See [The journal](/guides/journal/).
+
 For the bigger picture — what the two jobs do and how to tune them — see
 [Configuring the curator](/guides/configuring-the-curator/).
 For the weekly review specifically, see [The Chronicle](/guides/chronicle/).

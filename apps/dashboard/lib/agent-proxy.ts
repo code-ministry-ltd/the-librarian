@@ -27,7 +27,8 @@ const STRIP_INBOUND = new Set([
 ]);
 const STRIP_OUTBOUND = new Set(["content-encoding", "transfer-encoding"]);
 
-export type AgentProxyPath = "/healthz" | "/primer.md" | "/mcp" | "/transcript" | "/ingest";
+export type AgentProxyPath =
+  "/healthz" | "/primer.md" | "/journal.md" | "/mcp" | "/transcript" | "/ingest";
 type AuthProbeStatus = "enabled" | "disabled" | "unavailable";
 interface AuthProbeState {
   cached?: { status: AuthProbeStatus; expiresAt: number };
@@ -37,7 +38,7 @@ interface AuthProbeState {
 class BodyTooLargeError extends Error {}
 
 function isProtected(path: AgentProxyPath): boolean {
-  return path === "/mcp" || path === "/transcript" || path === "/ingest";
+  return path === "/mcp" || path === "/transcript" || path === "/ingest" || path === "/journal.md";
 }
 
 function bodyLimit(path: AgentProxyPath): number {

@@ -42,13 +42,16 @@ import {
   checkIngestRateLimit,
   createInertBootstrapClaimHandle,
   isIntakeEnabled,
+  isJournalActive,
   markFailed,
   principalRefusalEvidence,
   processContentCapture,
   processTextCapture,
   processUrlCapture,
+  readJournalConfig,
   readPrimer,
   recordPending,
+  renderRecentWindow,
 } from "@librarian/core";
 import type { AnyRouter } from "@trpc/server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
@@ -584,6 +587,7 @@ const publicRoutes: readonly PublicRoute[] = [
   },
   { beforeOriginGate: false, match: (_m, p) => p === "/mcp", handle: handleMcp },
   { beforeOriginGate: false, match: (_m, p) => p === "/transcript", handle: handleTranscript },
+  { beforeOriginGate: false, match: (_m, p) => p === "/journal.md", handle: handleJournal },
   { beforeOriginGate: false, match: (_m, p) => p === "/ingest", handle: handleIngestRoute },
 ];
 
@@ -639,6 +643,13 @@ async function handleHealthz(ctx: RouteContext): Promise<void> {
   } catch {
     captureEnabled = false;
   }
+  // Same fail-soft rule as `capture`: a settings read error must never 500 the probe.
+  let journalEnabled = false;
+  try {
+    journalEnabled = isJournalActive(store);
+  } catch {
+    journalEnabled = false;
+  }
   return sendJson(res, {
     status: "ok",
     dashboard_auth: "disabled",
@@ -646,6 +657,9 @@ async function handleHealthz(ctx: RouteContext): Promise<void> {
     auth: mcpAuth,
     agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
     capture: captureEnabled ? "enabled" : "disabled",
+    // Spec 077 §4.7: the journal gate. The key's PRESENCE also tells harness adapters this
+    // server accepts the optional `project` on /transcript (older servers 400 on it).
+    journal: journalEnabled ? "enabled" : "disabled",
   });
 }
 
@@ -713,6 +727,48 @@ async function handleTranscript(ctx: RouteContext): Promise<void> {
   // settle-sweep routes this conversation's facts to that shelf's inbox (spec 062 SC 8a).
   const intake = handleTranscriptIntake(store, payload, authed.principal);
   return sendJson(res, intake.body, intake.status);
+}
+
+async function handleJournal(ctx: RouteContext): Promise<void> {
+  const { req, res, store } = ctx;
+  // The journal's recent window (spec 077 §4.4): what session-start hooks inject. Same
+  // agent-scope auth as /mcp — the journal is as private as memories — and never admin.
+  if (refuseMissingProxyBearer(ctx)) return;
+  const authed = await ctx.provider.authenticate(req, "public", "agent");
+  if (!authed.ok) return sendAuthRefusal(ctx, authed);
+  if (req.method !== "GET") {
+    return sendJson(res, { error: "Method not allowed" }, 405, { allow: "GET" });
+  }
+  const notFound = (message: string): void => {
+    res.writeHead(404, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    res.end(`${message}\n`);
+  };
+  if (!isJournalActive(store)) {
+    return notFound(
+      "The journal is turned off on this server. Enable it in the dashboard under " +
+        "Settings → Curator → Intake → Journal (it also needs intake to be enabled).",
+    );
+  }
+  // The caller's own shelf: where its conversations' episodes were written.
+  const shelf = store.resolveWriteTarget(authed.principal);
+  const text = renderRecentWindow(
+    store.systemJournal(shelf),
+    readJournalConfig(store).injectBudgetTokens,
+  );
+  if (text === null) {
+    return notFound(
+      "No journal entries yet. Episodes appear once a captured conversation has settled " +
+        "(30 minutes idle, or when the session ends).",
+    );
+  }
+  res.writeHead(200, {
+    "content-type": "text/markdown; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  res.end(text);
 }
 
 async function handleIngestRoute(ctx: RouteContext): Promise<void> {

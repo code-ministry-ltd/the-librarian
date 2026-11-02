@@ -226,6 +226,82 @@ export {
   runTranscriptSweepTick,
 } from "./transcript-sweep.js";
 export {
+  type JournalConfig,
+  type JournalConfigPatch,
+  DEFAULT_JOURNAL_INJECT_BUDGET_TOKENS,
+  JOURNAL_ENABLED_KEY,
+  JOURNAL_INJECT_BUDGET_KEY,
+  JournalConfigPatchSchema,
+  MAX_JOURNAL_INJECT_BUDGET_TOKENS,
+  MIN_JOURNAL_INJECT_BUDGET_TOKENS,
+  isJournalActive,
+  readJournalConfig,
+  writeJournalConfig,
+} from "./journal/config.js";
+export {
+  type JournalCompactionOptions,
+  type JournalCompactionSummary,
+  compactShelfJournal,
+  isJournalCompactionDue,
+  runJournalCompactionTick,
+} from "./journal/compaction.js";
+export {
+  type AppendOutcome,
+  type JournalFile,
+  RECENT_WINDOW_HEADER,
+  appendEpisode,
+  deleteEpisode,
+  deletePeriod,
+  episodeTiming,
+  estimateTokens,
+  listJournalFiles,
+  renderForAgent,
+  renderRecentWindow,
+} from "./journal/journal.js";
+export {
+  type JournalDay,
+  type JournalEpisode,
+  type JournalRollup,
+  type RollupSource,
+  contentHash,
+  parseDay,
+  parseRollup,
+  renderDay,
+  renderEpisode,
+  renderRollup,
+  stripStructuralComments,
+} from "./journal/format.js";
+export {
+  type JournalPeriod,
+  type JournalTier,
+  DAY_TIER_DAYS,
+  RECENT_WINDOW_WEEKS,
+  WEEK_TIER_DAYS,
+  addDays,
+  dayPeriod,
+  isMonthClosedForRollup,
+  isPastDayTier,
+  isWeekClosedForRollup,
+  isWeekPastWeekTier,
+  isoWeekOf,
+  localDate,
+  monthOfWeek,
+  monthPeriod,
+  parseLocalDate,
+  periodFromPath,
+  weekPeriod,
+} from "./journal/periods.js";
+export {
+  EPISODE_MAX_CHARS,
+  MONTH_MAX_CHARS,
+  WEEK_MAX_CHARS,
+  parseEpisodeReply,
+  parseRollupReply,
+  summarizeEpisode,
+  summarizeRollup,
+} from "./journal/summarize.js";
+export { JOURNAL_DIR, type JournalFileStore } from "./store/journal-types.js";
+export {
   type GroomingMemoryRecord,
   type GroomingMemorySource,
   type GroomingTombstoneRecord,

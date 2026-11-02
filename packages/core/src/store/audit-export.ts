@@ -313,6 +313,9 @@ export function actionForSubject(subject: string): AuditAction {
   // Chronicle is additive derived system output. Keep the permanent v1 AuditAction union stable;
   // its system provenance still comes from classifyVaultCommit, while its action is `other`.
   if (subject.startsWith("chronicle: ")) return "other";
+  // The journal (spec 077) is derived system output plus owner deletes; like Chronicle it
+  // keeps the permanent v1 AuditAction union stable and maps to `other`.
+  if (subject.startsWith("journal: ")) return "other";
   return "other";
 }
 

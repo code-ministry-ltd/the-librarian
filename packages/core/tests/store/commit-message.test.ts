@@ -55,6 +55,11 @@ describe("commit-subject vocabulary (spec 064 T1)", () => {
     expect(commitSubject.curatorIntakeExamplesUpdate()).toBe("curator: intake-examples update");
     expect(commitSubject.curatorIntakeExamplesRollback()).toBe("curator: intake-examples rollback");
     expect(commitSubject.chronicle("2026-W31")).toBe("chronicle: 2026-W31");
+    expect(commitSubject.journalEpisode("2026-11-02")).toBe("journal: episode 2026-11-02");
+    expect(commitSubject.journalRollup("2026-W44")).toBe("journal: rollup 2026-W44");
+    expect(commitSubject.journalDelete("days/2026-11-02.md#c#s1")).toBe(
+      "journal: delete days/2026-11-02.md#c#s1",
+    );
 
     expect(commitSubject.backupSnapshot()).toBe("backup: snapshot");
 
