@@ -151,7 +151,12 @@ export default async function CuratorSettingsPage() {
             <Hairline />
 
             <section className="flex flex-col gap-3" aria-label="Intake model">
-              <SectionLabel as="h3">Model</SectionLabel>
+              <header className="flex flex-col gap-1">
+                <SectionLabel as="h3">Model</SectionLabel>
+                <p className="max-w-3xl text-xs text-foreground/70">
+                  Used by both intake and the journal below.
+                </p>
+              </header>
               {intakeConsumer ? (
                 <ConsumerModelSelector
                   consumer="intake"
@@ -169,16 +174,13 @@ export default async function CuratorSettingsPage() {
               <header className="flex flex-col gap-1">
                 <SectionLabel as="h3">Journal</SectionLabel>
                 <p className="max-w-3xl text-xs text-foreground/60">
-                  A dated history of what you and your agents talked about, written from the same
-                  captured conversations intake reads. Agents can read it at the start of a session.
+                  A dated history of what you and your agents talked about, written from captured
+                  conversations. Agents can read it at the start of a session. It works with or
+                  without intake: turning either on captures conversations.
                 </p>
               </header>
               {journalConfig ? (
-                <JournalConfigForm
-                  initial={journalConfig}
-                  intakeEnabled={intakeConfig?.enabled ?? false}
-                  onSave={saveJournalConfigAction}
-                />
+                <JournalConfigForm initial={journalConfig} onSave={saveJournalConfigAction} />
               ) : null}
             </section>
 

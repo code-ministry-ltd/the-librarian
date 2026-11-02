@@ -49,7 +49,9 @@ digest is always available.
 
 The Intake tab also holds the **Journal** settings: whether to keep a dated
 journal of captured conversations, and how much of it agents get at the start of
-a session. See [The journal](/guides/journal/).
+a session. The journal's switch is independent of intake's: either one turns
+capture on, and the journal uses the intake model. See
+[The journal](/guides/journal/).
 
 For the bigger picture — what the two jobs do and how to tune them — see
 [Configuring the curator](/guides/configuring-the-curator/).

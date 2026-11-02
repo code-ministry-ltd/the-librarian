@@ -9,6 +9,29 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.39.0] — 2026-11-02
+
+### Changed
+
+- **The journal no longer needs intake.** Its switch is now independent: turning
+  **either** curator intake or the journal on captures conversations, and with both
+  off the server still refuses and stores nothing. The settle-sweep runs each step
+  only while its own switch is on: memory extraction while intake is on, the journal
+  entry while the journal is on. You can now keep a journal without having memories
+  filed. Both still use the intake model; the dashboard says so beside it.
+  - A conversation settled while one of the two is off is finished without that
+    step; it isn't held back for later.
+  - If both switches are turned off mid-sweep, the sweep stops before claiming the
+    next conversation, so none is ever finished with nothing done.
+
+### Added
+
+- `/healthz` reports `intake: "enabled" | "disabled"` beside `capture` (which now
+  means intake **or** journal) and `journal`.
+- The Claude Code session-start banner says when capture is on for the **journal
+  only**: no memories are being filed, so the agent keeps calling `remember`. Older
+  servers without the `intake` field are read as before.
+
 ## [1.38.0] — 2026-11-02
 
 ### Added
@@ -5284,6 +5307,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.39.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.35.0...v1.36.0

@@ -22,11 +22,10 @@
 //     never committed (SC6). `data/` is gitignored.
 //   - `conv_id` is sanitized to a single safe path segment so a hostile
 //     adapter can't path-traverse out of `transcripts/` (SC6).
-//   - GATE COHERENCE (spec §5 Q-gate, resolved): if the intake gate that
-//     would drain the buffer is OFF (`curator.intake.enabled` via
-//     isIntakeEnabled), this REFUSES and buffers NOTHING — no raw text at
-//     rest for a dead pipeline. The caller/hook is told capture is disabled
-//     so it can log it; full sweep-side coherence is T2.
+//   - GATE COHERENCE: if nothing would use the buffer — curator intake AND the
+//     journal both off (isCaptureEnabled) — this REFUSES and buffers NOTHING, so no
+//     raw text sits at rest for a dead pipeline. The caller/hook is told capture is
+//     disabled so it can log it; the sweep applies the same gate.
 //
 // Fail-soft (AGENTS.md): an internal error here returns a clean JSON result,
 // never a 500 stack trace that could break an agent's turn.
@@ -38,7 +37,7 @@ import {
   type LibrarianStore,
   type Principal,
   endedMarkerPath,
-  isIntakeEnabled,
+  isCaptureEnabled,
   redactSecrets,
   sanitizeConvId,
   transcriptBufferPath,
@@ -185,17 +184,18 @@ export function handleTranscriptIntake(
   const payload = parsed.data;
 
   try {
-    // GATE COHERENCE (spec Q-gate): refuse + buffer nothing when the intake gate
-    // that drains the buffer is off — no raw text at rest for a dead pipeline.
-    if (!isIntakeEnabled(store)) {
+    // GATE COHERENCE: refuse + buffer nothing when neither intake nor the journal
+    // would use it — no raw text at rest for a dead pipeline.
+    if (!isCaptureEnabled(store)) {
       return {
         status: 200,
         body: {
           accepted: false,
           disabled: true,
           reason:
-            "Capture is disabled: the curator intake gate (curator.intake.enabled) is off. " +
-            "Enable intake in the dashboard to turn automatic capture on. Nothing was buffered.",
+            "Capture is disabled: curator intake and the journal are both off. Turn either " +
+            "on in the dashboard (Settings → Curator → Intake) to capture conversations. " +
+            "Nothing was buffered.",
         },
       };
     }

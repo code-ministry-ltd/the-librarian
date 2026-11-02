@@ -7,9 +7,11 @@
 //      `remember` — so the reminder survives a compaction (SessionStart re-fires
 //      and the line is re-injected). This is the passive half of D9's recall nudge.
 //   2. CAPTURE STATUS: tell the agent whether automatic capture is live, or WARN
-//      (naming the reason + the fix) when it is off — either because the server's
-//      curator intake gate is disabled, or because LIBRARIAN_AUTO_SAVE=false on
-//      this machine (the local kill-switch).
+//      (naming the reason + the fix) when it is off — either because the server has
+//      both curator intake and the journal off, or because LIBRARIAN_AUTO_SAVE=false
+//      on this machine (the local kill-switch). When capture is on for the journal
+//      only (intake off), it says memories are NOT being filed, so the agent keeps
+//      calling `remember`.
 //
 // FAIL-SOFT (spec §4.10 / SC9): the status query can fail (server down). When it
 // does, the builder STILL emits the static awareness line — no warning (we don't
@@ -51,7 +53,8 @@ export function deriveHealthzUrl(mcpUrl) {
  *
  * @param {Record<string,string|undefined>} env
  * @param {{fetch?: typeof globalThis.fetch}} [deps]
- * @returns {Promise<{reachable: boolean, captureEnabled?: boolean, journalSupported?: boolean}>}
+ * @returns {Promise<{reachable: boolean, captureEnabled?: boolean, intakeEnabled?: boolean,
+ *   journalSupported?: boolean}>}
  */
 export async function probeStatus(env, deps = {}) {
   const doFetch = deps.fetch ?? globalThis.fetch;
@@ -71,6 +74,12 @@ export async function probeStatus(env, deps = {}) {
     return {
       reachable: true,
       captureEnabled: isObject && json.capture === "enabled",
+      // Whether captured turns are mined for memories. Older servers have no `intake`
+      // key — there capture was only ever on WITH intake, so it follows `capture`.
+      intakeEnabled:
+        isObject && Object.prototype.hasOwnProperty.call(json, "intake")
+          ? json.intake === "enabled"
+          : isObject && json.capture === "enabled",
       // Spec 077: the `journal` key's PRESENCE (enabled or not) means this server accepts
       // the optional `project` on /transcript.
       journalSupported: isObject && Object.prototype.hasOwnProperty.call(json, "journal"),
@@ -131,12 +140,14 @@ export function isAutoSaveOff(env) {
  * Build the deterministic SessionStart banner text.
  *
  * @param {{
- *   status: {reachable: boolean, captureEnabled?: boolean},
+ *   status: {reachable: boolean, captureEnabled?: boolean, intakeEnabled?: boolean},
  *   env: Record<string,string|undefined>,
  *   shipping?: {everShipped: boolean},
  * }} input
  *   - `status.reachable` — did the /healthz query succeed?
- *   - `status.captureEnabled` — when reachable, is the server's intake gate on?
+ *   - `status.captureEnabled` — when reachable, is the server capturing (intake OR journal)?
+ *   - `status.intakeEnabled` — are captured turns mined for memories? Absent ⇒ assumed
+ *     to follow `captureEnabled` (older callers / servers).
  *   - `env` — the process env (read for the LIBRARIAN_AUTO_SAVE kill-switch).
  *   - `shipping` — OPTIONAL local-capture probe (`probeShipping`). When present and
  *     `everShipped:false`, the server gate is on but THIS client has never shipped,
@@ -168,7 +179,15 @@ export function buildBanner({ status, env, shipping }) {
   }
 
   // Reachable: report the server's capture gate.
-  if (s.captureEnabled) {
+  if (s.captureEnabled && s.intakeEnabled === false) {
+    // Journal-only: conversations are captured for the journal, but intake is off, so no
+    // memories are filed from them — the agent must not stop calling `remember`.
+    lines.push(
+      "Automatic capture is on for the journal only: your conversations are kept as a " +
+        "dated history, but curator intake is off, so no memories are filed from them. " +
+        "`remember` durable facts explicitly so they are not lost.",
+    );
+  } else if (s.captureEnabled) {
     // The gate being ON ≠ THIS client shipping: the SessionStart hook (this
     // banner) can fire while the per-turn capture hook does not. When the resolved
     // $CLAUDE_PLUGIN_DATA shows no cursors (never shipped), caution instead of
@@ -176,7 +195,7 @@ export function buildBanner({ status, env, shipping }) {
     // `shipping` is OPTIONAL: absent (probe failed / older caller) keeps "active".
     if (shipping && shipping.everShipped === false) {
       lines.push(
-        "⚠ The Librarian server's intake gate is ON, but this client has not shipped " +
+        "⚠ The Librarian server's capture is ON, but this client has not shipped " +
           "any transcript yet (no capture cursors under $CLAUDE_PLUGIN_DATA). If capture " +
           "does not begin after a turn or two, the per-turn capture hook may not be " +
           "firing even though this SessionStart hook did — check the cursors dir. Until " +
@@ -190,9 +209,9 @@ export function buildBanner({ status, env, shipping }) {
     }
   } else {
     lines.push(
-      "⚠ Automatic capture is OFF server-side: the curator intake gate " +
-        "(curator.intake.enabled) is disabled, so nothing is being captured or " +
-        "extracted. To re-enable, turn intake on in the Librarian dashboard. Until " +
+      "⚠ Automatic capture is OFF server-side: curator intake and the journal are " +
+        "both disabled, so nothing is being captured or extracted. To re-enable, turn " +
+        "intake on in the Librarian dashboard (Settings → Curator → Intake). Until " +
         "then, `remember` durable facts explicitly so they are not lost.",
     );
   }

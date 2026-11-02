@@ -20,7 +20,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { INTAKE_ENABLED_KEY, type LibrarianStore, createLibrarianStore } from "@librarian/core";
+import {
+  INTAKE_ENABLED_KEY,
+  JOURNAL_ENABLED_KEY,
+  type LibrarianStore,
+  createLibrarianStore,
+} from "@librarian/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   TRANSCRIPT_HARD_MAX_BYTES,
@@ -294,17 +299,26 @@ describe("transcript-intake — explicit-end marker (T2 accelerator)", () => {
   });
 });
 
-describe("transcript-intake — gate-refuse (curator.intake.enabled off)", () => {
-  it("writes nothing and signals capture is disabled when the intake gate is off", () => {
+describe("transcript-intake — gate-refuse (intake and the journal both off)", () => {
+  it("writes nothing and signals capture is disabled when intake and the journal are off", () => {
     const s = makeStore(false);
     const res = handleTranscriptIntake(s, delta());
     expect(res.status).toBe(200);
     expect(res.body.accepted).toBe(false);
     expect(res.body.disabled).toBe(true);
-    expect(String(res.body.reason)).toMatch(/disabled|intake/i);
+    expect(String(res.body.reason)).toMatch(/intake and the journal are both off/i);
 
     // The buffer dir was never created — nothing at rest for a dead pipeline.
     expect(fs.existsSync(path.join(dataDir, "transcripts"))).toBe(false);
+  });
+
+  it("accepts and buffers when only the journal is on (intake off)", () => {
+    const s = makeStore(false);
+    s.setSetting(JOURNAL_ENABLED_KEY, "true");
+    const res = handleTranscriptIntake(s, delta());
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+    expect(fs.existsSync(path.join(dataDir, "transcripts"))).toBe(true);
   });
 });
 

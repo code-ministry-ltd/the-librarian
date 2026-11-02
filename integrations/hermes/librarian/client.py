@@ -179,7 +179,7 @@ class LibrarianClient:
         - ``ok`` is True only for a 2xx (a non-2xx is a clean ``ok:false`` — the
           caller holds its seq and re-ships next turn; never raises).
         - ``accepted`` reflects the server's body: a 2xx with ``accepted:false``
-          (the intake gate is off, or a hard-cap refusal) is OK-but-not-buffered,
+          (capture is off server-side, or a hard-cap refusal) is OK-but-not-buffered,
           so the caller knows nothing landed. Absent ``accepted`` on a 2xx
           defaults to True (an empty/non-JSON 2xx body still acked).
 

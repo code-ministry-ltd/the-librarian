@@ -1,12 +1,11 @@
 // Journal settings (spec 077 §4.7). Plain (non-secret) admin settings, readable
 // without the master key so the dashboard can always render them.
 //
-// The journal rides the transcript settle-sweep, which is itself gated on curator
-// intake, so `isJournalActive` is the ONE gate every journal writer and reader
-// consults: the journal setting AND the intake gate.
+// The journal is independent of curator intake: either one switches transcript capture
+// on (see capture-config.ts), and the settle-sweep runs each one's step only when that
+// one is on. `isJournalActive` is the ONE gate every journal writer and reader consults.
 
 import { z } from "zod";
-import { isIntakeEnabled } from "../intake-config.js";
 import type { LlmConnectionReader, LlmConnectionWriter } from "../llm-connection.js";
 
 export const JOURNAL_ENABLED_KEY = "curator.journal.enabled";
@@ -78,12 +77,12 @@ export function writeJournalConfig(store: ConfigWriter, patch: JournalConfigPatc
 }
 
 /**
- * Is the journal live? Its own switch AND the intake gate it rides on. Fail-soft:
- * a settings read error reads as "off", the safe no-write value.
+ * Is the journal live? Its own switch — it no longer depends on intake. Fail-soft: a
+ * settings read error reads as "off", the safe no-write value.
  */
 export function isJournalActive(store: ConfigReader): boolean {
   try {
-    return readJournalConfig(store).enabled && isIntakeEnabled(store);
+    return readJournalConfig(store).enabled;
   } catch {
     return false;
   }

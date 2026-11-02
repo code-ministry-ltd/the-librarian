@@ -27,7 +27,7 @@
 // throw out of the plugin, never block the user's turn, never leak a token or a
 // stack trace into the model's context. Every hook body is wrapped so nothing
 // escapes; `runCapture` is itself fully fail-soft. Capture is suppressed under the
-// `LIBRARIAN_AUTO_SAVE=false` kill-switch and inert when the server intake gate is
+// `LIBRARIAN_AUTO_SAVE=false` kill-switch and inert when the server capture gate is
 // off (both enforced downstream).
 
 import type { Plugin } from "@opencode-ai/plugin";

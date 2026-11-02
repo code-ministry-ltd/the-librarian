@@ -146,8 +146,8 @@ codex_hooks = true
   shell that launches Codex and the hook ships nothing and buffers nothing on that
   machine. Anything other than the literal `false` (unset, `true`, …) is
   default-on.
-- **`curator.intake.enabled` — the server gate.** The server buffers a delta only
-  when its intake gate (toggled in the dashboard) is on; if off it refuses and
+- **The server gate.** The server buffers a delta only while curator intake or the
+  journal is on (both toggled in the dashboard); with both off it refuses and
   buffers nothing.
 
 ### conv_id and concurrency

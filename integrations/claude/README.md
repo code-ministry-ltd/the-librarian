@@ -158,9 +158,9 @@ remember the verbs (spec `2026-06-16-harness-auto-capture`, ADR 0009):
   say what they were about. It is sent only after the SessionStart probe has seen a
   server that advertises the journal (older servers reject unknown fields); the
   answer is cached in `server-features.json` in the plugin data dir.
-- **Server-authoritative** — the server buffers only when its curator intake gate
-  (`curator.intake.enabled`, toggled in the dashboard) is on; the SessionStart
-  banner warns when it is off.
+- **Server-authoritative** — the server buffers only while curator intake or the
+  journal is on (both toggled in the dashboard); the SessionStart banner warns when
+  both are off, and says so when only the journal is on (no memories filed).
 
 Every hook is fail-soft: a Librarian/network/parse error never blocks your turn,
 never leaks a stack trace into the model's context, and errs toward *not*

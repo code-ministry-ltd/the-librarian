@@ -11,7 +11,7 @@ const config: JournalConfig = { enabled: false, injectBudgetTokens: 20_000 };
 describe("JournalConfigForm (spec 077)", () => {
   it("saves the switch and the session-start budget", async () => {
     const onSave = vi.fn(async () => ({ ok: true as const }));
-    render(<JournalConfigForm initial={config} intakeEnabled onSave={onSave} />);
+    render(<JournalConfigForm initial={config} onSave={onSave} />);
 
     await userEvent.click(screen.getByRole("checkbox", { name: /keep a journal/i }));
     const budget = screen.getByLabelText(/session-start budget/i);
@@ -25,7 +25,7 @@ describe("JournalConfigForm (spec 077)", () => {
 
   it("explains an out-of-range budget instead of saving it", async () => {
     const onSave = vi.fn(async () => ({ ok: true as const }));
-    render(<JournalConfigForm initial={config} intakeEnabled onSave={onSave} />);
+    render(<JournalConfigForm initial={config} onSave={onSave} />);
 
     const budget = screen.getByLabelText(/session-start budget/i);
     await userEvent.clear(budget);
@@ -36,20 +36,20 @@ describe("JournalConfigForm (spec 077)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("from 2,000 to 100,000");
   });
 
-  it("warns that the journal needs intake when intake is off", async () => {
-    render(
-      <JournalConfigForm
-        initial={{ ...config, enabled: true }}
-        intakeEnabled={false}
-        onSave={vi.fn(async () => ({ ok: true as const }))}
-      />,
-    );
-    expect(screen.getByText(/only runs while intake is enabled/i)).toBeInTheDocument();
+  it("is its own switch: no intake prerequisite to tick", async () => {
+    const onSave = vi.fn(async () => ({ ok: true as const }));
+    render(<JournalConfigForm initial={config} onSave={onSave} />);
+    const box = screen.getByRole("checkbox", { name: /keep a journal/i });
+    expect(box).toBeEnabled();
+    await userEvent.click(box);
+    expect(screen.queryByText(/intake is enabled|turn intake on/i)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /save journal settings/i }));
+    expect(onSave).toHaveBeenCalledWith({ enabled: true, injectBudgetTokens: 20_000 });
   });
 
   it("shows the server's error when saving fails", async () => {
     const onSave = vi.fn(async () => ({ ok: false as const, error: "settings store unavailable" }));
-    render(<JournalConfigForm initial={config} intakeEnabled onSave={onSave} />);
+    render(<JournalConfigForm initial={config} onSave={onSave} />);
     await userEvent.click(screen.getByRole("button", { name: /save journal settings/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("settings store unavailable");
   });

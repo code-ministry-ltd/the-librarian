@@ -63,6 +63,29 @@ describe("buildBanner — awareness + capture status (SC9)", () => {
     expect(text).toMatch(/dashboard/i);
   });
 
+  it("journal-only: capture on but intake off → says no memories are filed, keep calling remember", () => {
+    const text = banner.buildBanner({
+      status: { reachable: true, captureEnabled: true, intakeEnabled: false },
+      env: {},
+    });
+    expect(text).toMatch(/journal only/i);
+    expect(text).toMatch(/no memories are filed/i);
+    expect(text).toMatch(/`remember` durable facts explicitly/);
+    expect(text).not.toMatch(/no need to call `remember`/);
+  });
+
+  it("probeStatus reads `intake`, and treats an older server without it as intake-follows-capture", async () => {
+    const reply = (json: unknown) => async () =>
+      new Response(JSON.stringify(json), { headers: { "content-type": "application/json" } });
+    const env = { LIBRARIAN_MCP_URL: "https://lib.example/mcp" };
+    const journalOnly = await banner.probeStatus(env, {
+      fetch: reply({ capture: "enabled", intake: "disabled", journal: "enabled" }),
+    });
+    expect(journalOnly).toMatchObject({ captureEnabled: true, intakeEnabled: false });
+    const older = await banner.probeStatus(env, { fetch: reply({ capture: "enabled" }) });
+    expect(older).toMatchObject({ captureEnabled: true, intakeEnabled: true });
+  });
+
   it("auto-save-off: LIBRARIAN_AUTO_SAVE=false → WARNS naming the env + the fix (unset it)", () => {
     const text = banner.buildBanner({
       status: { reachable: true, captureEnabled: true },
@@ -169,7 +192,12 @@ describe("probe → banner against a live server (SC9)", () => {
       LIBRARIAN_AGENT_TOKEN: server.agentToken,
     };
     const status = await banner.probeStatus(env);
-    expect(status).toEqual({ reachable: true, captureEnabled: true, journalSupported: true });
+    expect(status).toEqual({
+      reachable: true,
+      captureEnabled: true,
+      intakeEnabled: true,
+      journalSupported: true,
+    });
     const text = banner.buildBanner({ status, env });
     expect(text).toMatch(/capture is active/i);
     expect(text).not.toMatch(/⚠/);
@@ -182,7 +210,12 @@ describe("probe → banner against a live server (SC9)", () => {
       LIBRARIAN_AGENT_TOKEN: server.agentToken,
     };
     const status = await banner.probeStatus(env);
-    expect(status).toEqual({ reachable: true, captureEnabled: false, journalSupported: true });
+    expect(status).toEqual({
+      reachable: true,
+      captureEnabled: false,
+      intakeEnabled: false,
+      journalSupported: true,
+    });
     const text = banner.buildBanner({ status, env });
     expect(text).toMatch(/⚠/);
     expect(text).toMatch(/dashboard/i);

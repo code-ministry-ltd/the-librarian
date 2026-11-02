@@ -29,11 +29,13 @@
 // `<conv_id>.md` so the same tick re-claims and re-extracts it. Mirrors the
 // inbox's `releaseStaleClaims` boot-reaper.
 //
-// GATE COHERENCE (spec Q-gate, locked) — the WHOLE tick self-gates on
-// isIntakeEnabled(store), the SAME gate T1's endpoint refuses on and the SAME
-// gate the intake tick reads. Disabled → nothing extracted, buffers untouched
-// (the intake tick that would drain the inbox is also off, so we never feed a
-// dead pipeline). Buffers simply wait for the gate to come back on.
+// GATE COHERENCE — the WHOLE tick self-gates on isCaptureEnabled(store) (intake OR
+// the journal), the SAME gate T1's endpoint refuses on. Both off → nothing processed,
+// buffers untouched; they wait for a gate to come back on. Within the tick each step
+// has its own gate: the facts step runs only while intake is on (its facts land in the
+// intake inbox, which only the intake tick drains), the journal step only while the
+// journal is on. A buffer is finished — and deleted — once every ENABLED step is done;
+// a step that was switched off is skipped for good for that conversation.
 //
 // FAIL-SOFT (AGENTS.md) — a sweep / LLM / parse failure must NEVER crash the
 // worker or block anything. Every per-buffer step is wrapped: a throw on one
@@ -56,6 +58,7 @@ import {
   isProviderUnavailableError,
 } from "./grooming-llm-client.js";
 import { redactSecrets } from "./grooming-redaction.js";
+import { isCaptureEnabled } from "./capture-config.js";
 import { isIntakeEnabled } from "./intake-config.js";
 import type { InboxItemRef, InboxSubmissionHints } from "./store/corpus/index.js";
 import type { LibrarianStore } from "./store/librarian-store.js";
@@ -147,8 +150,8 @@ type Warn = (info: Record<string, unknown>, msg: string) => void;
 
 /**
  * Run ONE settle-sweep tick. Resolves with a summary; never rejects (fail-soft).
- * Self-gates on the intake gate first, then reaps orphaned claims, then extracts
- * every settled buffer.
+ * Self-gates on the capture gate (intake OR the journal) first, then reaps orphaned
+ * claims, then processes every settled buffer.
  */
 export async function runTranscriptSweepTick(
   options: TranscriptSweepOptions & { warn?: Warn },
@@ -171,10 +174,9 @@ export async function runTranscriptSweepTick(
     stoppedEarly: false,
   };
 
-  // GATE COHERENCE: the whole tick is gated on the intake gate that would drain
-  // the inbox these facts land in (spec Q-gate). Disabled → leave every buffer
-  // exactly where it is; it waits for the gate to come back on.
-  if (!isIntakeEnabled(store)) {
+  // GATE COHERENCE: the whole tick runs while capture is on (intake OR the journal).
+  // Both off → leave every buffer exactly where it is; it waits for a gate to come back.
+  if (!isCaptureEnabled(store)) {
     summary.reason = "disabled";
     return summary;
   }
@@ -309,6 +311,13 @@ export async function runTranscriptSweepTick(
         continue; // not settled yet — a later tick will revisit it
       }
 
+      // Both switches turned off since the tick started → stop before claiming, so no
+      // buffer is ever finished (deleted) with no step run. It waits for a gate.
+      if (!isCaptureEnabled(store)) {
+        summary.stoppedEarly = true;
+        break;
+      }
+
       // ATOMIC CLAIM: rename to `.processing`. A straggler T1 delta then starts a
       // fresh `<conv_id>.md` (T1 appends to the `.md`), never racing the delete.
       const procPath = path.join(dir, `${convBase}.processing`);
@@ -329,7 +338,9 @@ export async function runTranscriptSweepTick(
       // loses the episode.
       const steps = readSteps(store.dataDir, convBase);
       let stepError: unknown = null;
-      if (!steps.facts) {
+      // Facts only while intake is on: they land in the intake inbox, which nothing else
+      // drains. Read per buffer so a mid-tick toggle takes effect on the next buffer.
+      if (!steps.facts && isIntakeEnabled(store)) {
         const extraction = text
           ? await tryExtractTranscriptFacts(text, { llmClient: client })
           : { ok: true as const, facts: [] };

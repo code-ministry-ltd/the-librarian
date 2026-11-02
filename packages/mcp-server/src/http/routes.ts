@@ -41,6 +41,7 @@ import {
   INGEST_VIAS,
   checkIngestRateLimit,
   createInertBootstrapClaimHandle,
+  isCaptureEnabled,
   isIntakeEnabled,
   isJournalActive,
   markFailed,
@@ -628,22 +629,30 @@ async function handleHealthz(ctx: RouteContext): Promise<void> {
   // Capture status (spec 2026-06-16-harness-auto-capture, T5 / SC9): the
   // harness SessionStart banner reads this to tell the agent whether
   // automatic capture is live or warn (with the fix) when it is off.
-  // `capture` is "enabled" iff the curator INTAKE gate that drains the
-  // transcript buffer is on (the server-authoritative gate, spec §5 Q-gate)
-  // — the same gate /transcript checks before buffering. It is a plain
+  // `capture` is "enabled" iff curator intake OR the journal is on
+  // (isCaptureEnabled) — the same gate /transcript checks before buffering. It is a plain
   // boolean of an admin setting, no secret, so it is unauthenticated-safe
-  // (like the rest of /healthz). `isIntakeEnabled` is fail-soft, but a
+  // (like the rest of /healthz). `isCaptureEnabled` is fail-soft, but a
   // store-level throw (e.g. a transient DB read error) must NEVER turn the
   // container's HEALTHCHECK probe into a 500 — /healthz answering at all IS
   // the health signal. Default `capture` to "disabled" (the safe, no-leak
   // value) if the gate read throws.
   let captureEnabled = false;
   try {
-    captureEnabled = isIntakeEnabled(store);
+    captureEnabled = isCaptureEnabled(store);
   } catch {
     captureEnabled = false;
   }
   // Same fail-soft rule as `capture`: a settings read error must never 500 the probe.
+  // `intake` says whether captured conversations are mined for memories: with only the
+  // journal on, capture is live but nothing is filed — the Claude banner tells the agent
+  // to keep calling `remember` in that case.
+  let intakeEnabled = false;
+  try {
+    intakeEnabled = isIntakeEnabled(store);
+  } catch {
+    intakeEnabled = false;
+  }
   let journalEnabled = false;
   try {
     journalEnabled = isJournalActive(store);
@@ -657,6 +666,7 @@ async function handleHealthz(ctx: RouteContext): Promise<void> {
     auth: mcpAuth,
     agent_auth: auth.agentToken || auth.agentTokenMap.size ? "enabled" : "disabled",
     capture: captureEnabled ? "enabled" : "disabled",
+    intake: intakeEnabled ? "enabled" : "disabled",
     // Spec 077 §4.7: the journal gate. The key's PRESENCE also tells harness adapters this
     // server accepts the optional `project` on /transcript (older servers 400 on it).
     journal: journalEnabled ? "enabled" : "disabled",

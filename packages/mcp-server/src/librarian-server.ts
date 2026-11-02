@@ -31,6 +31,7 @@ import {
   findLegacyScheduleKeys,
   hasFlagsAwaitingCurator,
   isIntakeEnabled,
+  isJournalActive,
   isIntakeSweepDue,
   migrateCuratorAddendum,
   migrateGroomingSchedule,
@@ -598,10 +599,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // LLM pass → candidate facts → the existing inbox, then deletes the buffer; an
   // orphaned `.processing` is reaped at the start of each tick. Created
   // UNCONDITIONALLY when the tick interval > 0, mirroring the other background
-  // schedulers — the tick self-gates on `curator.intake.enabled`
-  // (isIntakeEnabled, the SAME gate T1's endpoint refuses on and the intake tick
-  // reads), so toggling capture takes effect on the next tick with no restart and
-  // nothing ever buffers into a dead pipeline.
+  // schedulers — the tick self-gates on isCaptureEnabled (curator intake OR the
+  // journal, the SAME gate T1's endpoint refuses on), and runs each step only while
+  // its own switch is on, so toggling either takes effect on the next tick with no
+  // restart and nothing ever buffers into a dead pipeline.
   //
   // Tunable env (all LIBRARIAN_*), defaulted in @librarian/core:
   //   - LIBRARIAN_TRANSCRIPT_SWEEP_TICK_MS — poll cadence (default 5 min; ≪ the idle
@@ -773,6 +774,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         // port — report where it actually is so a misconfig is visible at boot.
         trpc: `http://${trpcHost}:${trpcPort}/trpc`,
         intake: isIntakeEnabled(store) ? "on" : "off",
+        journal: isJournalActive(store) ? "on" : "off",
         grooming: readGroomingConfig(store).enabled ? "on" : "off",
       },
       "The Librarian MCP service is running",

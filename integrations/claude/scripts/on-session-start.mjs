@@ -11,7 +11,7 @@
 // What it does: query the server's `/healthz` (derived from LIBRARIAN_MCP_URL,
 // same origin as the MCP config) to read the capture gate (`capture:"enabled"`),
 // then hand `{ status, env }` to `buildBanner`. The banner names the LIBRARIAN_AUTO_SAVE
-// kill-switch and the server intake gate.
+// kill-switch and the server capture gate (intake or journal).
 //
 // FAIL-SOFT CONTRACT (spec §4.10, AGENTS.md): the status probe can fail (server
 // down, no URL). When it does we STILL print the static awareness line — no

@@ -23,7 +23,7 @@ Maps the Hermes ``MemoryProvider`` hooks onto The Librarian's 7 MCP tools via
   worker), and the adapter ships that as a per-turn delta to ``POST
   /transcript`` — the harness-agnostic capture door. Default-on; suppressed
   under ``LIBRARIAN_AUTO_SAVE=false`` and forward-only private mode; inert when
-  the server's intake gate is off; advances its seq only on a 2xx ack. The
+  the server's capture gate (intake and journal) is off; advances its seq only on a 2xx ack. The
   conv_id is the Hermes session id (NEVER ``$USER``/cwd, so concurrent sessions
   never collide). The transforms live in ``capture.py`` and the per-session
   seq/private state in ``capture_state.py``.
