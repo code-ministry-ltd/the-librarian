@@ -5,7 +5,7 @@ description: Connect the Pi coding agent to The Librarian with a single extensio
 
 [Pi](https://pi.dev) is a coding agent from earendil-works. Pi has no built-in MCP
 support, so The Librarian ships a small **extension** that does the wiring itself:
-it registers the seven tools natively and adds the agent briefing to the system
+it registers the eight tools natively and adds the agent briefing to the system
 prompt. One install, no config files.
 
 **When you'd use this:** you use Pi and want shared memory and handoffs with your
@@ -52,7 +52,7 @@ and only its four slash commands register, explaining what is missing.
 
 ## What you get
 
-- **Seven memory and handoff tools** — identical to every other harness, so Pi is
+- **Eight memory, handoff and journal tools** — identical to every other harness, so Pi is
   taught the same protocols.
 - **The primer** — fetched once per process and added to the system prompt.
 - **Four optional slash commands** — `/handoff`, `/takeover`, `/learn`,

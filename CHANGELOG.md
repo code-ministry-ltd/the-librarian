@@ -9,6 +9,35 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.36.0] — 2026-11-02
+
+### Added
+
+- **Claude Code starts each session with your recent journal.** A new
+  `SessionStart` hook loads the [journal](https://librarian-docs.codeministry.net/guides/journal/)'s
+  recent window when the server has the journal on, and again after a compaction.
+  Claude Code moves any hook output over 10,000 characters to a file the model is
+  never told to read, so the hook asks for at most 9,500: the newest entries are
+  kept, older ones are left out whole, and the window ends by pointing Claude at the
+  `journal` tool. It is a separate hook from the awareness banner, so each has the
+  full allowance. Set `LIBRARIAN_JOURNAL=off` to stop it on a machine. Any failure
+  prints nothing; the session always starts.
+- **Claude Code journal entries say which project they were about** — the git
+  repository around the session's working directory, or the folder name. The plugin
+  sends `project` only after it has seen a server whose `/healthz` advertises the
+  journal, so older servers never receive it.
+- **`GET /journal.md?max_chars=`** (1,000–400,000) for clients whose channel has a
+  hard size limit.
+
+### Changed
+
+- **The recent window is trimmed one entry at a time.** Previously a whole day was
+  dropped at once and the newest day was kept even when over budget; now the
+  oldest entries go first, a busy day loses only its earliest entries, the result
+  never exceeds the limit, and a trimmed window says how to read further back.
+- The docs-site pages for every harness now say eight tools and mention the
+  journal (1.35.0 missed them).
+
 ## [1.35.0] — 2026-11-02
 
 ### Added
@@ -5176,6 +5205,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.36.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.7...v1.34.0
 [1.33.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.6...v1.33.7

@@ -50,14 +50,15 @@ Set the token in your shell profile and restart opencode:
 export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
-The first block adds the seven tools; the `instructions` line loads The
+The first block adds the eight tools; the `instructions` line loads The
 Librarian's briefing. (opencode fetches that briefing with a 5-second timeout — if
 your server is down it is simply skipped and your session still starts.)
 
 ## What you get
 
-- **Seven memory and handoff tools** — recall, remember, flag, store/list/claim
-  handoffs, and search references.
+- **Eight memory, handoff and journal tools** — recall, remember, flag,
+  store/list/claim handoffs, search references, and read the
+  [journal](/guides/journal/).
 - **The primer** — loaded into the model's instructions at session start.
 - **Plain-language control** — saying "hand this off", "pick up where I left off",
   "save what we learned", or "go private" is the whole interface. Four optional

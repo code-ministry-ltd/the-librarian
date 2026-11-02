@@ -11,6 +11,7 @@ import {
   type JournalFileStore,
   type LibrarianStore,
   RECENT_WINDOW_HEADER,
+  RECENT_WINDOW_TRIMMED_NOTE,
   appendEpisode,
   createLibrarianStore,
   deleteEpisode,
@@ -148,14 +149,52 @@ describe("renderRecentWindow", () => {
     expect(text).toContain("## 2026-11-02 10:00–11:00 · claude · proj");
   });
 
-  it("drops the oldest files first when over budget, but never the newest", () => {
+  it("drops the oldest entries first when over budget, keeping the newest", () => {
     appendEpisode(files, "2026-10-30", episode("a#s1", ["old ".repeat(400)]));
     appendEpisode(files, "2026-11-02", episode("b#s1", ["new ".repeat(400)]));
     const text = renderRecentWindow(files, 700) ?? "";
     expect(text).not.toContain("old old");
     expect(text).toContain("new new");
-    const tiny = renderRecentWindow(files, 10) ?? "";
+    // A cap too small for the newest entry keeps a cut-down copy of it, never an older one.
+    const tiny = renderRecentWindow(files, 20_000, { maxChars: 1_000 }) ?? "";
     expect(tiny).toContain("new new");
+    expect(tiny).not.toContain("old old");
+  });
+});
+
+describe("renderRecentWindow — maxChars for capped injection channels (spec 077 §4.9)", () => {
+  it("trims one entry at a time, oldest first, and says how to read further back", () => {
+    for (let i = 1; i <= 9; i += 1) {
+      appendEpisode(files, `2026-10-2${i}`, episode(`e${i}#s1`, [`entry ${i} `.repeat(120)]));
+    }
+    const text = renderRecentWindow(files, 20_000, { maxChars: 4_000 }) ?? "";
+    expect(text.length).toBeLessThanOrEqual(4_000);
+    expect(text).toContain("entry 9 entry 9");
+    expect(text).not.toContain("entry 1 entry 1");
+    expect(text.trimEnd().endsWith(RECENT_WINDOW_TRIMMED_NOTE)).toBe(true);
+  });
+
+  it("drops individual entries within a busy day rather than the whole day", () => {
+    for (let i = 1; i <= 6; i += 1) {
+      appendEpisode(files, "2026-11-02", episode(`d${i}#s1`, [`busy ${i} `.repeat(120)]));
+    }
+    const text = renderRecentWindow(files, 20_000, { maxChars: 4_000 }) ?? "";
+    expect(text).toContain("busy 6 busy 6");
+    expect(text).not.toContain("busy 1 busy 1");
+  });
+
+  it("never exceeds the cap, even when the newest entry alone is too long", () => {
+    appendEpisode(files, "2026-11-02", episode("big#s1", ["x".repeat(1_200)]));
+    const text = renderRecentWindow(files, 20_000, { maxChars: 1_000 }) ?? "";
+    expect(text.length).toBeLessThanOrEqual(1_000);
+    expect(text).toContain("…");
+  });
+
+  it("adds no note when everything fits", () => {
+    appendEpisode(files, "2026-11-02", episode("a#s1"));
+    expect(renderRecentWindow(files, 20_000, { maxChars: 9_500 })).not.toContain(
+      RECENT_WINDOW_TRIMMED_NOTE,
+    );
   });
 });
 

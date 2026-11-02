@@ -77,8 +77,10 @@ they are and the next night tries again.
 The server serves the **recent window** — the last 14 days of entries plus the
 four most recent weekly summaries, about six weeks — at `GET /journal.md`. It
 needs the same agent token as `/mcp`. **Session-start budget** in the settings caps
-its size (20,000 tokens by default); when it is over, the oldest files are left
-out first.
+its size (20,000 tokens by default); when it is over, the oldest entries are left
+out first and the window ends by pointing at the `journal` tool. A client whose
+channel has a hard size limit can ask for less with `?max_chars=` (1,000 to
+400,000 characters).
 
 Every connected agent also has the **`journal`** tool (see the
 [MCP verbs](/reference/mcp-verbs/#journal) reference), in every harness:
@@ -97,8 +99,13 @@ Every connected agent also has the **`journal`** tool (see the
 The tool only reads, so it stays available in [private mode](/guides/private-mode/),
 like `recall`. Its queries reach the server's logs like any other read.
 
-Harness integrations that load the recent window automatically at the start of a
-session are coming in an upcoming release.
+**Claude Code** also loads the recent window automatically at the start of every
+session, and again after a compaction. Claude Code shows a hook at most 10,000
+characters, so the plugin asks for that much: the newest entries are kept, older
+ones are left out whole, and the window ends by pointing Claude at the `journal`
+tool for the rest. Set `LIBRARIAN_JOURNAL=off` on a machine to stop the automatic
+load there. Claude Code entries are also labelled with their project (the git
+repository or folder name). Automatic loading for the other harnesses is planned.
 
 ## Turning it off
 

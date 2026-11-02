@@ -249,6 +249,7 @@ export {
   type AppendOutcome,
   type JournalFile,
   RECENT_WINDOW_HEADER,
+  RECENT_WINDOW_TRIMMED_NOTE,
   appendEpisode,
   deleteEpisode,
   deletePeriod,

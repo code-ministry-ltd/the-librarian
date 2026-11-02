@@ -5,7 +5,7 @@ description: Connect a Hermes agent to The Librarian with the stdlib-only Memory
 
 [Hermes](https://github.com/NousResearch/hermes-agent) is an open agent framework.
 The Librarian plugs into it as a **Memory Provider** — a small Python adapter
-(Python 3.11+, no extra packages to install) that proxies the seven tools to your
+(Python 3.11+, no extra packages to install) that proxies the eight tools to your
 server and feeds the agent its briefing.
 
 **When you'd use this:** you run a Hermes agent and want it to share The
@@ -42,8 +42,9 @@ hermes memory setup          # pick "librarian", enter the endpoint
 
 ## What you get
 
-- **Seven memory and handoff tools** — recall, remember, flag, store/list/claim
-  handoffs, and search references, each proxied to your server.
+- **Eight memory, handoff and journal tools** — recall, remember, flag,
+  store/list/claim handoffs, search references, and read the
+  [journal](/guides/journal/), each proxied to your server.
 - **The primer in the system prompt** — fetched from your server and added to the
   agent's prompt, so it learns the recall/remember loop and the handoff, learn,
   and private-mode protocols.
