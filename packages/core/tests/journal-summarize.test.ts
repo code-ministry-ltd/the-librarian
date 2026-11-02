@@ -8,6 +8,7 @@ import {
   weekPeriod,
   EPISODE_MAX_CHARS,
   MONTH_MAX_CHARS,
+  editEpisode,
   parseEpisodeReply,
   parseRollupReply,
   summarizeEpisode,
@@ -104,5 +105,55 @@ describe("summarizeRollup", () => {
     const long = Array.from({ length: 200 }, (_, i) => `- point ${i}`).join("\n");
     const body = parseRollupReply(JSON.stringify({ summary: long }), monthPeriod("2026-10"));
     expect(body?.length).toBeLessThanOrEqual(MONTH_MAX_CHARS);
+  });
+});
+
+describe("editEpisode — the editor pass over a draft entry", () => {
+  const draft = [
+    "Built a custom zsh theme for the user.",
+    "User corrected the home path display to include a trailing slash.",
+  ];
+
+  it("sends only the draft (never a transcript), and returns the edited bullets", async () => {
+    const seen: LlmCompletionRequest[] = [];
+    const edited = await editEpisode(
+      draft,
+      replying('{"bullets":["Built a custom zsh theme for the user."]}', seen),
+    );
+    expect(edited).toEqual(["Built a custom zsh theme for the user."]);
+    const prompt = seen[0]?.messages[1]?.content ?? "";
+    expect(prompt).toContain("DRAFT ENTRY:");
+    expect(prompt).toContain("- Built a custom zsh theme for the user.");
+    expect(seen[0]?.messages[0]?.content).toContain("ONLY delete bullets");
+  });
+
+  it("keeps the draft when the call fails", async () => {
+    const failing: LlmClient = {
+      complete: async () => {
+        throw new Error("provider down");
+      },
+    };
+    expect(await editEpisode(draft, failing)).toEqual(draft);
+  });
+
+  it("keeps the draft when the reply isn't the expected JSON", async () => {
+    expect(await editEpisode(draft, replying("sure, here you go"))).toEqual(draft);
+  });
+
+  it("keeps the draft when the editor returns more bullets than it was given (it may only cut)", async () => {
+    expect(await editEpisode(draft, replying('{"bullets":["a","b","c"]}'))).toEqual(draft);
+  });
+
+  it("keeps the draft when the editor empties a non-empty entry", async () => {
+    expect(await editEpisode(draft, replying('{"bullets":[]}'))).toEqual(draft);
+  });
+
+  it("never calls the model for an empty draft", async () => {
+    const client: LlmClient = {
+      complete: async () => {
+        throw new Error("must not be called");
+      },
+    };
+    expect(await editEpisode([], client)).toEqual([]);
   });
 });
