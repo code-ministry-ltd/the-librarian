@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.33.7] — 2026-11-02
+
+### Security
+
+- **undici moves to 8.12.2.** Eight new advisories (four high: two denial-of-service
+  paths, cache poisoning across users, and a TLS certificate-validation bypass; four
+  moderate) cover undici 8.0.0 to 8.12.1, which the docs site's Astro pulls in. They
+  failed the production dependency audit, which blocks every PR. The existing
+  override is raised in both the pnpm 9 and pnpm 11 override lists, and the
+  dependency policy test pins the new floor.
+
 ## [1.33.6] — 2026-10-23
 
 ### Added
@@ -5104,6 +5115,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.33.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.6...v1.33.7
 [1.33.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.5...v1.33.6
 [1.33.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.4...v1.33.5
 [1.33.4]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.3...v1.33.4

@@ -43,7 +43,7 @@ describe("dependency security policy", () => {
       "@simple-git/argv-parser@<2.0.1": "2.0.1",
       "http-cache-semantics@<=4.2.0": "4.3.0",
       "tar@<=7.5.21": "7.5.22",
-      "undici@>=8.0.0 <8.10.2": "8.10.2",
+      "undici@>=8.0.0 <8.12.2": "8.12.2",
       "devalue@<5.9.3": "5.9.3",
       "smol-toml@<1.9.0": "1.9.1",
       "postcss-selector-parser@<7.1.6": "7.1.7",

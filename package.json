@@ -1,6 +1,6 @@
 {
   "name": "the-librarian",
-  "version": "1.33.6",
+  "version": "1.33.7",
   "description": "A portable, agent-agnostic memory system for AI agents.",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
       "postcss@<=8.5.25": "8.5.26",
       "tar@<=7.5.21": "7.5.22",
       "form-data@>=4.0.0 <4.0.6": "4.0.6",
-      "undici@>=8.0.0 <8.10.2": "8.10.2",
+      "undici@>=8.0.0 <8.12.2": "8.12.2",
       "devalue@<5.9.3": "5.9.3",
       "ws@>=8.0.0 <8.21.3": "8.21.3",
       "@babel/core@<7.29.7": "7.29.7",
