@@ -107,6 +107,29 @@ tool for the rest. Set `LIBRARIAN_JOURNAL=off` on a machine to stop the automati
 load there. Claude Code entries are also labelled with their project (the git
 repository or folder name). Automatic loading for the other harnesses is planned.
 
+## Reading it in the dashboard
+
+The **Journal** page (in the top navigation) shows the whole journal, newest first:
+days entry by entry, then the weekly and monthly summaries.
+
+- **Where you are.** A large date beside the page names the period you're reading,
+  with how long ago it was. Beneath it, a timeline runs from today down to the oldest
+  entry; a marker follows your scroll. The timeline is stretched towards the present,
+  like the journal itself: the last fortnight gets as much room as the months before
+  it.
+- **Travel through time.** Click or drag along the timeline to jump there. Focus it
+  with the keyboard and use the arrow keys, Page Up/Down, Home and End, or press
+  <kbd>J</kbd> / <kbd>K</kbd> anywhere on the page for the next older or newer
+  period.
+- **Search.** Press <kbd>/</kbd> and type. It runs exactly the search your agents get
+  from the `journal` tool — the same matching, ranking and last-year default — and
+  can be narrowed by project or harness. Matches also appear as dots on the timeline;
+  pick one to jump to it.
+- **Delete.** Remove a single conversation's entry, a whole day, or a week or month
+  summary. You're asked to confirm, and the deletion is permanent from the
+  dashboard and for agents; the vault's git history keeps a copy, like every other
+  vault change.
+
 ## Turning it off
 
 Untick **Keep a journal of captured conversations**. Nothing more is written,

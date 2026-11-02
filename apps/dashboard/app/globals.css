@@ -190,6 +190,47 @@
   animation: memory-orb-pulse 1.8s ease-in-out infinite;
 }
 
+/* Journal timeline (spec 077 PR D). The "you are here" readout settles in
+   when the reader crosses into a new period — a short rise + fade that
+   conveys "the date changed", not decoration. The marker glides along the
+   rail on a matching curve. */
+@keyframes journal-readout-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.journal-readout-in {
+  animation: journal-readout-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.journal-glide {
+  transition:
+    top 260ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    left 260ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    height 260ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    width 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* A search result the reader jumped to: a brief accent wash that fades. */
+@keyframes journal-arrive {
+  from {
+    background-color: color-mix(in srgb, var(--ink-accent) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.journal-arrive {
+  animation: journal-arrive 1.6s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .constellation-pulse,
   .memory-orb-pulse {
@@ -197,6 +238,14 @@
        the lit state, just not the breathing. */
     animation: none;
     opacity: 1;
+  }
+  /* The journal still shows where you are — it just moves there instantly. */
+  .journal-readout-in,
+  .journal-arrive {
+    animation: none;
+  }
+  .journal-glide {
+    transition: none;
   }
 }
 

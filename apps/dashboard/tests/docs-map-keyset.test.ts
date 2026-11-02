@@ -13,6 +13,7 @@ const EXPECTED: Record<string, string> = {
   "/activity": "dashboard/activity",
   "/curator": "dashboard/curator",
   "/memories": "dashboard/memories",
+  "/journal": "guides/journal",
   "/handoffs": "dashboard/handoffs",
   "/analytics": "dashboard/analytics",
   "/proposals": "dashboard/proposals",
@@ -30,8 +31,8 @@ const EXPECTED: Record<string, string> = {
 };
 
 describe("ROUTE_DOCS_SLUG — exact key set", () => {
-  it("maps exactly the expected 18 routes to their slugs", () => {
-    expect(Object.keys(ROUTE_DOCS_SLUG)).toHaveLength(18);
+  it("maps exactly the expected 19 routes to their slugs", () => {
+    expect(Object.keys(ROUTE_DOCS_SLUG)).toHaveLength(19);
     expect(Object.keys(ROUTE_DOCS_SLUG).sort()).toEqual(Object.keys(EXPECTED).sort());
     // Values too, so a route can't be silently re-pointed at the wrong docs page.
     expect(ROUTE_DOCS_SLUG).toEqual(EXPECTED);
