@@ -84,7 +84,7 @@ import {
   hasExchange,
   splitEpisodeSegments,
 } from "./journal/journal.js";
-import { summarizeEpisode } from "./journal/summarize.js";
+import { editEpisode, summarizeEpisode } from "./journal/summarize.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
 export const DEFAULT_TRANSCRIPT_IDLE_MS = 30 * 60_000;
@@ -656,6 +656,9 @@ async function writeJournalEpisode(
       if (episodeExists(files, timing.date, key)) continue;
       const outcome = await summarizeEpisode(segment, client);
       if (!outcome.ok) return { ok: false, error: outcome.error };
+      // The editor pass works on the draft only and is fail-soft: a failed edit keeps the
+      // draft, so it never costs an entry or a re-read of the transcript.
+      const bullets = await editEpisode(outcome.value, client);
       const result = appendEpisode(files, timing.date, {
         key,
         time: timing.time,
@@ -663,7 +666,7 @@ async function writeJournalEpisode(
         project: marker.project,
         // Defense in depth, as for facts: the buffer was redacted on intake, but the episode
         // is about to be committed to the git vault, so re-redact what the model wrote.
-        bullets: outcome.value.map((bullet) => redactSecrets(bullet).redacted),
+        bullets: bullets.map((bullet) => redactSecrets(bullet).redacted),
       });
       if (result === "written") written = true;
     }

@@ -249,6 +249,7 @@ export {
   WEEK_MAX_CHARS,
   parseEpisodeReply,
   parseRollupReply,
+  editEpisode,
   summarizeEpisode,
   summarizeRollup,
 } from "./journal/summarize.js";

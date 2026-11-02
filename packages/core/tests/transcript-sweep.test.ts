@@ -750,6 +750,24 @@ describe("runTranscriptSweepTick — shelf-marker routing + fail-soft (spec 062 
 
 // ── spec 077: the journal step ────────────────────────────────────────────────
 
+/** The journal's editor pass (a second call over the draft entry only). */
+function isEditorCall(messages: { content: string }[]): boolean {
+  return (messages[1]?.content ?? "").startsWith("DRAFT ENTRY:");
+}
+
+/** An editor that changes nothing: returns the draft's bullets as given. */
+function echoDraft(messages: { content: string }[]): {
+  content: string;
+  model: string;
+  usage: null;
+} {
+  const bullets = (messages[1]?.content ?? "")
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2));
+  return { content: JSON.stringify({ bullets }), model: "m", usage: null };
+}
+
 describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () => {
   const JOURNAL_BUFFER =
     "### user (seq=4 ts=2026-11-02T14:05:00.000Z)\n\nShould we keep raw transcripts?\n\n" +
@@ -771,13 +789,17 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     facts?: string[] | "fail";
     bullets?: string[] | "fail";
   }): LlmClient & {
-    calls: { facts: number; journal: number };
+    calls: { facts: number; journal: number; edit: number };
   } {
-    const calls = { facts: 0, journal: 0 };
+    const calls = { facts: 0, journal: 0, edit: 0 };
     return {
       calls,
       complete: async ({ messages }) => {
         const system = messages[0]?.content ?? "";
+        if (isEditorCall(messages)) {
+          calls.edit += 1;
+          return echoDraft(messages);
+        }
         if (system.includes("Memory Extractor")) {
           calls.facts += 1;
           if (opts.facts === "fail") return { content: "not json", model: "m", usage: null };
@@ -830,7 +852,7 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
       bullets: ["Chose privacy first."],
     });
     const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
-    expect(client.calls).toEqual({ facts: 0, journal: 1 });
+    expect(client.calls).toEqual({ facts: 0, journal: 1, edit: 1 });
     expect(submitSpy).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ extracted: 1, facts: 0, episodes: 1 });
     expect(dayFile()).toContain("- Chose privacy first.");
@@ -845,7 +867,7 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     const client = bothClient({ facts: ["x"], bullets: ["y"] });
     const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
     expect(summary).toMatchObject({ extracted: 0, reason: "disabled" });
-    expect(client.calls).toEqual({ facts: 0, journal: 0 });
+    expect(client.calls).toEqual({ facts: 0, journal: 0, edit: 0 });
     expect(fs.existsSync(bufferPath)).toBe(true);
   });
 
@@ -913,6 +935,36 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     expect((dayFile() ?? "").match(/<!-- episode: conv-f#s4 -->/g)).toHaveLength(1);
   });
 
+  it("saves the editor's cleaned entry, not the draft", async () => {
+    enableJournal();
+    writeBuffer("conv-ed", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    const client: LlmClient = {
+      complete: async ({ messages }) => {
+        if (isEditorCall(messages)) {
+          return {
+            content: JSON.stringify({ bullets: ["Chose privacy first."] }),
+            model: "m",
+            usage: null,
+          };
+        }
+        if ((messages[0]?.content ?? "").includes("Memory Extractor")) {
+          return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
+        }
+        return {
+          content: JSON.stringify({
+            bullets: ["Chose privacy first.", "Set the colour to #5e8d87 and fixed a typo."],
+          }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+    await runTranscriptSweepTick({ store: store!, buildClient: () => client });
+    const day = dayFile() ?? "";
+    expect(day).toContain("- Chose privacy first.");
+    expect(day).not.toContain("#5e8d87");
+  });
+
   it("journals nothing for a buffer with no exchange (a lone prompt with no reply), but finishes it", async () => {
     enableJournal();
     const bufferPath = writeBuffer(
@@ -945,6 +997,7 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     let n = 0;
     const client: LlmClient = {
       complete: async ({ messages }) => {
+        if (isEditorCall(messages)) return echoDraft(messages);
         if ((messages[0]?.content ?? "").includes("Memory Extractor")) {
           return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
         }
@@ -978,6 +1031,7 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
       let n = 0;
       return {
         complete: async ({ messages }) => {
+          if (isEditorCall(messages)) return echoDraft(messages);
           if ((messages[0]?.content ?? "").includes("Memory Extractor")) {
             return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
           }

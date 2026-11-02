@@ -24,9 +24,12 @@ model.
 
 ## What it costs
 
-- **One extra model call per conversation.** When a captured conversation settles
-  (30 minutes idle, or when the session ends), the intake model writes its entry
-  alongside the usual fact extraction. A long session with no break is split into
+- **Two extra model calls per conversation.** When a captured conversation settles
+  (30 minutes idle, or when the session ends), the intake model drafts its entry
+  alongside the usual fact extraction, then a second, much smaller call edits that
+  draft down: it sees only the draft, may only cut, and drops details such as exact
+  values or small tweaks while keeping names, decisions and anything left open. If
+  the edit fails, the draft is kept. A long session with no break is split into
   consecutive parts of about 30,000 characters, each with its own entry and model
   call, so the later work isn't squeezed out of a single short entry. A prompt that
   never got a reply makes no entry and costs nothing.

@@ -33,6 +33,13 @@ changes from this point forward are catalogued here.
   open. Exact values, paths, small cosmetic corrections, step-by-step narration and
   unaccepted offers are left out. At most 5 one-sentence bullets per entry (was 8).
   Weekly and monthly summaries follow the same rules.
+- **Each journal entry gets an editor pass.** A second, small model call reads
+  only the drafted entry (never the transcript) and may only delete or shorten:
+  it drops values, cosmetic tweaks and sub-change lists while keeping project
+  names, the names of what was chosen, and spec, PR and release numbers. It is
+  fail-soft: a failed or suspect edit (more bullets than the draft, or none left)
+  keeps the draft. In a 19-entry trial it halved entry length with no added
+  facts. Cost: roughly 500 input and 800 output tokens per entry.
 
 ## [1.40.0] — 2026-11-02
 
