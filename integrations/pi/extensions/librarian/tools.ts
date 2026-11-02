@@ -1,4 +1,4 @@
-// The Librarian's 7 agent verbs, registered natively in the extension.
+// The Librarian's 8 agent verbs, registered natively in the extension.
 //
 // Pi's CORE has no MCP support (the `mcp.json` / mcpServers feature lives in
 // third-party adapter extensions, not the runtime). So rather than ask every
@@ -42,7 +42,7 @@ export interface LibrarianToolSpec {
 }
 
 /**
- * The 7-verb agent surface (rethink spec §5.1), one spec per server tool.
+ * The 8-verb agent surface (rethink spec §5.1, ADR 0016), one spec per server tool.
  * Exposed as a function (fresh schema objects per call) so tests can inspect
  * the specs without registering anything.
  */
@@ -174,10 +174,28 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
       }),
     },
+    {
+      name: "journal",
+      label: "Journal",
+      description:
+        "Read or search your journal: a dated history of your past conversations with the " +
+        "owner — recent days in detail, older weeks and months summarised. Your session may " +
+        "already include the last ~6 weeks. Use this for anything older, or to find what " +
+        "happened on a project or topic. Facts belong to `recall`; this is what happened and why.",
+      parameters: Type.Object({
+        query: Type.Optional(Type.String({ maxLength: 500 })),
+        from: Type.Optional(Type.String()),
+        to: Type.Optional(Type.String()),
+        project: Type.Optional(Type.String({ maxLength: 200 })),
+        harness: Type.Optional(Type.String({ maxLength: 50 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
+        max_tokens: Type.Optional(Type.Integer({ minimum: 1000, maximum: 40000 })),
+      }),
+    },
   ];
 }
 
-/** The 7 tool names this extension registers (for tests / smoke). */
+/** The 8 tool names this extension registers (for tests / smoke). */
 export const LIBRARIAN_TOOL_NAMES = [
   "recall",
   "remember",
@@ -186,10 +204,11 @@ export const LIBRARIAN_TOOL_NAMES = [
   "list_handoffs",
   "claim_handoff",
   "search_references",
+  "journal",
 ] as const;
 
 /**
- * Register the 7 Librarian verbs as native Pi tools. Each is a thin proxy:
+ * Register the 8 Librarian verbs as native Pi tools. Each is a thin proxy:
  * forward to the remote MCP `tools/call`, return the server's prose. Failures
  * come back as an error STRING (never a throw): the model reads it, tells the
  * user, and keeps working — a Librarian outage must not break the turn.

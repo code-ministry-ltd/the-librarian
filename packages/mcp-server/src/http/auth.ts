@@ -118,7 +118,7 @@ export interface AuthResult {
   agentId?: string;
   /**
    * The token's privilege scope (ingest spec D21), present on agent-role results.
-   * `agent` reaches /mcp (the 7 verbs); `capture` reaches ONLY /ingest. Absent on
+   * `agent` reaches /mcp (the 8 verbs); `capture` reaches ONLY /ingest. Absent on
    * the admin (internal-surface) result, which is unrestricted by trust. Enforced
    * by {@link authenticatePublic}; an absent scope is treated as `agent`.
    */

@@ -50,7 +50,7 @@ describe("librarian extension factory", () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("LIBRARIAN_MCP_URL"), "warning");
   });
 
-  it("when configured registers the 7 tools, the primer + capture hooks, and the 4 commands", () => {
+  it("when configured registers the 8 tools, the primer + capture hooks, and the 4 commands", () => {
     vi.stubEnv("LIBRARIAN_MCP_URL", "http://127.0.0.1:9/mcp");
     vi.stubEnv("LIBRARIAN_AGENT_TOKEN", "tok-test");
     const { pi, tools, commands, events } = capturePi();
@@ -60,6 +60,7 @@ describe("librarian extension factory", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "claim_handoff",
       "flag_memory",
+      "journal",
       "list_handoffs",
       "recall",
       "remember",

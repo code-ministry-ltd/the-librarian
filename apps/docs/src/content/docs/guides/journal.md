@@ -80,14 +80,30 @@ needs the same agent token as `/mcp`. **Session-start budget** in the settings c
 its size (20,000 tokens by default); when it is over, the oldest files are left
 out first.
 
-Harness integrations that load the journal at the start of a session, and an MCP
-tool for searching older history, are on their way in upcoming releases. Until
-then, the journal builds up its history but agents don't read it yet.
+Every connected agent also has the **`journal`** tool (see the
+[MCP verbs](/reference/mcp-verbs/#journal) reference), in every harness:
+
+- **Retrieve** — with no `query`, it returns the entries between `from` and `to`
+  (default: the last 30 days), oldest first. Asking for an older range works the
+  same way and returns that period's summaries. If the reply is too long for
+  `max_tokens`, the oldest entries are left out and the reply says which `to` date
+  to ask for next.
+- **Search** — with a `query`, it returns the best-matching entries and summaries
+  from the last year (or the range you give), each labelled with its date.
+- **Filter** — `project` and `harness` narrow either mode. Entries are matched
+  exactly; weekly and monthly summaries are matched when they mention the name,
+  and are labelled as a looser match.
+
+The tool only reads, so it stays available in [private mode](/guides/private-mode/),
+like `recall`. Its queries reach the server's logs like any other read.
+
+Harness integrations that load the recent window automatically at the start of a
+session are coming in an upcoming release.
 
 ## Turning it off
 
-Untick **Keep a journal of captured conversations**. Nothing more is written, and
-`/journal.md` answers 404. Existing entries stay in the vault until you delete
+Untick **Keep a journal of captured conversations**. Nothing more is written,
+`/journal.md` answers 404, and the `journal` tool tells agents the journal is off. Existing entries stay in the vault until you delete
 them there.
 
 ## For operators

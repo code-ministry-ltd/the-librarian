@@ -4,7 +4,7 @@
 // scripts/docs-gen.mjs and committed; scripts/check-docs.mjs (the drift-guard)
 // fails CI if the committed pages fall out of sync. This suite pins the parity
 // contract on the generator's output itself: the MCP-verbs page must carry
-// exactly the seven verbs, each with its tool-level description and every
+// exactly the eight verbs, each with its tool-level description and every
 // parameter's name, type, required-ness, and human description — so a verb or
 // parameter can never silently vanish from the reference.
 
@@ -28,11 +28,12 @@ describe("generated MCP-verbs reference page", () => {
     expect(page).toMatch(/^---\n[\s\S]*?\btitle:/);
   });
 
-  it("documents exactly the seven verbs, by name", () => {
+  it("documents exactly the eight verbs, by name", () => {
     expect(verbHeadings(page).sort()).toEqual(
       [
         "claim_handoff",
         "flag_memory",
+        "journal",
         "list_handoffs",
         "recall",
         "remember",
@@ -41,7 +42,7 @@ describe("generated MCP-verbs reference page", () => {
       ].sort(),
     );
     // Count guard: no duplicate or stray verb sections.
-    expect(verbHeadings(page)).toHaveLength(7);
+    expect(verbHeadings(page)).toHaveLength(8);
   });
 
   it("renders each verb's tool-level teaching description verbatim", () => {

@@ -2,7 +2,7 @@
 
 The primer (served via ``system_prompt_block``) is the canonical definition of
 these protocols (rethink D9); the commands below are thin prompt templates over
-the same 7-verb MCP surface, registered only where Hermes makes that cheap.
+the same 8-verb MCP surface, registered only where Hermes makes that cheap.
 ``docs/slash-commands.md`` in the monorepo is the wording reference.
 
 Hermes slash commands are registered programmatically via
@@ -44,8 +44,8 @@ _LEARN_PROMPT = (
 
 _TOGGLE_ON = (
     "Private mode is ON. `[librarian:private=on]` — do not call `remember`, "
-    "`store_handoff`, or `flag_memory` until told otherwise. `recall` and "
-    "`search_references` stay allowed; note that read queries still reach the "
+    "`store_handoff`, or `flag_memory` until told otherwise. `recall`, "
+    "`search_references` and `journal` stay allowed; note that read queries still reach the "
     "Librarian server's logs. Private mode is an in-conversation instruction; "
     "the server cannot verify its marker. A curator review queued by a flag "
     "from public context may still correct that memory after switching private; "

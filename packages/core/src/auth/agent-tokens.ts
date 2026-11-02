@@ -19,7 +19,7 @@ const TOKEN_PREFIX = "lib";
 const MAX_AGENT_ID = 128;
 
 /**
- * A token's privilege scope (ingest spec D21). `agent` reaches the 7-verb /mcp
+ * A token's privilege scope (ingest spec D21). `agent` reaches the 8-verb /mcp
  * surface; `capture` is least-privilege — it reaches ONLY the /ingest endpoint
  * (browser extension / mobile share) and is actively walled off from /mcp. The
  * scope is a FIRST-CLASS stored field, not inferred: the auth layer enforces it

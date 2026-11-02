@@ -73,6 +73,8 @@ def test_toggle_private_blocks_writes_only() -> None:
     assert "[librarian:private=off]" in text
     for blocked in ("`remember`", "`store_handoff`", "`flag_memory`"):
         assert blocked in text
+    # The reads that stay allowed, including the journal (spec 077 / ADR 0016).
+    assert "`recall`, `search_references` and `journal` stay allowed" in text
     assert "`recall`" in text
     assert "logs" in text
     assert "server cannot verify its marker" in text

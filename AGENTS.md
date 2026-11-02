@@ -71,10 +71,10 @@ PR. Never invent new ones unilaterally:
 - **Handoff document shape:** five required headings — `Start & intent`,
   `Journey`, `Current state`, `What's left`, `Open questions`. The
   schema refuses documents missing any of them.
-- **The 7-verb MCP surface:** `recall`, `remember`, `flag_memory`,
+- **The 8-verb MCP surface:** `recall`, `remember`, `flag_memory`,
   `store_handoff`, `list_handoffs`, `claim_handoff`,
-  `search_references` — pinned by the tool-registry test and the
-  healthcheck. The Hermes/Pi adapters mirror the schemas and
+  `search_references`, `journal` (ADR 0016) — pinned by the
+  tool-registry test and the healthcheck. The Hermes/Pi adapters mirror the schemas and
   descriptions verbatim (drift-guard tests pin them); a server-side
   tool change must update them in the same PR.
 

@@ -3,7 +3,7 @@
 [The Librarian](https://github.com/code-ministry-ltd/the-librarian) gives
 [opencode](https://opencode.ai) durable, shared memory and cross-harness
 handoffs over plain MCP. The **tools + primer** need only two config entries
-in `opencode.json` — one MCP server block for the 7 tools, one `instructions`
+in `opencode.json` — one MCP server block for the 8 tools, one `instructions`
 line that loads the Librarian primer from your server (no plugin required).
 **Automatic conversation capture** (below) adds one small opencode plugin so
 the Librarian learns from your sessions without you asking; the installer CLI
@@ -147,6 +147,7 @@ Privacy + control (it always defers to you):
 | `list_handoffs` | List unclaimed handoffs waiting to be picked up |
 | `claim_handoff` | Atomically claim a handoff and receive its document |
 | `search_references` | Search long-form reference docs (deliberately not auto-recalled) |
+| `journal` | Read or search the dated history of past conversations ([guide](https://librarian-docs.codeministry.net/guides/journal/)) |
 
 The primer (served from `vault/primer.md` on your server, editable in the
 dashboard) teaches the behavioural loop: recall before answering, remember
@@ -186,7 +187,7 @@ curl -X POST "https://librarian.example.com/mcp" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-A healthy response lists exactly 7 tools.
+A healthy response lists exactly 8 tools.
 
 **The primer doesn't seem loaded.** Check it serves:
 `curl https://librarian.example.com/primer.md` (no auth needed — only this

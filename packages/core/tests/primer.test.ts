@@ -74,6 +74,9 @@ describe("the shipped default primer", () => {
     expect(DEFAULT_PRIMER).toContain("claim_handoff");
     // (c) learn protocol.
     expect(DEFAULT_PRIMER).toMatch(/once per durable lesson/i);
+    // (c2) the journal verb (spec 077 / ADR 0016): named, and readable while private.
+    expect(DEFAULT_PRIMER).toContain("call `journal` for what happened in past conversations");
+    expect(DEFAULT_PRIMER).toContain("`recall`, `search_references` and `journal` stay available");
     // (d) private mode (D11): writes blocked, reads stay + logged server-side.
     expect(DEFAULT_PRIMER).toMatch(/private/i);
     expect(DEFAULT_PRIMER).toContain("flag_memory");

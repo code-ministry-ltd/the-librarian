@@ -1,7 +1,7 @@
 """Provider behavior — tool-call proxying, primer block, fail-soft everywhere.
 
 Covers:
-- handle_tool_call proxies each of the 7 verbs over tools/call and returns a
+- handle_tool_call proxies each of the 8 verbs over tools/call and returns a
   JSON string ({"ok": true, "result": …} / {"ok": false, "error": …});
 - config-resolved arg scoping (agent_id / project_key / include_ids /
   harness provenance) with caller-supplied values winning;

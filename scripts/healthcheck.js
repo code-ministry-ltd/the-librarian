@@ -27,7 +27,7 @@ const LOCAL_CHECKS = [
   { name: "HTTP MCP reachability + auth", fn: () => checkHttpMcpLocal() },
 ];
 
-// The pinned 7-verb agent surface (rethink spec §5.1, D8/D10/D12) — EXACTLY
+// The pinned 8-verb agent surface (rethink spec §5.1, D8/D10/D12) — EXACTLY
 // these, no internal tools: three memory verbs (`recall`, `remember`,
 // `flag_memory` — route-to-review, replaced `verify_memory`), the
 // cross-harness handoff trio that replaced the retired session subsystem, and
@@ -41,6 +41,8 @@ const EXPECTED_TOOLS = {
   memory: ["recall", "remember", "flag_memory"],
   handoff: ["store_handoff", "list_handoffs", "claim_handoff"],
   references: ["search_references"],
+  // spec 077 / ADR 0016 — the dated conversation journal (retrieve + search).
+  journal: ["journal"],
 };
 
 const RETIRED_TOOLS = [
@@ -326,15 +328,12 @@ async function checkMcpToolSurface() {
       );
     }
 
-    const expected = [
-      ...EXPECTED_TOOLS.memory,
-      ...EXPECTED_TOOLS.handoff,
-      ...EXPECTED_TOOLS.references,
-    ];
+    // Every group, so adding a group to EXPECTED_TOOLS can't silently skip it.
+    const expected = Object.values(EXPECTED_TOOLS).flat();
     const advertised = new Set(listMessage.result.tools.map((t) => t.name));
     const missing = expected.filter((name) => !advertised.has(name));
     const present = RETIRED_TOOLS.filter((name) => advertised.has(name));
-    // The pin is exact (rethink §5.1): any tool beyond the 7 — retired or
+    // The pin is exact (rethink §5.1): any tool beyond the 8 — retired or
     // brand-new internal — is drift.
     const extra = [...advertised].filter((name) => !expected.includes(name));
 
@@ -345,7 +344,9 @@ async function checkMcpToolSurface() {
       const unexpected = extra.filter((name) => !RETIRED_TOOLS.includes(name));
       if (unexpected.length) lines.push(`unexpected tools advertised: ${unexpected.join(", ")}`);
       throw hint(
-        new Error(`MCP tool surface drifted from the pinned 7-verb contract (rethink §5.1).`),
+        new Error(
+          `MCP tool surface drifted from the pinned 8-verb contract (rethink §5.1, ADR 0016).`,
+        ),
         `${lines.join(" | ")}. See docs/specs/2026-06-12-rethink.md §5.1 + tests/mcp/tool-registry.test.ts.`,
       );
     }
@@ -503,7 +504,7 @@ function usage() {
     "  - Vault durability (a written memory survives a store reopen)",
     "  - Index rebuild (the disposable recall index rebuilds from the vault)",
     "  - MCP stdio reachability (packages/mcp-server/dist/bin/stdio.js)",
-    "  - MCP tool surface (exactly the 7 memory/handoff/reference verbs; retired verbs absent)",
+    "  - MCP tool surface (exactly the 8 memory/handoff/reference/journal verbs; retired verbs absent)",
     "  - HTTP MCP reachability + auth (packages/mcp-server/dist/bin/http.js)",
     "",
     "Remote mode (--remote http://host:port) skips in-process checks and only",
