@@ -55,6 +55,7 @@ import type { AuthConfig } from "./http/auth.js";
 import { assertPluginRoutes } from "./http/routes.js";
 import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
+import { logEmbedBacklog } from "./embed-backlog-log.js";
 import { createFlagGroomTrigger } from "./flag-groom-trigger.js";
 import {
   type ActorDisplayProvider,
@@ -313,6 +314,8 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         );
       },
     },
+    // Say when embedding cache misses keep the CPU busy (counts + timing only).
+    onEmbedBacklog: (event) => logEmbedBacklog(logger, event),
     ...(vaultRouter ? { vaultRouter } : {}),
   });
   // ADR 0013: a flag asks the curator to look again. The trigger debounces bursts

@@ -75,4 +75,9 @@ describe("image-only Docker Compose deployment", () => {
     expect(envExample).toContain("# LIBRARIAN_DNS=100.100.100.100");
     expect(envExample).toContain("# LIBRARIAN_DNS_FALLBACK=8.8.8.8");
   });
+
+  it("passes the embedding thread cap through, empty by default so the server picks it", () => {
+    expect(compose).toContain("LIBRARIAN_EMBED_THREADS: ${LIBRARIAN_EMBED_THREADS:-}");
+    expect(envExample).toContain("# LIBRARIAN_EMBED_THREADS=");
+  });
 });

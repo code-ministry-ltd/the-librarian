@@ -31,6 +31,26 @@ export interface LlamaEmbedderOptions {
    * who knows which model it asked for — supplies it.
    */
   modelId?: string;
+  /**
+   * CPU threads the embedding context may use per inference. Absent ⇒ node-llama-cpp's
+   * own default (6 in v3). A positive integer caps it, so a burst of embedding — a cold
+   * cache, a large new reference — leaves cores free for everything else on the host.
+   */
+  threads?: number;
+  /**
+   * TEST SEAM — not part of the public API. Replaces the lazy `import("node-llama-cpp")`
+   * so a test can observe the context options without loading the native binary or a
+   * model. Absent ⇒ the real module, exactly as before.
+   */
+  loadLlamaModule?: () => Promise<LlamaModule>;
+}
+
+/** The slice of node-llama-cpp this embedder touches (see `loadLlamaModule`). */
+export interface LlamaModule {
+  getLlama(options: { logLevel: unknown }): Promise<{
+    loadModel(options: { modelPath: string }): Promise<unknown>;
+  }>;
+  LlamaLogLevel: { warn: unknown };
 }
 
 // EmbeddingGemma's documented retrieval prompts.
@@ -71,14 +91,17 @@ export function createLlamaEmbedder(options: LlamaEmbedderOptions): Embedder {
   // Lazily load node-llama-cpp + the model once, then reuse the context.
   let contextPromise: Promise<{ model: EmbeddingModel; ctx: EmbeddingContext }> | null = null;
   async function loadContext(): Promise<{ model: EmbeddingModel; ctx: EmbeddingContext }> {
-    const { getLlama, LlamaLogLevel } = await import("node-llama-cpp");
+    const { getLlama, LlamaLogLevel } = options.loadLlamaModule
+      ? await options.loadLlamaModule()
+      : ((await import("node-llama-cpp")) as unknown as LlamaModule);
     const llama = await getLlama({ logLevel: LlamaLogLevel.warn }); // quiet model-load spam
     const modelPath =
       typeof options.modelPath === "function" ? await options.modelPath() : options.modelPath;
     const model = (await llama.loadModel({ modelPath })) as unknown as EmbeddingModel & {
-      createEmbeddingContext(): Promise<EmbeddingContext>;
+      createEmbeddingContext(contextOptions?: { threads?: number }): Promise<EmbeddingContext>;
     };
-    return { model, ctx: await model.createEmbeddingContext() };
+    const contextOptions = options.threads !== undefined ? { threads: options.threads } : {};
+    return { model, ctx: await model.createEmbeddingContext(contextOptions) };
   }
   const context = (): Promise<{ model: EmbeddingModel; ctx: EmbeddingContext }> =>
     (contextPromise ??= loadContext().catch((error: unknown) => {

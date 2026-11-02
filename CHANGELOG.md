@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.43.0] — 2026-11-02
+
+### Added
+
+- **`LIBRARIAN_EMBED_THREADS`: cap the CPU the local embedding model can take.**
+  Local embedding used node-llama-cpp's default of 6 threads, so on a 6-core
+  host a cold or out-of-date embedding cache, or a large new reference, could
+  pin every core for over an hour. The default is now half the host's cores,
+  at most 6, so no install uses more threads than before and small hosts keep
+  cores free. Set a whole number to choose your own. An invalid value stops the
+  server at boot with a message saying what it expected. Both Compose files and
+  `docker/all-in-one.env.example` pass the setting through.
+- **The server log now shows heavy embedding.** When 10 or more chunks are
+  missing from the embedding cache, the server logs an `info` line with the
+  number of files and chunks before it starts, and another with the time taken
+  when it finishes. A batch that fails is a warning. The lines carry counts
+  only, never paths or content. The routine rebuild after each saved memory
+  logs at `debug`. Previously this work produced no log output at all.
+
 ## [1.42.0] — 2026-11-02
 
 ### Added
@@ -5388,6 +5407,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.43.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.42.0...v1.43.0
 [1.42.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.41.0...v1.42.0
 [1.41.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.40.0...v1.41.0
 [1.40.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.39.0...v1.40.0

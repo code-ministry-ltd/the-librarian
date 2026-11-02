@@ -8,7 +8,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  type EmbedBacklogEvent,
   buildCorpusIndex,
+  createEmbeddingCache,
   createHashEmbedder,
   createLibrarianStore,
   createVault,
@@ -194,5 +196,68 @@ describe("buildCorpusIndex", () => {
     });
     expect(await index.recall("anything")).toEqual([]);
     expect(await searchReferences(vault, createHashEmbedder(), "anything")).toEqual([]);
+  });
+});
+
+describe("embedding backlog reporting", () => {
+  const cacheFor = () =>
+    createEmbeddingCache({ dir: path.join(dataDir, "embeddings-cache"), modelId: "hash-test" });
+
+  it("reports a cold memory build's misses once, then stays quiet when every memory is cached", async () => {
+    const ids = seed();
+    const vault = createVault({ dataDir });
+    const events: EmbedBacklogEvent[] = [];
+    const build = () =>
+      buildCorpusIndex(vault, {
+        embedder: createHashEmbedder(),
+        cache: cacheFor(),
+        onEmbedBacklog: (event) => events.push(event),
+      });
+
+    await build();
+    expect(events.map((e) => [e.phase, e.scope, e.files])).toEqual([
+      ["start", "memories", 2], // the two ACTIVE memories; the archived one is not indexed
+      ["done", "memories", 2],
+    ]);
+    expect(events[0]!.chunks).toBeGreaterThanOrEqual(2);
+    expect(events[1]).toMatchObject({ failed: false, chunks: events[0]!.chunks });
+
+    events.length = 0;
+    const index = await build(); // a new cache instance over the same dir — i.e. after a restart
+    expect(events).toEqual([]);
+    expect((await index.recall("piano tuning"))[0]?.id).toBe(ids.piano);
+  });
+
+  it("reports only the reference that is new to the cache, and searches the same either way", async () => {
+    seedReference();
+    const vault = createVault({ dataDir });
+    const events: EmbedBacklogEvent[] = [];
+    const search = () =>
+      searchReferences(vault, createHashEmbedder(), "piano regulation voicing", {
+        cache: cacheFor(),
+        onEmbedBacklog: (event) => events.push(event),
+      });
+
+    const first = await search();
+    expect(events.map((e) => [e.phase, e.scope, e.files])).toEqual([
+      ["start", "references", 1],
+      ["done", "references", 1],
+    ]);
+
+    events.length = 0;
+    fs.writeFileSync(
+      path.join(dataDir, "vault", "references", "sailing-notes.md"),
+      "## Knots\nbowline and clove hitch for the dinghy",
+    );
+    await search();
+    expect(events.map((e) => [e.phase, e.files])).toEqual([
+      ["start", 1], // only the new file — the piano manual is a cache hit
+      ["done", 1],
+    ]);
+
+    events.length = 0;
+    const again = await search();
+    expect(events).toEqual([]);
+    expect(again[0]?.id).toBe(first[0]?.id);
   });
 });

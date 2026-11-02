@@ -158,3 +158,112 @@ export async function embedChunksWithCache(
   );
   return vectors;
 }
+
+/** Which corpus a batch of embeddings belongs to. */
+export type EmbedScope = "memories" | "references";
+
+/**
+ * Progress for a batch of cache misses, reported around the expensive part of an index
+ * build. VALUE-FREE by contract: counts and timing only — never a path, title, or text —
+ * so a sink can log it without leaking vault content.
+ *
+ * Why it exists: on a CPU-only host a cold or invalidated cache (a fresh data dir, a
+ * model or chunker change, a large new reference) can keep the embedder busy for a long
+ * time with nothing else in the logs. `start` says how much work is queued; `done` says
+ * how long it took.
+ */
+export type EmbedBacklogEvent =
+  | { phase: "start"; scope: EmbedScope; files: number; chunks: number }
+  | {
+      phase: "done";
+      scope: EmbedScope;
+      files: number;
+      chunks: number;
+      durationMs: number;
+      /** True when an embed threw part-way; the error still propagates to the caller. */
+      failed: boolean;
+    };
+
+export type EmbedBacklogSink = (event: EmbedBacklogEvent) => void;
+
+/** One file to resolve through the cache: its cache key, full content, and chunk texts. */
+export interface EmbedFileInput {
+  key: string;
+  content: string;
+  chunkTexts: string[];
+}
+
+export interface EmbedFilesOptions {
+  scope: EmbedScope;
+  /** Observer for the miss batch. Absent ⇒ no reporting. A throwing sink is ignored. */
+  onBacklog?: EmbedBacklogSink;
+  /** Clock for `durationMs` (test seam). Defaults to `Date.now`. */
+  now?: () => number;
+}
+
+/**
+ * Resolve many files' chunk vectors through the cache in one pass. Behaves exactly like
+ * calling {@link embedChunksWithCache} per file — hits are served from disk, misses are
+ * embedded sequentially and persisted — but checks every file FIRST, so the size of the
+ * miss batch is known (and reported via `onBacklog`) before any embedding starts.
+ * Returns one vector list per input file, in input order.
+ */
+export async function embedFilesWithCache(
+  cache: EmbeddingCache,
+  embedder: Embedder,
+  files: readonly EmbedFileInput[],
+  options: EmbedFilesOptions,
+): Promise<number[][][]> {
+  const now = options.now ?? Date.now;
+  const report = (event: EmbedBacklogEvent): void => {
+    try {
+      options.onBacklog?.(event);
+    } catch {
+      /* observability only — a broken sink must never fail an index build */
+    }
+  };
+
+  const results: (number[][] | null)[] = [];
+  const misses: { index: number; contentHash: string; chunkShas: string[] }[] = [];
+  files.forEach((file, index) => {
+    const contentHash = contentSha(file.content);
+    const chunkShas = file.chunkTexts.map(contentSha);
+    const hit = cache.get(file.key, contentHash, chunkShas);
+    results.push(hit);
+    if (!hit) misses.push({ index, contentHash, chunkShas });
+  });
+  if (misses.length === 0) return results as number[][][];
+
+  const missFiles = misses.length;
+  const missChunks = misses.reduce((sum, miss) => sum + miss.chunkShas.length, 0);
+  report({ phase: "start", scope: options.scope, files: missFiles, chunks: missChunks });
+  const startedAt = now();
+  const done = (failed: boolean): void =>
+    report({
+      phase: "done",
+      scope: options.scope,
+      files: missFiles,
+      chunks: missChunks,
+      durationMs: Math.max(0, now() - startedAt),
+      failed,
+    });
+
+  try {
+    for (const miss of misses) {
+      const file = files[miss.index]!;
+      const vectors: number[][] = [];
+      for (const text of file.chunkTexts) vectors.push(await embedder.embed(text));
+      cache.put(
+        file.key,
+        miss.contentHash,
+        vectors.map((vector, i) => ({ sha: miss.chunkShas[i] ?? "", vector })),
+      );
+      results[miss.index] = vectors;
+    }
+  } catch (error) {
+    done(true);
+    throw error;
+  }
+  done(false);
+  return results as number[][][];
+}
