@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.37.1] — 2026-11-02
+
+### Fixed
+
+- **`recall` now matches the last word of a sentence.** The shared tokenizer keeps
+  `.`, `/` and `-` so names like `config.ts`, `docs/release.md` and `1.2.3` stay
+  whole, but it also kept them at the end of a word, so "We kept the importer."
+  indexed `importer.` and a search for "importer" never matched it through the
+  keyword half of recall. Punctuation at either edge of a word is now trimmed;
+  inner punctuation is kept, so dotted, slashed and hyphenated names match as
+  before. The same tokenizer drives duplicate detection and reference search, which
+  benefit the same way; the recall index is rebuilt at startup, so nothing needs
+  migrating. The journal's own workaround from 1.37.0 is no longer needed and is
+  removed.
+
 ## [1.37.0] — 2026-11-02
 
 ### Added
@@ -5240,6 +5255,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.37.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.37.0...v1.37.1
 [1.37.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.34.0...v1.35.0

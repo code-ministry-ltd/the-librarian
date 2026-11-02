@@ -191,16 +191,6 @@ function candidatesFor(
     .filter((hit): hit is Candidate => hit !== null);
 }
 
-/**
- * Text as the journal indexes it. The shared tokenizer keeps `.`, `/` and `-` so
- * `config.ts` and `1.2.3` stay whole — which also leaves a sentence's last word as
- * `importer.`, unmatchable by `importer`. Journal entries are prose, so drop that
- * punctuation where it ENDS a word (inner dots survive). Applied to query and text alike.
- */
-function searchable(text: string): string {
-  return text.replace(/[./-]+(?=\s|$|[)\]"'»”])/g, "");
-}
-
 /** BM25 over the candidates; newest first among equal scores. */
 function rankUnits(
   candidates: Candidate[],
@@ -208,10 +198,8 @@ function rankUnits(
   limit: number,
 ): (Candidate & { score: number })[] {
   const byId = new Map(candidates.map((c, i) => [String(i), c]));
-  return buildKeywordIndex(
-    candidates.map((c, i) => ({ id: String(i), text: searchable(c.unit.text) })),
-  )
-    .search(searchable(query))
+  return buildKeywordIndex(candidates.map((c, i) => ({ id: String(i), text: c.unit.text })))
+    .search(query)
     .flatMap((hit) => {
       const entry = byId.get(hit.id);
       return entry ? [{ ...entry, score: hit.score }] : [];

@@ -93,3 +93,23 @@ describe("buildKeywordIndex", () => {
     expect(index.search("a the and")).toEqual([]); // too-short + stopwords
   });
 });
+
+describe("buildKeywordIndex — sentence-final words", () => {
+  it("matches a word that ends a sentence or clause, as recall's keyword half needs", () => {
+    const index = buildKeywordIndex([
+      { id: "a", text: "We decided to keep the importer." },
+      { id: "b", text: "Nothing relevant here at all" },
+    ]);
+    expect(index.search("importer").map((h) => h.id)).toEqual(["a"]);
+  });
+
+  it("still keeps dotted, slashed and hyphenated names whole", () => {
+    const index = buildKeywordIndex([
+      { id: "a", text: "Renamed config.ts; see docs/release.md and pre-commit." },
+      { id: "b", text: "Config files and release notes" },
+    ]);
+    expect(index.search("config.ts").map((h) => h.id)).toEqual(["a"]);
+    expect(index.search("docs/release.md").map((h) => h.id)).toEqual(["a"]);
+    expect(index.search("pre-commit").map((h) => h.id)).toEqual(["a"]);
+  });
+});
