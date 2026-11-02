@@ -50,15 +50,16 @@ export LIBRARIAN_MCP_URL="https://librarian.example.com/mcp"
 export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
-That wires up memory itself — the **seven tools and the primer**, and nothing more.
+That wires up memory itself — the **eight tools and the primer**, and nothing more.
 The four slash commands and automatic capture ride on the *plugin*, not bare MCP, so
 use **The easy way** above if you want those too. The briefing (primer) arrives
 automatically at session start.
 
 ## What you get
 
-- **Seven memory and handoff tools** — Claude Code can recall, remember, flag a
-  wrong memory, store and claim handoffs, and search references.
+- **Eight memory, handoff and journal tools** — Claude Code can recall, remember,
+  flag a wrong memory, store and claim handoffs, search references, and read the
+  [journal](/guides/journal/).
 - **The primer** — Claude Code reads The Librarian's briefing natively, so it
   knows how and when to use those tools without any prompting from you.
 - **Four optional slash commands** — `/handoff`, `/takeover`, `/learn`, and the
@@ -70,6 +71,11 @@ automatically at session start.
   the curator's **Intake** in the dashboard (**Settings → Curator**) — it is **off
   by default**. Capture skips anything under [private mode](/guides/private-mode/)
   and can be turned off per machine with `LIBRARIAN_AUTO_SAVE=false`.
+- **The journal at session start** — when the server's [journal](/guides/journal/)
+  is on, each new session (and each session after a compaction) starts with your
+  recent entries, newest kept first. Claude Code shows a hook at most 10,000
+  characters, so older entries are left out and Claude is told to use the
+  `journal` tool for them. Turn it off per machine with `LIBRARIAN_JOURNAL=off`.
 
 ## Claude Cowork (the desktop app)
 

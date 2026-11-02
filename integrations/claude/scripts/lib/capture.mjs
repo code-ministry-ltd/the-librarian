@@ -15,6 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cursorPath, pruneOldCursors, readCursor, writeCursor } from "./cursor.mjs";
+import { deriveProject, serverSupportsJournal } from "./journal.mjs";
 import { deriveTranscriptUrl, postDelta } from "./post.mjs";
 import {
   buildPayload,
@@ -226,7 +227,10 @@ export async function runCapture(hook, env, deps = {}) {
     }
 
     const seq = prior.seq + 1;
-    const payload = buildPayload({ sessionId, seq, turns: kept, ended });
+    // Spec 077: label the journal entry with the project — only for a server known to
+    // accept the field (the SessionStart probe records that).
+    const project = serverSupportsJournal(dataDir) ? deriveProject(hook.cwd) : null;
+    const payload = buildPayload({ sessionId, seq, turns: kept, ended, project });
 
     // SHIP. A non-2xx (`ok:false`) or a thrown network error → DO NOT advance the
     // cursor: the delta re-ships next run (idempotent; server/curator dedup). A

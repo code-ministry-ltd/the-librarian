@@ -174,10 +174,10 @@ export function filterPrivateSpans(turns, { startPrivate }) {
 
 /**
  * Build the uniform, harness-agnostic delta payload the server contract expects:
- * `{ conv_id, harness:"claude", seq, turns[], ended? }`. `ended` is omitted unless
+ * `{ conv_id, harness:"claude", seq, turns[], ended?, project? }`. `ended` is omitted unless
  * true (the server treats its mere presence as the explicit-end accelerator).
  */
-export function buildPayload({ sessionId, seq, turns, ended }) {
+export function buildPayload({ sessionId, seq, turns, ended, project }) {
   /** @type {Record<string, unknown>} */
   const payload = {
     conv_id: sessionId,
@@ -186,5 +186,8 @@ export function buildPayload({ sessionId, seq, turns, ended }) {
     turns,
   };
   if (ended) payload.ended = true;
+  // Spec 077: the journal's project label. The caller sets it only for a server whose
+  // /healthz advertises `journal` — older servers reject unknown keys.
+  if (project) payload.project = project;
   return payload;
 }

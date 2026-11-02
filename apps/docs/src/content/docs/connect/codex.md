@@ -41,12 +41,13 @@ it only in the request header. Set it in your shell profile and restart Codex:
 export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
-The `/mcp` panel should now list `librarian` with seven tools.
+The `/mcp` panel should now list `librarian` with eight tools.
 
 ## What you get
 
-- **Seven memory and handoff tools** — recall, remember, flag, store/list/claim
-  handoffs, and search references.
+- **Eight memory, handoff and journal tools** — recall, remember, flag,
+  store/list/claim handoffs, search references, and read the
+  [journal](/guides/journal/).
 - **The primer** — Codex presents The Librarian's briefing as guidance alongside
   the tools, so the recall/remember loop and the handoff protocol ride into every
   session with no setup.

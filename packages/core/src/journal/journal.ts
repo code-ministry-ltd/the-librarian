@@ -155,23 +155,58 @@ export const RECENT_WINDOW_HEADER = `# Journal — what you and the user have wo
 
 Oldest first. Recent days are detailed; earlier weeks are summarised. This covers about the last six weeks. For anything older, or to search by project or topic, call the \`journal\` tool. Facts live in memory (\`recall\`); this is the story of how you got here.`;
 
+/** Appended when the recent window had to leave older entries out. */
+export const RECENT_WINDOW_TRIMMED_NOTE =
+  "Older entries were left out to fit — call the `journal` tool to read further back.";
+
+/** One block of the recent window: a single episode, or a whole week summary. */
+function windowBlocks(file: JournalFile): string[] {
+  if (file.period.tier !== "day") return [renderForAgent(file)];
+  return parseDay(file.period.label, file.raw).episodes.map((e) =>
+    [
+      `## ${file.period.label} ${e.time} · ${e.harness} · ${e.project ?? "—"}`,
+      ...e.bullets.map((b) => `- ${b}`),
+    ].join("\n"),
+  );
+}
+
 /**
  * The recent window (spec 077 §4.4): every day file still on disk (normally the last
  * 14 days — older ones exist only until compaction rolls them) plus the 4 most recent
- * week summaries, oldest first, trimmed oldest-first to `budgetTokens`. The newest
- * file is never dropped. Null when there is nothing to serve.
+ * week summaries, oldest first. It is trimmed oldest-first, one episode or summary at a
+ * time, to the smaller of `budgetTokens` (× 4 chars) and `options.maxChars` — the total
+ * including the header and the trimmed note. The newest block is always kept (cut if it
+ * alone is too long), so a session never starts without its latest entry. Null when
+ * there is nothing to serve.
  */
-export function renderRecentWindow(files: JournalFileStore, budgetTokens: number): string | null {
+export function renderRecentWindow(
+  files: JournalFileStore,
+  budgetTokens: number,
+  options: { maxChars?: number } = {},
+): string | null {
   const all = listJournalFiles(files);
   const days = all.filter((f) => f.period.tier === "day");
   const weeks = all.filter((f) => f.period.tier === "week").slice(-RECENT_WINDOW_WEEKS);
   const window = [...weeks, ...days].sort((a, b) => comparePeriods(a.period, b.period));
-  const rendered = window.map(renderForAgent).filter((text) => text.trim() !== "");
-  if (rendered.length === 0) return null;
-  const budgetChars = budgetTokens * 4 - RECENT_WINDOW_HEADER.length;
-  let total = rendered.reduce((sum, text) => sum + text.length + 2, 0);
-  while (rendered.length > 1 && total > budgetChars) {
-    total -= (rendered.shift() as string).length + 2;
+  const blocks = window.flatMap(windowBlocks).filter((text) => text.trim() !== "");
+  if (blocks.length === 0) return null;
+
+  const limit = Math.min(budgetTokens * 4, options.maxChars ?? Number.POSITIVE_INFINITY);
+  const render = (kept: string[], trimmed: boolean): string =>
+    `${RECENT_WINDOW_HEADER}\n\n${kept.join("\n\n")}\n` +
+    (trimmed ? `\n${RECENT_WINDOW_TRIMMED_NOTE}\n` : "");
+
+  let start = 0;
+  let text = render(blocks, false);
+  while (text.length > limit && start < blocks.length - 1) {
+    start += 1;
+    text = render(blocks.slice(start), true);
   }
-  return `${RECENT_WINDOW_HEADER}\n\n${rendered.join("\n\n")}\n`;
+  if (text.length > limit) {
+    // Only the newest block is left and it is still too long: cut it to fit.
+    const room = limit - render([""], true).length - 1;
+    const newest = blocks[blocks.length - 1] as string;
+    text = render([`${newest.slice(0, Math.max(0, room)).trimEnd()}…`], true);
+  }
+  return text;
 }

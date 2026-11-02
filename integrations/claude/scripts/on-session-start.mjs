@@ -23,6 +23,7 @@
 import process from "node:process";
 import { buildBanner, probeShipping, probeStatus } from "./lib/banner.mjs";
 import { resolveDataDir } from "./lib/capture.mjs";
+import { writeServerFeatures } from "./lib/journal.mjs";
 
 async function main() {
   let status;
@@ -30,6 +31,18 @@ async function main() {
     status = await probeStatus(process.env);
   } catch {
     status = { reachable: false };
+  }
+  // Spec 077: remember whether this server accepts `project` on /transcript, so the Stop
+  // hook can label journal entries. Only a successful probe updates it — an outage keeps
+  // the last known answer. Best-effort; never affects the banner.
+  if (status.reachable) {
+    try {
+      writeServerFeatures(resolveDataDir(process.env), {
+        journalSupported: status.journalSupported === true,
+      });
+    } catch {
+      // fail-soft
+    }
   }
   // Local capture-health: has THIS client ever shipped (any cursor under the
   // resolved $CLAUDE_PLUGIN_DATA)? Fail-soft to undefined → the banner keeps its

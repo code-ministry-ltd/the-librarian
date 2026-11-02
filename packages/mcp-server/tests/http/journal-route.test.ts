@@ -96,6 +96,46 @@ describe("GET /journal.md", () => {
   });
 });
 
+describe("GET /journal.md?max_chars (spec 077 §4.9)", () => {
+  it("keeps the window under the requested size and refuses a malformed value", async () => {
+    const dataDir = makeTempDir();
+    const store = createLibrarianStore({ dataDir });
+    try {
+      store.setSetting(INTAKE_ENABLED_KEY, "true");
+      store.setSetting(JOURNAL_ENABLED_KEY, "true");
+      for (let i = 1; i <= 9; i += 1) {
+        appendEpisode(store.systemJournal(DEFAULT_SHELF), `2026-10-2${i}`, {
+          key: `c${i}#s1`,
+          time: "10:00",
+          harness: "claude",
+          project: "p",
+          bullets: [`entry ${i} `.repeat(150)],
+        });
+      }
+    } finally {
+      store.close();
+    }
+    const server = await startHttpServer({ dataDir });
+    try {
+      const capped = await fetch(`${server.url}/journal.md?max_chars=3000`, { headers: AGENT });
+      expect(capped.status).toBe(200);
+      const text = await capped.text();
+      expect(text.length).toBeLessThanOrEqual(3_000);
+      expect(text).toContain("entry 9 entry 9");
+      expect(text).toContain("call the `journal` tool to read further back");
+
+      const bad = await fetch(`${server.url}/journal.md?max_chars=lots`, { headers: AGENT });
+      expect(bad.status).toBe(400);
+      expect(((await bad.json()) as { error: string }).error).toContain(
+        "Expected max_chars as a whole number from 1000 to 400000, got 'lots'",
+      );
+    } finally {
+      await server.stop();
+      cleanupTempDir(dataDir);
+    }
+  });
+});
+
 describe("GET /healthz — journal field", () => {
   it("reports the journal gate, so adapters know the server accepts `project`", async () => {
     const dataDir = makeTempDir();
