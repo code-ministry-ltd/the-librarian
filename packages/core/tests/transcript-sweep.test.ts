@@ -747,3 +747,169 @@ describe("runTranscriptSweepTick — shelf-marker routing + fail-soft (spec 062 
     });
   }
 });
+
+// ── spec 077: the journal step ────────────────────────────────────────────────
+
+describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () => {
+  const JOURNAL_BUFFER =
+    "### user (seq=4 ts=2026-11-02T14:05:00.000Z)\n\nShould we keep raw transcripts?\n\n" +
+    "### assistant (seq=4 ts=2026-11-02T14:20:00.000Z)\n\nNo — privacy first; revisit later.\n";
+
+  function enableJournal(): void {
+    enableCapture();
+    store!.setSetting("curator.journal.enabled", "true");
+  }
+
+  function writeCaptureMarker(convId: string, marker: Record<string, string>): void {
+    const p = transcriptHarnessMarkerPath(dataDir, convId);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(marker), "utf8");
+  }
+
+  /** A model that answers the fact extractor and the journal episode prompts differently. */
+  function bothClient(opts: {
+    facts?: string[] | "fail";
+    bullets?: string[] | "fail";
+  }): LlmClient & {
+    calls: { facts: number; journal: number };
+  } {
+    const calls = { facts: 0, journal: 0 };
+    return {
+      calls,
+      complete: async ({ messages }) => {
+        const system = messages[0]?.content ?? "";
+        if (system.includes("Memory Extractor")) {
+          calls.facts += 1;
+          if (opts.facts === "fail") return { content: "not json", model: "m", usage: null };
+          return { content: JSON.stringify({ facts: opts.facts ?? [] }), model: "m", usage: null };
+        }
+        calls.journal += 1;
+        if (opts.bullets === "fail") return { content: "not json", model: "m", usage: null };
+        return {
+          content: JSON.stringify({ bullets: opts.bullets ?? [] }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+  }
+
+  function dayFile(): string | null {
+    const dir = path.join(dataDir, "vault", "journal", "days");
+    if (!fs.existsSync(dir)) return null;
+    const [name] = fs.readdirSync(dir);
+    return name ? fs.readFileSync(path.join(dir, name), "utf8") : null;
+  }
+
+  it("writes one episode with harness and project beside the usual facts, then deletes the buffer", async () => {
+    enableJournal();
+    const bufferPath = writeBuffer("conv-j", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    writeCaptureMarker("conv-j", { harness: "claude", project: "the-librarian" });
+    const summary = await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () =>
+        bothClient({ facts: ["Raw transcripts are not kept."], bullets: ["Chose privacy first."] }),
+    });
+    expect(summary.facts).toBe(1);
+    expect(summary.episodes).toBe(1);
+    const day = dayFile() ?? "";
+    expect(day).toMatch(/^## \d\d:\d\d–\d\d:\d\d · claude · the-librarian$/m);
+    expect(day).toContain("<!-- episode: conv-j#s4 -->");
+    expect(day).toContain("- Chose privacy first.");
+    expect(fs.existsSync(bufferPath)).toBe(false);
+  });
+
+  it("writes no journal at all while the journal setting is off", async () => {
+    enableCapture();
+    writeBuffer("conv-off", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    const client = bothClient({ facts: ["A fact."], bullets: ["Should not appear."] });
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
+    expect(summary.facts).toBe(1);
+    expect(client.calls.journal).toBe(0);
+    expect(dayFile()).toBeNull();
+  });
+
+  it("retries only the journal step after it fails — facts are never submitted twice", async () => {
+    enableJournal();
+    writeBuffer("conv-r", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const t0 = Date.now();
+
+    const first = bothClient({ facts: ["One fact."], bullets: "fail" });
+    const tick1 = await runTranscriptSweepTick({
+      store: store!,
+      now: () => t0,
+      buildClient: () => first,
+    });
+    expect(tick1.failed).toBe(1);
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+    expect(dayFile()).toBeNull();
+
+    // After the reaper window the conversation is retried.
+    const second = bothClient({ facts: ["One fact."], bullets: ["Recovered episode."] });
+    const tick2 = await runTranscriptSweepTick({
+      store: store!,
+      now: () => t0 + 61 * 60_000,
+      buildClient: () => second,
+    });
+    expect(second.calls.facts).toBe(0);
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+    expect(tick2.episodes).toBe(1);
+    expect(dayFile()).toContain("- Recovered episode.");
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-r"))).toBe(false);
+  });
+
+  it("still writes the episode when fact extraction fails, and never writes it twice", async () => {
+    enableJournal();
+    writeBuffer("conv-f", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    const t0 = Date.now();
+
+    const first = bothClient({ facts: "fail", bullets: ["Episode survives."] });
+    const tick1 = await runTranscriptSweepTick({
+      store: store!,
+      now: () => t0,
+      buildClient: () => first,
+    });
+    expect(tick1.failed).toBe(1);
+    expect(tick1.episodes).toBe(1);
+
+    const second = bothClient({ facts: ["Now a fact."], bullets: ["Episode survives."] });
+    await runTranscriptSweepTick({
+      store: store!,
+      now: () => t0 + 61 * 60_000,
+      buildClient: () => second,
+    });
+    expect(second.calls.journal).toBe(0);
+    expect((dayFile() ?? "").match(/<!-- episode: conv-f#s4 -->/g)).toHaveLength(1);
+  });
+
+  it("re-redacts a secret-shaped bullet before the episode is committed to the vault", async () => {
+    enableJournal();
+    writeBuffer("conv-sec", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    // Assembled at runtime from sub-threshold parts (AGENTS.md GitGuardian note).
+    const kw = ["api", "key"].join("_");
+    const secretVal = `${"ABCDEF0123456789".toLowerCase()}${"ABCDEF0123456789".toLowerCase()}`;
+    await runTranscriptSweepTick({
+      store: store!,
+      buildClient: () => bothClient({ bullets: [`Deploy used ${kw} = "${secretVal}".`] }),
+    });
+    const day = dayFile() ?? "";
+    expect(day).not.toContain(secretVal);
+    expect(day).toContain("[REDACTED:secret]");
+  });
+
+  it("does not call the journal model when the provider is down for facts", async () => {
+    enableJournal();
+    writeBuffer("conv-down", JOURNAL_BUFFER, IDLE_MS + 60_000);
+    let journalCalls = 0;
+    const down: LlmClient = {
+      complete: async ({ messages }) => {
+        if (!(messages[0]?.content ?? "").includes("Memory Extractor")) journalCalls += 1;
+        throw new LlmClientError("timeout", "provider timed out");
+      },
+    };
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => down });
+    expect(summary.stoppedEarly).toBe(true);
+    expect(journalCalls).toBe(0);
+  });
+});

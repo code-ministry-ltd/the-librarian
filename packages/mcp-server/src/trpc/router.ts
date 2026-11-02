@@ -17,6 +17,7 @@ import { autoupdateRouter } from "./autoupdate.js";
 import { awarenessRouter } from "./awareness.js";
 import { backupRouter } from "./backup.js";
 import { chronicleRouter } from "./chronicle.js";
+import { journalRouter } from "./journal.js";
 import { examplesRouter } from "./examples.js";
 import { groomingRouter } from "./grooming.js";
 import { handoffsRouter } from "./handoffs.js";
@@ -46,6 +47,7 @@ export const coreRouterRecord = {
   awareness: awarenessRouter,
   backup: backupRouter,
   chronicle: chronicleRouter,
+  journal: journalRouter,
   examples: examplesRouter,
   grooming: groomingRouter,
   handoffs: handoffsRouter,

@@ -167,7 +167,8 @@ export async function restoreVaultToCommit(
  *   admin    `vault: …` (explorer/editor + restores), `primer: update`,
  *            `memory: approve/reject/purge/resolve-flags/bulk-update …`,
  *            `handoff: purge …` — admin-only surfaces.
- *   system   `backup: snapshot`, `vault: pre-restore snapshot`.
+ *   system   `backup: snapshot`, `vault: pre-restore snapshot`, `chronicle: …`,
+ *            `journal: episode/rollup …` (spec 077). `journal: delete …` is admin.
  *   other    anything else (e.g. hand-made commits from a checkout).
  */
 export type VaultCommitSource = "agent" | "curator" | "admin" | "system" | "other";
@@ -183,10 +184,13 @@ export function classifyVaultCommit(subject: string): VaultCommitSource {
   if (
     subject === commitSubject.backupSnapshot() ||
     subject === commitSubject.vaultPreRestoreSnapshot() ||
-    subject.startsWith("chronicle: ")
+    subject.startsWith("chronicle: ") ||
+    subject.startsWith("journal: episode ") ||
+    subject.startsWith("journal: rollup ")
   ) {
     return "system";
   }
+  if (subject.startsWith("journal: delete ")) return "admin";
   if (subject === commitSubject.inboxConsolidateSweep()) return "curator";
   if (subject.startsWith("curator: ")) return "curator";
   if (subject.startsWith("inbox: submit ")) return "agent";

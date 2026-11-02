@@ -72,7 +72,10 @@ import {
   transcriptsDir,
 } from "./transcript-buffer.js";
 import { tryExtractTranscriptFacts } from "./transcript-extract.js";
-import { type Shelf, validateShelfSet } from "./vault-router.js";
+import { DEFAULT_SHELF, type Shelf, validateShelfSet } from "./vault-router.js";
+import { isJournalActive } from "./journal/config.js";
+import { appendEpisode, episodeTiming } from "./journal/journal.js";
+import { summarizeEpisode } from "./journal/summarize.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
 export const DEFAULT_TRANSCRIPT_IDLE_MS = 30 * 60_000;
@@ -123,6 +126,8 @@ export interface TranscriptSweepSummary {
   extracted: number;
   /** Total candidate facts submitted to the inbox across all extractions. */
   facts: number;
+  /** Journal episodes written this tick (spec 077). */
+  episodes: number;
   /** Buffers seen but NOT settled (left for a later tick). */
   skipped: number;
   /** Orphaned `.processing` claims reaped (renamed back to `.md`) this tick. */
@@ -158,6 +163,7 @@ export async function runTranscriptSweepTick(
   const summary: TranscriptSweepSummary = {
     extracted: 0,
     facts: 0,
+    episodes: 0,
     skipped: 0,
     reaped: 0,
     failed: 0,
@@ -317,9 +323,39 @@ export async function runTranscriptSweepTick(
 
       summary.extracted += 1;
       const text = readClaimed(procPath, warn);
-      const extraction = text
-        ? await tryExtractTranscriptFacts(text, { llmClient: client })
-        : { ok: true as const, facts: [] };
+      // Two INDEPENDENT steps per buffer (spec 077 §4.6): facts, then the journal episode.
+      // Each is recorded in a step marker when it succeeds, so a retry re-runs only the step
+      // that failed — a journal failure never re-submits facts, and a facts failure never
+      // loses the episode.
+      const steps = readSteps(store.dataDir, convBase);
+      let stepError: unknown = null;
+      if (!steps.facts) {
+        const extraction = text
+          ? await tryExtractTranscriptFacts(text, { llmClient: client })
+          : { ok: true as const, facts: [] };
+        if (extraction.ok) {
+          summary.facts += submitFacts(store, convBase, extraction.facts, warn);
+          steps.facts = true;
+          writeSteps(store.dataDir, convBase, steps);
+        } else {
+          stepError = extraction.error;
+        }
+      }
+      // The journal step runs even when facts failed — unless the provider is down, when a
+      // second call would only queue behind the first on a struggling model.
+      const providerDown = stepError !== null && isProviderUnavailableError(stepError);
+      if (!steps.journal && !providerDown && isJournalActive(store)) {
+        const journal = await writeJournalEpisode(store, convBase, text, client, now, warn);
+        if (journal.ok) {
+          if (journal.written) summary.episodes += 1;
+          steps.journal = true;
+          writeSteps(store.dataDir, convBase, steps);
+        } else {
+          stepError ??= journal.error;
+        }
+      }
+      const extraction =
+        stepError === null ? { ok: true as const } : { ok: false as const, error: stepError };
       if (!extraction.ok) {
         // A failed pass is not "nothing worth keeping" (review #10): keep the
         // claimed buffer and its markers, and restart its reaper clock so the
@@ -349,35 +385,6 @@ export async function runTranscriptSweepTick(
           break;
         }
         continue;
-      }
-      const facts = extraction.facts;
-
-      // SHELF ROUTING (spec 062 SC 8a): submit this conversation's facts into the write-target
-      // shelf's inbox recorded by T1's `<conv_id>.shelf` marker. Absent marker (the DEFAULT router,
-      // or a pre-062 buffer) → the vault-root inbox, byte-identical to before.
-      const submit = shelfSubmit(
-        store,
-        transcriptProcessingShelfMarkerPath(store.dataDir, convBase),
-        convBase,
-        warn,
-      );
-      const hints = autoCaptureHints(readHarnessMarker(store.dataDir, convBase, warn));
-
-      for (const fact of facts) {
-        try {
-          // PRIVACY DEFENSE-IN-DEPTH (AGENTS.md "privacy is the product"): T1's
-          // redaction on intake is the primary guard, but redactSecrets has
-          // documented gaps and the extracted fact is about to be committed VERBATIM
-          // to the git vault path (inbox → curator → vault). Re-redact each fact
-          // here (idempotent — already-redacted text is a no-op) so a secret that
-          // slipped past T1 never reaches durable git history.
-          const { redacted } = redactSecrets(fact);
-          submit(redacted, hints);
-          summary.facts += 1;
-        } catch (err) {
-          // One fact failing to submit must not lose the others — log + move on.
-          warn({ err: (err as Error).message }, "auto-capture inbox submit failed (fail-soft)");
-        }
       }
 
       // DELETE-AFTER removes only sidecars CLAIMED with this generation. A late delta may already
@@ -524,6 +531,144 @@ function groomFallbackSubmit(
   return (text, hints) => store.submitToInbox(text, hints);
 }
 
+/**
+ * Submit one buffer's extracted facts to the inbox. Returns how many landed; a single
+ * failing fact is logged and skipped, never losing the others.
+ */
+function submitFacts(store: LibrarianStore, convBase: string, facts: string[], warn: Warn): number {
+  if (facts.length === 0) return 0;
+  // SHELF ROUTING (spec 062 SC 8a): submit this conversation's facts into the write-target
+  // shelf's inbox recorded by T1's `<conv_id>.shelf` marker. Absent marker (the DEFAULT router,
+  // or a pre-062 buffer) → the vault-root inbox, byte-identical to before.
+  const submit = shelfSubmit(
+    store,
+    transcriptProcessingShelfMarkerPath(store.dataDir, convBase),
+    convBase,
+    warn,
+  );
+  const hints = autoCaptureHints(readCaptureMarker(store.dataDir, convBase, warn).harness);
+  let submitted = 0;
+  for (const fact of facts) {
+    try {
+      // PRIVACY DEFENSE-IN-DEPTH (AGENTS.md "privacy is the product"): T1's
+      // redaction on intake is the primary guard, but redactSecrets has
+      // documented gaps and the extracted fact is about to be committed VERBATIM
+      // to the git vault path (inbox → curator → vault). Re-redact each fact
+      // here (idempotent — already-redacted text is a no-op) so a secret that
+      // slipped past T1 never reaches durable git history.
+      const { redacted } = redactSecrets(fact);
+      submit(redacted, hints);
+      submitted += 1;
+    } catch (err) {
+      // One fact failing to submit must not lose the others — log + move on.
+      warn({ err: (err as Error).message }, "auto-capture inbox submit failed (fail-soft)");
+    }
+  }
+  return submitted;
+}
+
+/**
+ * The shelf a buffer's journal episode belongs on (spec 077 §4.1): the shelf T1 recorded
+ * in the `.shelf` marker, else the default (vault-root) shelf — the same shelf
+ * `/journal.md` resolves for the default router's principals.
+ */
+function journalShelfFor(dataDir: string, convBase: string, warn: Warn): Shelf {
+  const markerPath = transcriptProcessingShelfMarkerPath(dataDir, convBase);
+  if (!fs.existsSync(markerPath)) return DEFAULT_SHELF;
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as Shelf).prefix === "string" &&
+      typeof (parsed as Shelf).id === "string" &&
+      (parsed as Shelf).writable === true
+    ) {
+      validateShelfSet([parsed as Shelf]);
+      return parsed as Shelf;
+    }
+  } catch {
+    // fall through to the default, logged below
+  }
+  warn(
+    { file: `${convBase}.shelf` },
+    "transcript shelf-marker unusable; journalling to the default shelf",
+  );
+  return DEFAULT_SHELF;
+}
+
+/** The first `seq=` of a buffer: unique per buffer generation of one conversation. */
+function firstSeq(text: string): string {
+  return /^### (?:user|assistant) \(seq=(\d+)/m.exec(text)?.[1] ?? "0";
+}
+
+type JournalStepResult = { ok: true; written: boolean } | { ok: false; error: unknown };
+
+/**
+ * The journal step (spec 077 §4.2/§4.6): summarise the buffer into an episode and append
+ * it to its day file. Idempotent on `<conv_id>#s<first seq>`, so a retry after a crash
+ * never writes the same episode twice.
+ */
+async function writeJournalEpisode(
+  store: LibrarianStore,
+  convBase: string,
+  text: string,
+  client: LlmClient,
+  now: () => number,
+  warn: Warn,
+): Promise<JournalStepResult> {
+  if (!text.trim()) return { ok: true, written: false };
+  const outcome = await summarizeEpisode(text, client);
+  if (!outcome.ok) return { ok: false, error: outcome.error };
+  try {
+    const marker = readCaptureMarker(store.dataDir, convBase, warn);
+    const timing = episodeTiming(text, new Date(now()));
+    const files = store.systemJournal(journalShelfFor(store.dataDir, convBase, warn));
+    const result = appendEpisode(files, timing.date, {
+      key: `${convBase}#s${firstSeq(text)}`,
+      time: timing.time,
+      harness: marker.harness ?? "unknown",
+      project: marker.project,
+      // Defense in depth, as for facts: the buffer was redacted on intake, but the episode is
+      // about to be committed to the git vault, so re-redact what the model wrote.
+      bullets: outcome.value.map((bullet) => redactSecrets(bullet).redacted),
+    });
+    return { ok: true, written: result === "written" };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/** Per-buffer step progress (spec 077 §4.6), kept beside the claimed markers. */
+interface SweepSteps {
+  facts: boolean;
+  journal: boolean;
+}
+
+function stepsPath(dataDir: string, convBase: string): string {
+  const markersDir = path.dirname(transcriptProcessingHarnessMarkerPath(dataDir, convBase));
+  return path.join(markersDir, `${convBase}.steps`);
+}
+
+function readSteps(dataDir: string, convBase: string): SweepSteps {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(stepsPath(dataDir, convBase), "utf8"));
+    if (typeof parsed === "object" && parsed !== null) {
+      const record = parsed as Record<string, unknown>;
+      return { facts: record.facts === true, journal: record.journal === true };
+    }
+  } catch {
+    // No marker yet (the common case) or unreadable: nothing has succeeded.
+  }
+  return { facts: false, journal: false };
+}
+
+function writeSteps(dataDir: string, convBase: string, steps: SweepSteps): void {
+  const file = stepsPath(dataDir, convBase);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(steps), "utf8");
+}
+
 /** Read a claimed buffer's text; fail-soft to "" so a read error is a no-fact extract. */
 function readClaimed(procPath: string, warn: Warn): string {
   try {
@@ -550,9 +695,18 @@ function autoCaptureHints(harness: string | null): { tags: string[] } {
   };
 }
 
-function readHarnessMarker(dataDir: string, convBase: string, warn: Warn): string | null {
+/**
+ * The capture marker T1 writes once per buffer generation: `{harness, project?}`. The
+ * optional `project` (spec 077 §4.8) labels the journal episode; harness attribution is
+ * also stamped on every fact.
+ */
+function readCaptureMarker(
+  dataDir: string,
+  convBase: string,
+  warn: Warn,
+): { harness: string | null; project: string | null } {
   const markerPath = transcriptProcessingHarnessMarkerPath(dataDir, convBase);
-  if (!fs.existsSync(markerPath)) return null;
+  if (!fs.existsSync(markerPath)) return { harness: null, project: null };
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
     if (
@@ -564,13 +718,17 @@ function readHarnessMarker(dataDir: string, convBase: string, warn: Warn): strin
     ) {
       throw new Error("invalid harness marker");
     }
-    return parsed.harness;
+    const project =
+      "project" in parsed && typeof parsed.project === "string" && parsed.project.trim() !== ""
+        ? parsed.project
+        : null;
+    return { harness: parsed.harness, project };
   } catch (err) {
     warn(
       { file: path.basename(markerPath), err: (err as Error).message },
       "transcript harness-marker read failed; omitting harness attribution (fail-soft)",
     );
-    return null;
+    return { harness: null, project: null };
   }
 }
 
@@ -633,8 +791,10 @@ function recordFailedAttempt(dataDir: string, convBase: string): number {
   return attempts;
 }
 
+/** Forget a conversation generation's retry state: its failure count and step progress. */
 function clearAttempts(dataDir: string, convBase: string): void {
   fs.rmSync(attemptsPath(dataDir, convBase), { force: true });
+  fs.rmSync(stepsPath(dataDir, convBase), { force: true });
 }
 
 function markerPairs(dataDir: string, convBase: string): Array<[string, string]> {

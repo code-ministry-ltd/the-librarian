@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as healthzRoute from "@/app/healthz/route";
 import * as ingestRoute from "@/app/ingest/route";
+import * as journalRoute from "@/app/journal.md/route";
 import * as mcpRoute from "@/app/mcp/route";
 import * as primerRoute from "@/app/primer.md/route";
 import * as transcriptRoute from "@/app/transcript/route";
@@ -73,17 +74,40 @@ describe("single-port bearer routes", () => {
   );
 });
 
+describe("single-port journal route (spec 077)", () => {
+  it("is a GET-only passthrough that requires the explicit-auth path, like /mcp", async () => {
+    process.env.LIBRARIAN_SINGLE_PORT = "true";
+    fetchSpy
+      .mockResolvedValueOnce(Response.json({ mcp_auth: "enabled" }))
+      .mockResolvedValueOnce(new Response("journal"));
+
+    const request = new NextRequest("https://library.example/journal.md");
+    expect((await journalRoute.GET(request)).status).toBe(200);
+    expect(String(fetchSpy.mock.calls.at(-1)?.[0])).toBe("http://127.0.0.1:3838/journal.md");
+    expect(journalRoute.HEAD().status).toBe(405);
+    expect(journalRoute.OPTIONS().status).toBe(405);
+    expect("POST" in journalRoute).toBe(false);
+  });
+});
+
 describe("single-port middleware exclusions", () => {
-  it("excludes exactly the five proxy roots from dashboard session gating", () => {
+  it("excludes exactly the six proxy roots from dashboard session gating", () => {
     const matcher = middlewareConfig.matcher[0];
-    for (const pathRoot of ["healthz", "primer\\.md", "mcp", "transcript", "ingest"]) {
+    for (const pathRoot of [
+      "healthz",
+      "primer\\.md",
+      "journal\\.md",
+      "mcp",
+      "transcript",
+      "ingest",
+    ]) {
       expect(matcher).toContain(`${pathRoot}(?:/|$)`);
     }
   });
 
   it("keeps the excluded proxy roots free of dashboard pages", () => {
     const appDir = path.resolve(process.cwd(), "app");
-    for (const pathRoot of ["healthz", "primer.md", "mcp", "transcript", "ingest"]) {
+    for (const pathRoot of ["healthz", "primer.md", "journal.md", "mcp", "transcript", "ingest"]) {
       expect(fs.existsSync(path.join(appDir, pathRoot, "page.tsx"))).toBe(false);
     }
   });

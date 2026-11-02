@@ -14,6 +14,7 @@ import {
   runIntakeNowAction,
   saveChronicleConfigAction,
   saveGroomingConfigAction,
+  saveJournalConfigAction,
   setConsumerConfigAction,
   setIntakeConfigAction,
   testConnectionAction,
@@ -25,6 +26,7 @@ import { GroomingConfigForm } from "@/components/curator/config-form";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
 import { IntakeRunsTable } from "@/components/curator/intake-runs-table";
+import { JournalConfigForm } from "@/components/curator/journal-config-form";
 import { ProviderManager } from "@/components/curator/provider-manager";
 import {
   RunNowButton,
@@ -52,6 +54,7 @@ export default async function CuratorSettingsPage() {
   let chronicleRuns: Awaited<ReturnType<typeof serverTRPC.chronicle.runs.query>> = [];
   let chronicleConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null =
     null;
+  let journalConfig: Awaited<ReturnType<typeof serverTRPC.journal.config.query>> | null = null;
   let error: string | null = null;
   try {
     [
@@ -65,6 +68,7 @@ export default async function CuratorSettingsPage() {
       chronicleConfig,
       chronicleRuns,
       chronicleConsumer,
+      journalConfig,
     ] = await Promise.all([
       serverTRPC.grooming.config.query(),
       serverTRPC.grooming.runs.query({ limit: 50 }),
@@ -76,6 +80,7 @@ export default async function CuratorSettingsPage() {
       serverTRPC.chronicle.config.query(),
       serverTRPC.chronicle.runs.query({ limit: 50 }),
       serverTRPC.llm.consumerConfig.query({ consumer: "chronicle" }),
+      serverTRPC.journal.config.query(),
     ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -154,6 +159,25 @@ export default async function CuratorSettingsPage() {
                   providers={providers}
                   onSave={setConsumerConfigAction}
                   onListModels={listModelsAction}
+                />
+              ) : null}
+            </section>
+
+            <Hairline />
+
+            <section className="flex flex-col gap-3" aria-label="Journal">
+              <header className="flex flex-col gap-1">
+                <SectionLabel as="h3">Journal</SectionLabel>
+                <p className="max-w-3xl text-xs text-foreground/60">
+                  A dated history of what you and your agents talked about, written from the same
+                  captured conversations intake reads. Agents can read it at the start of a session.
+                </p>
+              </header>
+              {journalConfig ? (
+                <JournalConfigForm
+                  initial={journalConfig}
+                  intakeEnabled={intakeConfig?.enabled ?? false}
+                  onSave={saveJournalConfigAction}
                 />
               ) : null}
             </section>

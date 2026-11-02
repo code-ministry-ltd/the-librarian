@@ -7,7 +7,7 @@
 // assertion here flipping.
 //
 //   - PUBLIC  (LIBRARIAN_HOST:PORT)      → /healthz, /primer.md, /mcp,
-//                                          /transcript, /ingest ; /trpc/* → 404
+//                                          /transcript, /journal.md, /ingest ; /trpc/* → 404
 //   - INTERNAL(LIBRARIAN_TRPC_HOST:PORT) → /trpc/* only ; everything else → 404
 //
 // Each probe is UNAUTHENTICATED on purpose: the question is "is this path routed
@@ -20,13 +20,14 @@ import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/h
 
 // The public agent surface: path + method + the status an UNAUTHENTICATED probe
 // gets when the route is present. /healthz and /primer.md are open documents
-// (200); the three authenticated routes 401 with no bearer — every one is "not
+// (200); the four authenticated routes 401 with no bearer — every one is "not
 // 404", which is the present/absent inventory signal.
 const PUBLIC_ROUTES = [
   { method: "GET", path: "/healthz", present: 200 },
   { method: "GET", path: "/primer.md", present: 200 },
   { method: "POST", path: "/mcp", present: 401 },
   { method: "POST", path: "/transcript", present: 401 },
+  { method: "GET", path: "/journal.md", present: 401 },
   { method: "POST", path: "/ingest", present: 401 },
 ] as const;
 
@@ -45,7 +46,7 @@ async function probe(base: string, method: string, path: string): Promise<number
 }
 
 describe("surface inventory — exact route set per listener (spec 060 SC 2)", () => {
-  it("public serves its five routes and 404s /trpc/*; internal serves /trpc/* only", async () => {
+  it("public serves its six routes and 404s /trpc/*; internal serves /trpc/* only", async () => {
     const dataDir = makeTempDir();
     // Bound 0.0.0.0 with an agent token (the helper default) so the no-auth bypass
     // is OFF: an unauthenticated /mcp|/transcript|/ingest probe 401s (present), not

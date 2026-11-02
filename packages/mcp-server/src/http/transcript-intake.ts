@@ -96,6 +96,10 @@ const payloadSchema = z.strictObject({
   seq: z.number().int().nonnegative(),
   turns: z.array(turnSchema),
   ended: z.boolean().optional(),
+  // Spec 077 §4.8: the project the conversation is about (the repo or folder name), shown
+  // on its journal episode. Optional; adapters send it only to a server whose /healthz
+  // advertises `journal` (older servers reject unknown keys).
+  project: z.string().min(1).max(200).optional(),
 });
 
 /** A single already-non-private turn (the adapter filtered private turns upstream). */
@@ -245,7 +249,14 @@ export function handleTranscriptIntake(
     try {
       const harnessPath = transcriptHarnessMarkerPath(store.dataDir, payload.conv_id);
       if (!fs.existsSync(harnessPath)) {
-        fs.writeFileSync(harnessPath, JSON.stringify({ harness: payload.harness }), "utf8");
+        fs.writeFileSync(
+          harnessPath,
+          JSON.stringify({
+            harness: payload.harness,
+            ...(payload.project ? { project: payload.project } : {}),
+          }),
+          "utf8",
+        );
       }
     } catch (harnessError) {
       logger.warn(

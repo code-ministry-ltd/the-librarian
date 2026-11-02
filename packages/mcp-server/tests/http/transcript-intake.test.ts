@@ -307,3 +307,31 @@ describe("transcript-intake — gate-refuse (curator.intake.enabled off)", () =>
     expect(fs.existsSync(path.join(dataDir, "transcripts"))).toBe(false);
   });
 });
+
+describe("handleTranscriptIntake — optional project (spec 077 §4.8)", () => {
+  it("records the project beside the harness in the write-once capture marker", () => {
+    const s = makeStore(true);
+    const out = handleTranscriptIntake(s, delta({ project: "the-librarian" }));
+    expect(out.status).toBe(200);
+    const marker = JSON.parse(
+      fs.readFileSync(transcriptHarnessMarkerPath(dataDir, "conv-abc"), "utf8"),
+    );
+    expect(marker).toEqual({ harness: "claude", project: "the-librarian" });
+  });
+
+  it("keeps the marker unchanged for a delta without a project", () => {
+    const s = makeStore(true);
+    handleTranscriptIntake(s, delta());
+    const marker = JSON.parse(
+      fs.readFileSync(transcriptHarnessMarkerPath(dataDir, "conv-abc"), "utf8"),
+    );
+    expect(marker).toEqual({ harness: "claude" });
+  });
+
+  it("refuses an over-long project with a teaching 400", () => {
+    const s = makeStore(true);
+    const out = handleTranscriptIntake(s, delta({ project: "p".repeat(201) }));
+    expect(out.status).toBe(400);
+    expect(String(out.body.error)).toContain('"project"');
+  });
+});

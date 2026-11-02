@@ -9,6 +9,39 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.34.0] — 2026-11-02
+
+### Added
+
+- **The journal: a dated history of your conversations with your agents.** Each
+  captured conversation now gets a short entry: when it happened, which harness
+  and project it was in, and what was decided, corrected, preferred, rejected or
+  left open. It is written from the same captured conversation text as fact
+  extraction (never tool calls or reasoning) and stored in the vault under
+  `journal/`, so it is versioned and backed up. Every night the last 14 days stay
+  as individual entries, days 15–90 are summarised by ISO week, and older weeks
+  by month. Nothing is deleted for being old. A failed summary keeps its entries
+  and retries the next night. Journal files are never read by `recall`,
+  `search_references` or the curator.
+- **`GET /journal.md`** serves the recent window — the last 14 days plus the four
+  most recent weekly summaries — to an agent token, capped by a configurable
+  token budget (20,000 by default). Single-port deployments proxy it like `/mcp`.
+  Harness integrations that load it at session start, and an MCP tool to search
+  older history, follow in the next releases.
+- **Settings → Curator → Intake → Journal** turns it on (off by default — it costs
+  one extra intake-model call per conversation) and sets the session-start
+  budget. `/healthz` reports `journal: "enabled" | "disabled"`.
+- **`/transcript` accepts an optional `project`** (1–200 characters), shown on the
+  conversation's journal entry. Adapters will only send it to servers whose
+  `/healthz` has the `journal` field, so older servers never see it.
+- `LIBRARIAN_JOURNAL_TICK_MS` sets how often the server checks whether nightly
+  compaction is due (default 15 minutes; `0` turns it off).
+
+### Changed
+
+- **Fact extraction and the journal entry are independent steps.** If one fails,
+  the retry re-runs only that step, so a journal failure never submits the same
+  facts twice and a fact-extraction failure never loses the journal entry.
 ## [1.33.7] — 2026-11-02
 
 ### Security
@@ -5115,6 +5148,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.34.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.7...v1.34.0
 [1.33.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.6...v1.33.7
 [1.33.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.5...v1.33.6
 [1.33.5]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.4...v1.33.5

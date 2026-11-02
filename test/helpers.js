@@ -109,6 +109,7 @@ async function tryStartHttpServer({
       LIBRARIAN_GROOMING_TICK_MS: process.env.LIBRARIAN_GROOMING_TICK_MS || "0",
       LIBRARIAN_CONSOLIDATOR_TICK_MS: process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS || "0",
       LIBRARIAN_CHRONICLE_TICK_MS: process.env.LIBRARIAN_CHRONICLE_TICK_MS || "0",
+      LIBRARIAN_JOURNAL_TICK_MS: process.env.LIBRARIAN_JOURNAL_TICK_MS || "0",
       // Opt-in: seed the intake-enabled setting at boot (see option doc above).
       ...(intake ? { LIBRARIAN_CONSOLIDATOR: intake } : {}),
     },
