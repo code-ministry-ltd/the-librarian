@@ -55,6 +55,9 @@ and only its four slash commands register, explaining what is missing.
 - **Eight memory, handoff and journal tools** — identical to every other harness, so Pi is
   taught the same protocols.
 - **The primer** — fetched once per process and added to the system prompt.
+- **The journal at session start** — when the server's [journal](/guides/journal/)
+  is on, your recent entries follow the primer in the system prompt, fetched once
+  per session. Turn it off per machine with `LIBRARIAN_JOURNAL=off`.
 - **Four optional slash commands** — `/handoff`, `/takeover`, `/learn`,
   `/toggle-private`.
 - **Automatic capture** — after each completed turn Pi ships the turn to your

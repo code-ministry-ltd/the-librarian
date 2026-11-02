@@ -68,6 +68,9 @@ your server is down it is simply skipped and your session still starts.)
   sessions as they happen. It is on by default once installed, skips
   [private mode](/guides/private-mode/), and obeys the `LIBRARIAN_AUTO_SAVE=false`
   kill switch.
+- **The journal at session start** — the same plugin adds your recent
+  [journal](/guides/journal/) entries to the system prompt, once per session, when
+  the server's journal is on. Turn it off per machine with `LIBRARIAN_JOURNAL=off`.
 
 ## Check it worked
 

@@ -158,6 +158,16 @@ private" in plain language is the whole interface — handoffs stored here
 are claimable from any other Librarian harness (Claude Code, Codex, Hermes,
 Pi) and vice versa.
 
+**The journal at session start** (with the capture plugin installed): the plugin's
+`experimental.chat.system.transform` hook adds the recent window of the
+[journal](https://librarian-docs.codeministry.net/guides/journal/)
+(`GET /journal.md?max_chars=9500`) to the system prompt. It is fetched once per
+session and then reused, so the prompt stays the same on every turn. Captured
+conversations are labelled with their project (the git repository name, else the
+folder name) once `/healthz` shows the server accepts it. Set
+`LIBRARIAN_JOURNAL=off` to stop loading the window; the `journal` tool stays
+available.
+
 ## Optional commands
 
 opencode auto-discovers command markdown files from

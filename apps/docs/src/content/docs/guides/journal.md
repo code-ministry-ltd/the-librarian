@@ -99,13 +99,27 @@ Every connected agent also has the **`journal`** tool (see the
 The tool only reads, so it stays available in [private mode](/guides/private-mode/),
 like `recall`. Its queries reach the server's logs like any other read.
 
-**Claude Code** also loads the recent window automatically at the start of every
-session, and again after a compaction. Claude Code shows a hook at most 10,000
-characters, so the plugin asks for that much: the newest entries are kept, older
-ones are left out whole, and the window ends by pointing Claude at the `journal`
-tool for the rest. Set `LIBRARIAN_JOURNAL=off` on a machine to stop the automatic
-load there. Claude Code entries are also labelled with their project (the git
-repository or folder name). Automatic loading for the other harnesses is planned.
+Every harness also loads the recent window automatically when a session starts:
+
+| Harness | How it arrives | Again after a compaction? |
+|---|---|---|
+| Claude Code | a `SessionStart` hook | yes |
+| Codex | a `SessionStart` hook | yes |
+| OpenCode | the plugin adds it to the system prompt | once per session |
+| Pi | added to the system prompt after the primer | once per session |
+| Hermes | added to the system prompt after the primer | once per session |
+
+Each one asks for the same amount, about 9,500 characters — what Claude Code can
+show from a hook. The newest entries are kept, older ones are left out whole, and
+the window ends by pointing the agent at the `journal` tool for the rest. The
+window is loaded once and then stays the same for the session, so it doesn't
+disturb prompt caching; anything newer is a `journal` call away. Set
+`LIBRARIAN_JOURNAL=off` on a machine to stop the automatic load there.
+
+Entries are labelled with their harness and, where the harness knows it, their
+project: the git repository the agent ran in, else the folder name. Hermes labels
+a project only inside a git repository, since it often runs as a chat gateway
+from a service folder; its entries still say `hermes`.
 
 ## Reading it in the dashboard
 

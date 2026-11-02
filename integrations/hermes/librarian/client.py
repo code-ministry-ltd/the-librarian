@@ -231,6 +231,44 @@ class LibrarianClient:
         except UnicodeDecodeError as err:
             raise LibrarianClientError("malformed", "primer was not valid UTF-8") from err
 
+    def journal_url(self, max_chars: int) -> str:
+        """The recent window of the conversation journal, at the server root
+        (``GET /journal.md?max_chars=N``) — spec 077 §4.9, spec 078."""
+        return urllib.parse.urljoin(self._endpoint, f"/journal.md?max_chars={int(max_chars)}")
+
+    def fetch_journal(self, max_chars: int) -> str | None:
+        """Fetch the recent journal window. ``None`` when there is nothing to show:
+        a 404 (journal switched off or still empty — and what an older server
+        answers), any other non-200, a non-markdown body, or an empty one. The
+        bearer token rides the Authorization HEADER only. Raises
+        :class:`LibrarianClientError` on a network failure or timeout (callers
+        fail-soft)."""
+        headers = {"Accept": "text/markdown", "Authorization": f"Bearer {self._token}"}
+        status, raw = self._send("journal", "GET", self.journal_url(max_chars), None, headers)
+        if status != 200:
+            return None
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return text if text.strip() else None
+
+    def journal_supported(self) -> bool:
+        """Does the server accept ``project`` on /transcript? True only when
+        ``GET /healthz`` returns a JSON object carrying a ``journal`` key (its
+        presence, enabled or not, is the signal — spec 077 §4.7). /healthz is
+        unauthenticated, so no token is sent. Never raises: any failure is False,
+        the safe default (an older server rejects the unknown key)."""
+        try:
+            url = urllib.parse.urljoin(self._endpoint, "/healthz")
+            status, raw = self._send("healthz", "GET", url, None, {"Accept": "application/json"})
+            if status != 200:
+                return False
+            parsed = json.loads(raw)
+        except (LibrarianClientError, ValueError):
+            return False
+        return isinstance(parsed, dict) and "journal" in parsed
+
     def _send(
         self, what: str, method: str, url: str, body: bytes | None, headers: dict[str, str]
     ) -> tuple[int, bytes]:

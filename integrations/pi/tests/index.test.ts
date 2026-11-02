@@ -67,9 +67,11 @@ describe("librarian extension factory", () => {
       "search_references",
       "store_handoff",
     ]);
-    // The primer injection (before_agent_start) + the Phase 2B auto-capture hook
-    // (agent_end) are both wired when configured.
-    expect(events.sort()).toEqual(["agent_end", "before_agent_start"]);
+    // The primer and journal injections (two before_agent_start handlers, primer
+    // first so the journal lands after it — spec 078) + the Phase 2B auto-capture
+    // hook (agent_end) are all wired when configured.
+    expect(events.filter((e) => e === "before_agent_start")).toHaveLength(2);
+    expect([...new Set(events)].sort()).toEqual(["agent_end", "before_agent_start"]);
     expect(commands.map((c) => c.name).sort()).toEqual([
       "handoff",
       "learn",

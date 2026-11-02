@@ -134,12 +134,7 @@ def test_schemas_are_fresh_copies_per_call() -> None:
 # ---- parity against the server's TS sources (monorepo-only) ----
 
 _TOOLS_DIR = (
-    Path(__file__).resolve().parents[3]
-    / "packages"
-    / "mcp-server"
-    / "src"
-    / "mcp"
-    / "tools"
+    Path(__file__).resolve().parents[3] / "packages" / "mcp-server" / "src" / "mcp" / "tools"
 )
 
 # tool name → (definition file, file holding its properties block)

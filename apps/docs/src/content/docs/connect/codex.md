@@ -51,6 +51,10 @@ The `/mcp` panel should now list `librarian` with eight tools.
 - **The primer** — Codex presents The Librarian's briefing as guidance alongside
   the tools, so the recall/remember loop and the handoff protocol ride into every
   session with no setup.
+- **The journal at session start** — when the server's [journal](/guides/journal/)
+  is on, each new, resumed or compacted session starts with your recent entries
+  (installed with the capture hooks below). Older entries are left out and Codex
+  is told to use the `journal` tool for them. Turn it off per machine with `LIBRARIAN_JOURNAL=off`.
 - **Plain-language control** — Codex has no slash commands, so you simply say what
   you want: "hand this off", "pick up where I left off", "save what we learned",
   "go private". The agent maps each to the right action.

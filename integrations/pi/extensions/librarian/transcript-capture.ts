@@ -53,6 +53,8 @@ export interface CapturePayload {
   seq: number;
   turns: CaptureTurn[];
   ended?: true;
+  /** Spec 078: the journal's project label — sent only to a server that accepts it. */
+  project?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -184,21 +186,25 @@ export function filterPrivateSpans(
 
 /**
  * Build the uniform, harness-agnostic delta the server contract expects:
- * `{ conv_id, harness:"pi", seq, turns[], ended? }`. `ended` is omitted unless
- * true (the server treats its mere presence as the explicit-end accelerator).
+ * `{ conv_id, harness:"pi", seq, turns[], ended?, project? }`. `ended` is omitted
+ * unless true (the server treats its mere presence as the explicit-end accelerator).
+ * `project` is set only by a caller that knows the server accepts it (spec 078).
  */
 export function buildPayload({
   convId,
   seq,
   turns,
   ended = false,
+  project = null,
 }: {
   convId: string;
   seq: number;
   turns: CaptureTurn[];
   ended?: boolean;
+  project?: string | null;
 }): CapturePayload {
   const payload: CapturePayload = { conv_id: convId, harness: HARNESS, seq, turns };
   if (ended) payload.ended = true;
+  if (project) payload.project = project;
   return payload;
 }

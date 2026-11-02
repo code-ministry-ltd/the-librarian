@@ -9,6 +9,8 @@
 //     proxies over the Librarian's stateless /mcp endpoint — see `tools.ts`;
 //   - the ≤2KB primer, fetched from `GET /primer.md` once per process and
 //     appended to the system prompt via `before_agent_start` — see `primer.ts`;
+//   - the recent window of the conversation journal, fetched once per session and
+//     appended after the primer (spec 078) — see `journal.ts`;
 //   - four user-facing slash commands (`/handoff`, `/takeover`, `/learn`,
 //     `/toggle-private`) as thin prompt templates — see `commands.ts`.
 //
@@ -20,6 +22,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCaptureHook, resolveDataDir } from "./capture.js";
 import { registerCommands } from "./commands.js";
 import { readConfig } from "./config.js";
+import { createJournalSource, registerJournalHook } from "./journal.js";
 import { createMcpClient } from "./mcp-client.js";
 import { createPrimerSource, registerPrimerHook } from "./primer.js";
 import { registerLibrarianTools } from "./tools.js";
@@ -60,6 +63,13 @@ export default function librarian(pi: ExtensionAPI): void {
   // Primer → system prompt, once per turn, cached per process, fail-soft.
   registerPrimerHook(pi, createPrimerSource({ endpoint: config.endpoint }));
 
+  // Spec 078: the recent journal window → system prompt, after the primer; fetched
+  // once per Pi session, fail-soft, `LIBRARIAN_JOURNAL=off` skips it. The same source
+  // labels captured conversations with their project once /healthz shows the server
+  // accepts the field.
+  const journal = createJournalSource({ endpoint: config.endpoint, token: config.token });
+  registerJournalHook(pi, journal);
+
   // Auto-capture (Phase 2B, spec 2026-06-16-harness-auto-capture): wire the
   // `agent_end` hook so each completed turn's NON-PRIVATE prose ships as a
   // per-turn delta to POST /transcript. Default-on; the LIBRARIAN_AUTO_SAVE=false
@@ -68,7 +78,7 @@ export default function librarian(pi: ExtensionAPI): void {
   // it stays inert when the server's curator.intake.enabled gate is off. The hook
   // is registered only when the extension is configured (the dormant branch above
   // returns before reaching here, so an unconfigured install captures nothing).
-  registerCaptureHook(pi, resolveDataDir(process.env));
+  registerCaptureHook(pi, resolveDataDir(process.env), (cwd) => journal.projectFor(cwd));
 
   // The four user-facing slash commands (optional sugar, D9).
   registerCommands(pi);

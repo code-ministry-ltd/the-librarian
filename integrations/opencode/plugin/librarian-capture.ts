@@ -35,22 +35,32 @@ import type { Plugin } from "@opencode-ai/plugin";
 // vitest suite imports are the ones that ship — no build step, no drift.
 import { runCapture } from "./lib/capture.mjs";
 import { makeCursorStore } from "./lib/cursor.mjs";
+import { makeJournalInjector } from "./lib/journal-inject.mjs";
 import { isSessionEndEvent, readSessionMessages } from "./lib/runtime.mjs";
 
-export const LibrarianCapture: Plugin = async ({ client }) => {
+export const LibrarianCapture: Plugin = async ({ client, directory }) => {
   // One in-memory cursor store for the plugin's lifetime, keyed by sessionID, so
   // concurrent sessions in one OpenCode process never collide (SC5).
   const cursorStore = makeCursorStore();
   // Sessions seen idle since their last capture → ship `ended:true` next fire
   // (the explicit-end accelerator). Kept tiny; an id is cleared once consumed.
   const endedSessions = new Set<string>();
+  // Spec 078: the recent journal window per session (fetched once, then cached so the
+  // system prompt stays byte-stable) and the project label for capture (sent only
+  // once /healthz shows the server accepts it). `directory` is the OpenCode
+  // project directory; the label is its git repo's name, else the folder's.
+  const journal = makeJournalInjector({ env: process.env });
 
   /** Run one capture pass for a session, fully fail-soft (never throws). */
   async function capture(sessionID: string, ended: boolean): Promise<void> {
     try {
       if (!sessionID) return;
       const messages = await readSessionMessages(client, sessionID);
-      await runCapture({ sessionID, messages, env: process.env, ended }, { store: cursorStore });
+      const project = await journal.projectFor(directory);
+      await runCapture(
+        { sessionID, messages, env: process.env, ended, project },
+        { store: cursorStore },
+      );
     } catch {
       // Absolute backstop: a capture failure must never surface to the user.
     }
@@ -68,6 +78,20 @@ export const LibrarianCapture: Plugin = async ({ client }) => {
       const sessionID = typeof input?.sessionID === "string" ? input.sessionID : "";
       const ended = endedSessions.delete(sessionID); // consume a pending idle signal
       await capture(sessionID, ended);
+    },
+
+    // Spec 078: the recent journal window in the system prompt, once per session.
+    // `experimental.chat.system.transform` (confirmed in @opencode-ai/plugin@1.16.2
+    // dist/index.d.ts: input `{ sessionID?, model }`, output `{ system: string[] }`)
+    // runs before each LLM call; the window is cached per session, so every call sees
+    // the same bytes. No sessionID → nothing is added. `LIBRARIAN_JOURNAL=off` skips it.
+    "experimental.chat.system.transform": async (input, output) => {
+      try {
+        const text = await journal.systemFor(input?.sessionID);
+        if (text && Array.isArray(output?.system)) output.system.push(text);
+      } catch {
+        // Fail-soft: the turn goes ahead without the journal.
+      }
     },
 
     // Explicit-end accelerator: when a session goes idle, capture its tail now with
