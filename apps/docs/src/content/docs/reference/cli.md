@@ -23,6 +23,7 @@ Commands:
   doctor                 Diagnose token, server reachability, harness CLIs
   config                 Show or set MCP URL, token, server URL
   server                 Self-host the Librarian server (run `server` for its commands)
+  import                 Import past conversations into memories and the journal
   self-update            Update the librarian CLI itself
   report                 Push this machine's state to the server
 
@@ -57,6 +58,23 @@ Subcommands:
   admin         Run an admin command in the container (backup|restore|auth|rebuild)
 
 Run `librarian server <subcommand> --help` for flags (per subcommand).
+```
+
+### `librarian import`
+
+```text
+Usage: librarian import [--only memories|journal] [--harness <list>] [--dry-run] [--yes]
+
+Send this machine's past conversations through the Librarian's memory intake and journal.
+Each step only takes conversations that ended before that step first ran on the server;
+after that, live capture already has them. The server also caps how far back an import
+reaches and how many conversations it takes (Settings → Curator → Import).
+
+Flags:
+  --only memories|journal  run just one step (default: both)
+  --harness <list>         comma-separated: claude, codex, opencode, pi, hermes (default: all)
+  --dry-run                show the server's plan and send nothing
+  --yes, -y                don't ask before sending
 ```
 
 ## `the-librarian` — server-side admin

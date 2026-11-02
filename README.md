@@ -91,6 +91,12 @@ npx @the-librarian/cli update       # later: bring every installed integration u
 (Or install it globally once — `npm i -g @the-librarian/cli` — then run
 `librarian install` / `librarian update` whenever you add or refresh a harness.)
 
+Already have months of agent conversations on disk? `librarian import` sends the
+ones from before you set up The Librarian through memory intake and the journal.
+It covers all five harnesses, never imports a conversation twice, and stays within
+limits you set on the dashboard. See
+[Import past conversations](apps/docs/src/content/docs/guides/importing-conversations.md).
+
 See [`packages/installer-cli`](./packages/installer-cli/README.md) for the
 full command reference and what it writes to your environment.
 

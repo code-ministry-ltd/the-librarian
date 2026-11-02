@@ -141,6 +141,21 @@ export async function saveJournalConfigAction(
   }
 }
 
+// --- Import limits (spec 079) -------------------------------------------------
+
+export async function saveImportConfigAction(patch: {
+  maxAgeDays: number;
+  allowanceRemaining: number;
+}): Promise<SaveConfigResult> {
+  try {
+    await serverTRPC.import.setConfig.mutate(patch);
+    revalidatePath("/settings/curator");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: message(error) };
+  }
+}
+
 // --- Model picker + connection probe (fail-soft on the server) ----------------
 
 export async function listModelsAction(input: ProbeInput): Promise<ModelsResult> {

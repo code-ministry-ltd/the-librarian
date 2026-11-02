@@ -126,7 +126,7 @@ export interface TranscriptIntakeResult {
  * mode). The adapter SHOULD have stripped these upstream; this is the server-side
  * backstop so a marked turn is never buffered even if the client failed to.
  */
-function dropPrivateTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
+export function dropPrivateTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
   return turns.filter((turn) => !turn.text.includes(PRIVATE_MARKER));
 }
 
@@ -135,7 +135,7 @@ function dropPrivateTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
  * block carrying its role, optional timestamp, and the REDACTED text. The format
  * is deliberately simple + greppable; the T2 extractor reads it back whole.
  */
-function renderTurns(turns: TranscriptTurn[], seq: number): string {
+export function renderTurns(turns: TranscriptTurn[], seq: number): string {
   return turns
     .map((turn) => {
       const stamp = turn.ts ? ` ts=${turn.ts}` : "";

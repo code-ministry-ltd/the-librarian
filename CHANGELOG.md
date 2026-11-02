@@ -9,6 +9,36 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.42.0] — 2026-11-02
+
+### Added
+
+- **`librarian import`: bring in conversations from before you set up The
+  Librarian.** It reads each harness's history on the machine where it lives
+  (Claude Code, Codex, OpenCode, Pi and Hermes) and sends it through memory
+  intake and the journal, exactly as live capture would have. That means prose
+  only, no subagents, no compaction recaps and no private-mode spans.
+  `--dry-run` shows the server's plan and sends no text, `--only
+  memories|journal` runs one step, and `--harness` picks harnesses.
+  [Import past conversations](https://librarian-docs.codeministry.net/guides/importing-conversations/)
+  explains it all.
+- **Each step only imports conversations that ended before that step first
+  ran.** The server keeps one cutoff for memories (the first intake run) and one
+  for the journal (the earliest journal entry). Each is set once and never
+  moves, so imports from several machines, in any order, follow the same rule.
+- **A conversation ledger.** From this release the server records every
+  conversation id when capture finishes a step, live or imported, so a
+  conversation is never imported twice. On first start it is seeded from the
+  journal day files still on disk.
+- **Server limits, on Settings → Curator → Intake → Import.** A maximum age
+  (default 90 days) and an allowance of conversations (default 200), both
+  enforced by the server. The page also shows the two cutoffs and how many
+  conversations have been recorded.
+- **New endpoints:** `GET /import/policy`, `POST /import/plan` (ids and end
+  times only) and `POST /import`, all with agent auth like `/transcript`.
+  Imported conversations are processed a few per sweep, after live capture, so
+  an import never delays it.
+
 ## [1.41.0] — 2026-11-02
 
 ### Fixed
@@ -5358,6 +5388,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.42.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.41.0...v1.42.0
 [1.41.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.40.0...v1.41.0
 [1.40.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.38.0...v1.39.0

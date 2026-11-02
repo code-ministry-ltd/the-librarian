@@ -12,6 +12,7 @@ import {
   runGroomingNowAction,
   runIntakeNowAction,
   saveGroomingConfigAction,
+  saveImportConfigAction,
   saveJournalConfigAction,
   setConsumerConfigAction,
   setIntakeConfigAction,
@@ -20,6 +21,7 @@ import {
 } from "@/app/curator/actions";
 import { GroomingConfigForm } from "@/components/curator/config-form";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
+import { ImportConfigForm } from "@/components/curator/import-config-form";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
 import { IntakeRunsTable } from "@/components/curator/intake-runs-table";
 import { JournalConfigForm } from "@/components/curator/journal-config-form";
@@ -46,19 +48,30 @@ export default async function CuratorSettingsPage() {
   let intakeConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let grooming: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let journalConfig: Awaited<ReturnType<typeof serverTRPC.journal.config.query>> | null = null;
+  let importConfig: Awaited<ReturnType<typeof serverTRPC.import.config.query>> | null = null;
   let error: string | null = null;
   try {
-    [config, runs, providers, intakeConfig, intakeRuns, intakeConsumer, grooming, journalConfig] =
-      await Promise.all([
-        serverTRPC.grooming.config.query(),
-        serverTRPC.grooming.runs.query({ limit: 50 }),
-        serverTRPC.llm.listProviders.query(),
-        serverTRPC.intake.config.query(),
-        serverTRPC.intake.runs.query({ limit: 50 }),
-        serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
-        serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
-        serverTRPC.journal.config.query(),
-      ]);
+    [
+      config,
+      runs,
+      providers,
+      intakeConfig,
+      intakeRuns,
+      intakeConsumer,
+      grooming,
+      journalConfig,
+      importConfig,
+    ] = await Promise.all([
+      serverTRPC.grooming.config.query(),
+      serverTRPC.grooming.runs.query({ limit: 50 }),
+      serverTRPC.llm.listProviders.query(),
+      serverTRPC.intake.config.query(),
+      serverTRPC.intake.runs.query({ limit: 50 }),
+      serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
+      serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
+      serverTRPC.journal.config.query(),
+      serverTRPC.import.config.query(),
+    ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -156,6 +169,21 @@ export default async function CuratorSettingsPage() {
               </header>
               {journalConfig ? (
                 <JournalConfigForm initial={journalConfig} onSave={saveJournalConfigAction} />
+              ) : null}
+            </section>
+
+            <Hairline />
+
+            <section className="flex flex-col gap-3" aria-label="Import">
+              <header className="flex flex-col gap-1">
+                <SectionLabel as="h3">Import</SectionLabel>
+                <p className="max-w-3xl text-xs text-foreground/60">
+                  Limits on <span className="font-mono">librarian import</span>, which sends
+                  conversations from before you set up the Librarian through intake and the journal.
+                </p>
+              </header>
+              {importConfig ? (
+                <ImportConfigForm initial={importConfig} onSave={saveImportConfigAction} />
               ) : null}
             </section>
 

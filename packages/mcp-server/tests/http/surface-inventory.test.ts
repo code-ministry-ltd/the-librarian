@@ -7,7 +7,8 @@
 // assertion here flipping.
 //
 //   - PUBLIC  (LIBRARIAN_HOST:PORT)      → /healthz, /primer.md, /mcp,
-//                                          /transcript, /journal.md, /ingest ; /trpc/* → 404
+//                                          /transcript, /journal.md, /ingest,
+//                                          /import, /import/plan, /import/policy ; /trpc/* → 404
 //   - INTERNAL(LIBRARIAN_TRPC_HOST:PORT) → /trpc/* only ; everything else → 404
 //
 // Each probe is UNAUTHENTICATED on purpose: the question is "is this path routed
@@ -29,6 +30,9 @@ const PUBLIC_ROUTES = [
   { method: "POST", path: "/transcript", present: 401 },
   { method: "GET", path: "/journal.md", present: 401 },
   { method: "POST", path: "/ingest", present: 401 },
+  { method: "POST", path: "/import", present: 401 },
+  { method: "POST", path: "/import/plan", present: 401 },
+  { method: "GET", path: "/import/policy", present: 401 },
 ] as const;
 
 // The one path the internal listener serves. health.ping is the cheapest public
@@ -46,7 +50,7 @@ async function probe(base: string, method: string, path: string): Promise<number
 }
 
 describe("surface inventory — exact route set per listener (spec 060 SC 2)", () => {
-  it("public serves its six routes and 404s /trpc/*; internal serves /trpc/* only", async () => {
+  it("public serves its nine routes and 404s /trpc/*; internal serves /trpc/* only", async () => {
     const dataDir = makeTempDir();
     // Bound 0.0.0.0 with an agent token (the helper default) so the no-auth bypass
     // is OFF: an unauthenticated /mcp|/transcript|/ingest probe 401s (present), not
