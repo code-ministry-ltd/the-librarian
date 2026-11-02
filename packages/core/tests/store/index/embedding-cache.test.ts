@@ -10,7 +10,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createEmbeddingCache, embedChunksWithCache } from "@librarian/core";
+import {
+  type EmbedBacklogEvent,
+  createEmbeddingCache,
+  embedChunksWithCache,
+  embedFilesWithCache,
+} from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 let cacheDir: string;
@@ -137,5 +142,99 @@ describe("createEmbeddingCache", () => {
     ]);
     expect(calls.embed).toBe(1); // re-embedded, no crash
     expect(vectors).toHaveLength(1);
+  });
+});
+
+describe("embedFilesWithCache", () => {
+  const files = [
+    { key: "references/a.md", content: "a content", chunkTexts: ["a1", "a2", "a3"] },
+    { key: "references/b.md", content: "b content", chunkTexts: ["b1"] },
+  ];
+
+  it("reports the miss batch's size before embedding and its duration after, with no paths or text", async () => {
+    const { embedder, calls } = countingEmbedder();
+    const cache = createEmbeddingCache({ dir: cacheDir, modelId: "hash-test" });
+    const events: EmbedBacklogEvent[] = [];
+    let clock = 1_000;
+    let embedsAtStart = -1;
+
+    const vectors = await embedFilesWithCache(cache, embedder, files, {
+      scope: "references",
+      now: () => (clock += 250),
+      onBacklog: (event) => {
+        if (event.phase === "start") embedsAtStart = calls.embed;
+        events.push(event);
+      },
+    });
+
+    expect(embedsAtStart).toBe(0); // the size is known BEFORE any embedding runs
+    expect(events).toEqual([
+      { phase: "start", scope: "references", files: 2, chunks: 4 },
+      { phase: "done", scope: "references", files: 2, chunks: 4, durationMs: 250, failed: false },
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/a\.md|b\.md|a1|content/);
+    expect(vectors.map((v) => v.length)).toEqual([3, 1]);
+    expect(calls.embed).toBe(4);
+  });
+
+  it("returns the same vectors as per-file resolution, and embeds only the files that missed", async () => {
+    const cache = createEmbeddingCache({ dir: cacheDir, modelId: "hash-test" });
+    const warm = countingEmbedder();
+    const expectedA = await embedChunksWithCache(
+      cache,
+      warm.embedder,
+      files[0]!.key,
+      files[0]!.content,
+      files[0]!.chunkTexts,
+    );
+
+    const { embedder, calls } = countingEmbedder();
+    const events: EmbedBacklogEvent[] = [];
+    const vectors = await embedFilesWithCache(cache, embedder, files, {
+      scope: "memories",
+      onBacklog: (event) => events.push(event),
+    });
+
+    expect(vectors[0]).toEqual(expectedA); // served from the cache, in input order
+    expect(calls.embed).toBe(1); // only b.md's single chunk
+    expect(events.map((e) => [e.phase, e.files, e.chunks])).toEqual([
+      ["start", 1, 1],
+      ["done", 1, 1],
+    ]);
+  });
+
+  it("stays silent when every file is cached", async () => {
+    const cache = createEmbeddingCache({ dir: cacheDir, modelId: "hash-test" });
+    await embedFilesWithCache(cache, countingEmbedder().embedder, files, { scope: "memories" });
+    const events: EmbedBacklogEvent[] = [];
+    await embedFilesWithCache(cache, countingEmbedder().embedder, files, {
+      scope: "memories",
+      onBacklog: (event) => events.push(event),
+    });
+    expect(events).toEqual([]);
+  });
+
+  it("reports a failed batch and still throws the embedder's error", async () => {
+    const cache = createEmbeddingCache({ dir: cacheDir, modelId: "hash-test" });
+    const events: EmbedBacklogEvent[] = [];
+    const failing = { embed: () => Promise.reject(new Error("model unavailable")) };
+    await expect(
+      embedFilesWithCache(cache, failing, files, {
+        scope: "references",
+        onBacklog: (event) => events.push(event),
+      }),
+    ).rejects.toThrow("model unavailable");
+    expect(events.at(-1)).toMatchObject({ phase: "done", failed: true });
+  });
+
+  it("a throwing backlog sink never fails the build", async () => {
+    const cache = createEmbeddingCache({ dir: cacheDir, modelId: "hash-test" });
+    const vectors = await embedFilesWithCache(cache, countingEmbedder().embedder, files, {
+      scope: "references",
+      onBacklog: () => {
+        throw new Error("sink broke");
+      },
+    });
+    expect(vectors).toHaveLength(2);
   });
 });

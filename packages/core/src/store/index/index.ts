@@ -20,19 +20,31 @@ export {
 } from "./hybrid-index.js";
 export {
   type LlamaEmbedderOptions,
+  type LlamaModule,
   type EmbeddingModel,
   createLlamaEmbedder,
   truncateToTokenLimit,
 } from "./llama-embedder.js";
-export { type ResolveEmbedderOptions, resolveEmbedder } from "./resolve-embedder.js";
+export {
+  type ResolveEmbedderOptions,
+  defaultEmbedThreads,
+  resolveEmbedThreads,
+  resolveEmbedder,
+} from "./resolve-embedder.js";
 export { createCachingEmbedder } from "./caching-embedder.js";
 export {
   type CachedChunkVector,
+  type EmbedBacklogEvent,
+  type EmbedBacklogSink,
+  type EmbedFileInput,
+  type EmbedFilesOptions,
+  type EmbedScope,
   type EmbeddingCache,
   type EmbeddingCacheOptions,
   contentSha,
   createEmbeddingCache,
   embedChunksWithCache,
+  embedFilesWithCache,
 } from "./embedding-cache.js";
 export {
   type ChunkOptions,

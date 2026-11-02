@@ -59,7 +59,12 @@ import {
   createSyncGitOps,
 } from "./git/index.js";
 import type { HandoffStore } from "./handoff-store.js";
-import { createCachingEmbedder, createEmbeddingCache, resolveEmbedder } from "./index/index.js";
+import {
+  type EmbedBacklogSink,
+  createCachingEmbedder,
+  createEmbeddingCache,
+  resolveEmbedder,
+} from "./index/index.js";
 import type { IntakeStore } from "./intake-store.js";
 import { periodFromPath } from "../journal/periods.js";
 import { JOURNAL_DIR, type JournalFileStore } from "./journal-types.js";
@@ -158,6 +163,13 @@ export interface LibrarianStoreOptions {
    * plugins consume.
    */
   onIndexBuild?: (shelfPrefix: string) => void;
+  /**
+   * Observer for embedding cache misses during a recall-index build or a reference search —
+   * value-free counts and timing (`EmbedBacklogEvent`), never paths or text. The HTTP server
+   * logs it, so a long CPU-bound embedding burst (cold cache, new large reference) shows up in
+   * the server log instead of only in `top`. Absent ⇒ no reporting; behaviour is unchanged.
+   */
+  onEmbedBacklog?: EmbedBacklogSink;
   /**
    * Refusal-evidence writer selection (spec 071). Only the HTTP server sets
    * `armed: true`; stdio, CLI, and ordinary store consumers stay inert so the
@@ -822,6 +834,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
         embedder,
         cache: embeddingCache,
         cacheKeyPrefix: prefix,
+        ...(options.onEmbedBacklog ? { onEmbedBacklog: options.onEmbedBacklog } : {}),
       }).catch((error: unknown) => {
         cachedIndex = null; // a failed/transient build must not poison recall
         throw error;
@@ -871,6 +884,7 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
       searchVaultReferences(scopedVault, embedder, query, {
         cache: embeddingCache,
         cacheKeyPrefix: prefix,
+        ...(options.onEmbedBacklog ? { onEmbedBacklog: options.onEmbedBacklog } : {}),
         ...(limit !== undefined ? { limit } : {}),
       });
     // "references" mirrors corpus-index's REFERENCES_DIR — a faithful "searched" denominator.

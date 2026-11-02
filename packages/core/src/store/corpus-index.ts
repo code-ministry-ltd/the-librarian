@@ -24,6 +24,8 @@ import type { Shelf } from "../vault-router.js";
 import { MemoryStatus } from "./../schemas/common.js";
 import type { Vault } from "./corpus/vault.js";
 import {
+  type EmbedBacklogSink,
+  type EmbedFileInput,
   type Embedder,
   type EmbeddingCache,
   type RecallOptions,
@@ -31,7 +33,7 @@ import {
   buildHybridIndex,
   buildLinkGraph,
   chunkReference,
-  embedChunksWithCache,
+  embedFilesWithCache,
   recallFromIndex,
 } from "./index/index.js";
 import { splitMemorySections } from "./index/memory-sections.js";
@@ -66,6 +68,11 @@ export interface CorpusIndexOptions {
    * Empty (the OSS default shelf, prefix "") ⇒ cache keys are BYTE-IDENTICAL to before this task.
    */
   cacheKeyPrefix?: string;
+  /**
+   * Observer for embedding cache misses (value-free counts + timing; see
+   * `EmbedBacklogEvent`). Absent ⇒ no reporting; behaviour is unchanged either way.
+   */
+  onEmbedBacklog?: EmbedBacklogSink;
 }
 
 /** The built (disposable, cacheable) recall index over active memories. */
@@ -102,6 +109,7 @@ export async function buildCorpusIndex(
   const docs: SectionedMemoryDoc[] = [];
   const linkTexts: { id: string; body: string }[] = [];
   const liveMemoryPaths: string[] = [];
+  const pending: { doc: SectionedMemoryDoc; file: EmbedFileInput }[] = [];
 
   for (const relPath of vault.listMarkdown(CORPUS_DIR)) {
     const cacheKey = keyPrefix + relPath; // full vault-relative — the cache is shared across shelves
@@ -126,24 +134,40 @@ export async function buildCorpusIndex(
     // memory's file path like a reference's chunks. The content hash covers the
     // composed text, so any title/body/tag change re-embeds; a frontmatter-only
     // edit stays a hit.
-    const sectionVectors = cache
-      ? await embedChunksWithCache(
-          cache,
-          options.embedder,
-          cacheKey,
-          text,
-          sections.map((section) => sectionEmbeddingText(memory.title, section)),
-        )
-      : undefined;
-    docs.push({
+    const doc: SectionedMemoryDoc = {
       id: memory.id,
       title: memory.title,
       body: memory.body,
       tags: memory.tags,
       sections,
-      ...(sectionVectors ? { sectionVectors } : {}),
+    };
+    docs.push(doc);
+    pending.push({
+      doc,
+      file: {
+        key: cacheKey,
+        content: text,
+        chunkTexts: sections.map((section) => sectionEmbeddingText(memory.title, section)),
+      },
     });
     linkTexts.push({ id: memory.id, body: text });
+  }
+  // Resolve every memory's section vectors in one pass, so a large miss batch (cold or
+  // invalidated cache) is measured — and reported — before the embedding starts.
+  if (cache) {
+    const vectors = await embedFilesWithCache(
+      cache,
+      options.embedder,
+      pending.map((entry) => entry.file),
+      {
+        scope: "memories",
+        ...(options.onEmbedBacklog ? { onBacklog: options.onEmbedBacklog } : {}),
+      },
+    );
+    pending.forEach((entry, i) => {
+      const sectionVectors = vectors[i];
+      if (sectionVectors) entry.doc.sectionVectors = sectionVectors;
+    });
   }
   // Opportunistic orphan cleanup: entries for memory files that no longer exist
   // (archived = moved out of memories/, or deleted) leave the cache. Prune is scoped to THIS
@@ -200,6 +224,8 @@ export interface SearchReferencesOptions {
    * returned {@link ReferenceHit.id} stays shelf-relative — only the cache key is prefixed.
    */
   cacheKeyPrefix?: string;
+  /** Observer for embedding cache misses — see {@link CorpusIndexOptions.onEmbedBacklog}. */
+  onEmbedBacklog?: EmbedBacklogSink;
 }
 
 /**
@@ -241,18 +267,29 @@ export async function searchReferences(
     string,
     { relPath: string; anchor: string; start: number; end: number; text: string }
   >();
-  for (const relPath of relPaths) {
+  const files = relPaths.map((relPath) => {
     const content = vault.readText(relPath);
-    const chunks = chunkReference(content);
-    const vectors = cache
-      ? await embedChunksWithCache(
-          cache,
-          embedder,
-          keyPrefix + relPath, // full vault-relative — the cache is shared across shelves
-          content,
-          chunks.map((chunk) => chunk.text),
-        )
-      : null;
+    return { relPath, content, chunks: chunkReference(content) };
+  });
+  // Resolve every file's chunk vectors in one pass, so a large miss batch (new or
+  // edited references, a cold cache) is measured — and reported — before embedding starts.
+  const vectorsByFile = cache
+    ? await embedFilesWithCache(
+        cache,
+        embedder,
+        files.map((file) => ({
+          key: keyPrefix + file.relPath, // full vault-relative — the cache is shared across shelves
+          content: file.content,
+          chunkTexts: file.chunks.map((chunk) => chunk.text),
+        })),
+        {
+          scope: "references",
+          ...(options.onEmbedBacklog ? { onBacklog: options.onEmbedBacklog } : {}),
+        },
+      )
+    : null;
+  files.forEach(({ relPath, chunks }, fileIndex) => {
+    const vectors = vectorsByFile?.[fileIndex];
     chunks.forEach((chunk, i) => {
       // chunk ids are internal to this call; results carry the file path
       const id = `${relPath}#${i}`;
@@ -260,7 +297,7 @@ export async function searchReferences(
       chunkDocs.push({ id, text: chunk.text, ...(vector ? { vector } : {}) });
       chunkById.set(id, { relPath, ...chunk });
     });
-  }
+  });
 
   const index = await buildHybridIndex(chunkDocs, embedder);
   const ranked = await index.search(query); // all chunks, ranked — bounded below

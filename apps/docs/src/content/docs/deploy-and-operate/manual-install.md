@@ -252,6 +252,34 @@ curl http://100.x.y.z:3839/health
 cold-boots slower than the MCP server. If you see `permission denied` under `/data`,
 stop the stack, `chown -R 1000:1000` the volume's data directory, and start again.)
 
+## Sharing the host's CPU (`LIBRARIAN_EMBED_THREADS`)
+
+The Librarian embeds memories and reference documents with a small local model
+(EmbeddingGemma-300M) that runs on the CPU. Day to day that is light: one short
+query per recall, and only the changed sections after a memory is written,
+because vectors are cached under `<data-dir>/embeddings-cache/`. Heavy embedding
+happens when that cache is cold or out of date (a fresh data directory, a change
+of embedding model) or when you add a large reference document. On a small host
+that can keep several cores busy for minutes.
+
+By default the embedder uses half the host's cores, and never more than 6. To
+change that, set `LIBRARIAN_EMBED_THREADS` to a whole number of threads: lower
+on a busy shared VPS, higher on a dedicated machine.
+
+```sh
+# .env for either Compose stack (both pass it through), or `-e` on docker run
+LIBRARIAN_EMBED_THREADS=2
+```
+
+Leave it unset or empty for the default. Any other value, such as `0` or `two`,
+stops the server at boot with a message saying what it expected.
+
+The server logs heavy embedding, so you can see it without watching `top`. When
+10 or more chunks need embedding at once it writes an `info` line with the
+number of files and chunks, then another when it finishes, with the time taken.
+The lines carry counts only, never file names or content. Smaller batches, such
+as the one after each saved memory, log at `debug`.
+
 ## Endpoints
 
 - **Dashboard:** `http://<host>:3042/` (single-container default; the Compose
