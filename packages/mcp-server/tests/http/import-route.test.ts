@@ -201,9 +201,18 @@ describe("POST /import", () => {
         headers: AGENT,
         body: JSON.stringify(conversation("conv-live", 10)),
       });
-      expect(((await busy.json()) as { reason: string }).reason).toMatch(
-        /being captured or imported right now/,
-      );
+      expect(((await busy.json()) as { reason: string }).reason).toMatch(/already queued/);
+
+      // The text-free preview says so too, instead of promising a send that will be refused.
+      const plan = await fetch(`${server.url}/import/plan`, {
+        method: "POST",
+        headers: AGENT,
+        body: JSON.stringify({
+          conversations: [{ conv_id: "conv-live", harness: "claude", ended_at: ago(10) }],
+        }),
+      });
+      const planBody = (await plan.json()) as { plans: Record<string, string>[] };
+      expect(planBody.plans[0]?.memories).toMatch(/already queued/);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

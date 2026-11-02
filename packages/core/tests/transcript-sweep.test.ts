@@ -24,6 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  CONVERSATION_LEDGER_FILE,
   INTAKE_ENABLED_KEY,
   type LibrarianStore,
   type LlmClient,
@@ -450,12 +451,17 @@ describe("runTranscriptSweepTick — hygiene + reaper (SC6)", () => {
     });
 
     // The transcripts/ dir survives; the sweep created NO new artifact anywhere in
-    // the data dir outside transcripts/ (it only ever writes under transcripts/).
+    // the data dir outside transcripts/ — except the conversation ledger (spec 079),
+    // which holds conversation ids and timestamps only, never conversation text.
     expect(fs.existsSync(transcriptsDir(dataDir))).toBe(true);
     const ownAfter = fs.readdirSync(dataDir);
     for (const entry of ownAfter) {
+      if (entry === CONVERSATION_LEDGER_FILE) continue;
       expect(ownBefore.has(entry)).toBe(true);
     }
+    const ledger = fs.readFileSync(path.join(dataDir, CONVERSATION_LEDGER_FILE), "utf8");
+    expect(ledger).toContain("conv-contained");
+    expect(ledger).not.toContain("content");
   });
 });
 
