@@ -75,6 +75,12 @@ import {
   principalToAuthResult,
   refusalRequestAttribution,
 } from "./auth.js";
+import {
+  IMPORT_MAX_BODY_BYTES,
+  handleImport,
+  handleImportPlan,
+  handleImportPolicy,
+} from "./import-intake.js";
 import { handleTranscriptIntake } from "./transcript-intake.js";
 
 /** Which listener this handler serves (ADR 0008 P1, spec §4). */
@@ -588,6 +594,11 @@ const publicRoutes: readonly PublicRoute[] = [
   },
   { beforeOriginGate: false, match: (_m, p) => p === "/mcp", handle: handleMcp },
   { beforeOriginGate: false, match: (_m, p) => p === "/transcript", handle: handleTranscript },
+  {
+    beforeOriginGate: false,
+    match: (_m, p) => p === "/import" || p === "/import/plan" || p === "/import/policy",
+    handle: handleImportRoute,
+  },
   { beforeOriginGate: false, match: (_m, p) => p === "/journal.md", handle: handleJournal },
   { beforeOriginGate: false, match: (_m, p) => p === "/ingest", handle: handleIngestRoute },
 ];
@@ -716,6 +727,34 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   );
   if (response === null) return sendEmpty(res);
   return sendJson(res, response);
+}
+
+/**
+ * `librarian import` (spec 079 §5). Same agent-scope auth as /transcript: an importer is
+ * a harness's capture by other means. GET /import/policy, POST /import/plan (no text),
+ * POST /import (one whole conversation, up to the transcript buffer ceiling).
+ */
+async function handleImportRoute(ctx: RouteContext): Promise<void> {
+  const { req, res, store, maxBodyBytes } = ctx;
+  if (refuseMissingProxyBearer(ctx)) return;
+  const authed = await ctx.provider.authenticate(req, "public", "agent");
+  if (!authed.ok) return sendAuthRefusal(ctx, authed);
+  const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  if (pathname === "/import/policy") {
+    if (req.method !== "GET")
+      return sendJson(res, { error: "Method not allowed" }, 405, { allow: "GET" });
+    const result = handleImportPolicy(store);
+    return sendJson(res, result.body, result.status);
+  }
+  if (req.method !== "POST")
+    return sendJson(res, { error: "Method not allowed" }, 405, { allow: "POST" });
+  if (pathname === "/import/plan") {
+    const result = handleImportPlan(store, await readJson(req, maxBodyBytes), new Date());
+    return sendJson(res, result.body, result.status);
+  }
+  const payload = await readJson(req, Math.max(maxBodyBytes, IMPORT_MAX_BODY_BYTES));
+  const result = handleImport(store, payload, authed.principal, new Date());
+  return sendJson(res, result.body, result.status);
 }
 
 async function handleTranscript(ctx: RouteContext): Promise<void> {

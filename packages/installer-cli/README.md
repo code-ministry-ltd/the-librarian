@@ -43,6 +43,8 @@ librarian update    [harness…]   Update the integration to the current version
 librarian status                 Live table: harness · installed · version
 librarian doctor                 Token set? server reachable? which harness CLIs?
 librarian config                 Show or set MCP URL, token, server URL
+librarian import                 Import past conversations into memories and
+                                  the journal (--dry-run first to see the plan)
 librarian self-update            Update the CLI itself (coming in a later release)
 librarian report                 Push this machine's state to the server
                                   (coming in a later release)

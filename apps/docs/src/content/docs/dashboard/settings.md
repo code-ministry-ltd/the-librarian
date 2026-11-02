@@ -51,6 +51,13 @@ a session. The journal's switch is independent of intake's: either one turns
 capture on, and the journal uses the intake model. See
 [The journal](/guides/journal/).
 
+Below it, **Import** sets the limits on `librarian import`, which sends conversations
+from before you set up The Librarian through intake and the journal. It shows the two
+cutoffs, which are read-only, and how many conversations the server has recorded. It
+also has two settings: the **maximum age** of a conversation that may be imported, and
+the **allowance**, the number of conversations imports may still send. See
+[Import past conversations](/guides/importing-conversations/).
+
 For the bigger picture — what the two jobs do and how to tune them — see
 [Configuring the curator](/guides/configuring-the-curator/).
 

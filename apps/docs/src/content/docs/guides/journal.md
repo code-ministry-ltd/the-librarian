@@ -41,6 +41,9 @@ the model's private reasoning, and [private mode](/guides/private-mode/) turns a
 never captured at all. Neither is the recap a harness writes when it compacts a long
 conversation (Claude Code, OpenCode): it only repeats what was already captured.
 
+Conversations from before you turned the journal on can be added with
+[`librarian import --only journal`](/guides/importing-conversations/).
+
 ## Where it lives
 
 Entries are Markdown files in the vault, under `journal/`:

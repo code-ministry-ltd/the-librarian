@@ -25,7 +25,7 @@ import { tools } from "@librarian/mcp-server";
 // the aliases.
 import { authUsage } from "../packages/cli/dist/commands/auth.js";
 import { usage as adminUsage, handoffsUsage } from "../packages/cli/dist/runtime.js";
-import { usage as hostUsage } from "../packages/installer-cli/dist/runtime.js";
+import { importUsage, usage as hostUsage } from "../packages/installer-cli/dist/runtime.js";
 import { serverUsage } from "../packages/installer-cli/dist/server/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -116,6 +116,7 @@ export function collectCliHelp() {
   return {
     hostUsage: hostUsage(),
     serverUsage: serverUsage(),
+    importUsage: importUsage(),
     adminUsage: adminUsage(),
     handoffsUsage: handoffsUsage(),
     authUsage: authUsage(),
@@ -153,6 +154,10 @@ export function renderCli(help) {
     "### `librarian server`",
     "",
     codeFence(help.serverUsage),
+    "",
+    "### `librarian import`",
+    "",
+    codeFence(help.importUsage),
     "",
     "## `the-librarian` — server-side admin",
     "",

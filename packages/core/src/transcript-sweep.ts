@@ -85,9 +85,13 @@ import {
   splitEpisodeSegments,
 } from "./journal/journal.js";
 import { editEpisode, summarizeEpisode } from "./journal/summarize.js";
+import { ensureLedger, recordLedger } from "./import/ledger.js";
+import { freezeImportCutoffs } from "./import/policy.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
 export const DEFAULT_TRANSCRIPT_IDLE_MS = 30 * 60_000;
+/** Imported conversations processed per sweep tick (spec 079 §5). */
+export const IMPORT_BUFFERS_PER_TICK = 3;
 /** Runaway safety valve: a buffer over this size is settled regardless of idle. */
 export const DEFAULT_TRANSCRIPT_MAX_BYTES = 5_000_000;
 /**
@@ -122,6 +126,11 @@ export interface TranscriptSweepOptions {
   reaperTtlMs?: number;
   /** Clock (epoch ms) for settle/reaper math; defaults to Date.now. Mostly tests. */
   now?: () => number;
+  /**
+   * Imported conversations processed per tick, after every live buffer (spec 079 §5), so
+   * an import never delays today's capture. Defaults to IMPORT_BUFFERS_PER_TICK.
+   */
+  importsPerTick?: number;
   /**
    * Injectable LLM client builder (defaults to the OpenAI-compatible client built
    * from the intake consumer config) — mirrors runIntakeTick's `buildClient`, so
@@ -185,6 +194,15 @@ export async function runTranscriptSweepTick(
   if (!isCaptureEnabled(store)) {
     summary.reason = "disabled";
     return summary;
+  }
+
+  // Spec 079: freeze any import cutoff that now has evidence, and create the conversation
+  // ledger (seeded from journal day files) on first use. Both fail-soft.
+  freezeImportCutoffs(store);
+  try {
+    ensureLedger(store);
+  } catch (err) {
+    warn({ err: (err as Error).message }, "conversation ledger could not be created (fail-soft)");
   }
 
   const dir = transcriptsDir(store.dataDir);
@@ -303,10 +321,24 @@ export async function runTranscriptSweepTick(
     return summary;
   }
 
-  for (const name of buffers) {
+  // Live buffers first, then imported ones, at most `importsPerTick` of those (spec 079).
+  const isImported = (name: string): boolean =>
+    readActiveImportPlan(store.dataDir, name.slice(0, -".md".length)) !== null;
+  const live = buffers.filter((n) => !isImported(n));
+  const imported = buffers.filter((n) => isImported(n)).sort();
+  let importBudget = options.importsPerTick ?? IMPORT_BUFFERS_PER_TICK;
+
+  for (const name of [...live, ...imported]) {
     const bufferPath = path.join(dir, name);
     // The conv_id base (already sanitized on disk by T1); used to derive sibling paths.
     const convBase = name.slice(0, -".md".length);
+    if (!live.includes(name)) {
+      if (importBudget <= 0) {
+        summary.skipped += 1;
+        continue;
+      }
+      importBudget -= 1;
+    }
     try {
       const stat = fs.statSync(bufferPath);
       const ended = fs.existsSync(siblingMarker(dir, convBase));
@@ -343,10 +375,14 @@ export async function runTranscriptSweepTick(
       // that failed — a journal failure never re-submits facts, and a facts failure never
       // loses the episode.
       const steps = readSteps(store.dataDir, convBase);
+      // An imported conversation carries the steps the server agreed to run (spec 079):
+      // a step outside the plan is skipped exactly as if its switch were off.
+      const marker = readCaptureMarker(store.dataDir, convBase, warn);
+      const plan = marker.importPlan;
       let stepError: unknown = null;
       // Facts only while intake is on: they land in the intake inbox, which nothing else
       // drains. Read per buffer so a mid-tick toggle takes effect on the next buffer.
-      if (!steps.facts && isIntakeEnabled(store)) {
+      if (!steps.facts && isIntakeEnabled(store) && (plan === null || plan.facts)) {
         const extraction = text
           ? await tryExtractTranscriptFacts(text, { llmClient: client })
           : { ok: true as const, facts: [] };
@@ -361,7 +397,12 @@ export async function runTranscriptSweepTick(
       // The journal step runs even when facts failed — unless the provider is down, when a
       // second call would only queue behind the first on a struggling model.
       const providerDown = stepError !== null && isProviderUnavailableError(stepError);
-      if (!steps.journal && !providerDown && isJournalActive(store)) {
+      if (
+        !steps.journal &&
+        !providerDown &&
+        isJournalActive(store) &&
+        (plan === null || plan.journal)
+      ) {
         const journal = await writeJournalEpisode(store, convBase, text, client, now, warn);
         if (journal.ok) {
           if (journal.written) summary.episodes += 1;
@@ -402,6 +443,26 @@ export async function runTranscriptSweepTick(
           break;
         }
         continue;
+      }
+
+      // Spec 079: record what ran for this conversation, so it is never imported twice.
+      try {
+        recordLedger(
+          store.dataDir,
+          {
+            harness: marker.harness ?? "unknown",
+            conv: convBase,
+            facts: steps.facts,
+            journal: steps.journal,
+            source: plan === null ? "live" : "import",
+          },
+          new Date(now()),
+        );
+      } catch (err) {
+        warn(
+          { file: name, err: (err as Error).message },
+          "conversation ledger write failed (fail-soft)",
+        );
       }
 
       // DELETE-AFTER removes only sidecars CLAIMED with this generation. A late delta may already
@@ -737,13 +798,37 @@ function autoCaptureHints(harness: string | null): { tags: string[] } {
  * optional `project` (spec 077 §4.8) labels the journal episode; harness attribution is
  * also stamped on every fact.
  */
-function readCaptureMarker(
-  dataDir: string,
-  convBase: string,
-  warn: Warn,
-): { harness: string | null; project: string | null } {
+/** What the harness marker beside a buffer says about it. */
+interface CaptureMarker {
+  harness: string | null;
+  project: string | null;
+  /** Set only for an imported conversation (spec 079): the steps the server agreed to run. */
+  importPlan: { facts: boolean; journal: boolean } | null;
+}
+
+function parseImportPlan(parsed: object): CaptureMarker["importPlan"] {
+  if (!("import" in parsed)) return null;
+  const plan = (parsed as { import: unknown }).import;
+  if (typeof plan !== "object" || plan === null) return null;
+  const { facts, journal } = plan as { facts?: unknown; journal?: unknown };
+  return { facts: facts === true, journal: journal === true };
+}
+
+/** The import plan on a NOT-yet-claimed buffer's active harness marker, or null (live). */
+function readActiveImportPlan(dataDir: string, convBase: string): CaptureMarker["importPlan"] {
+  try {
+    const parsed: unknown = JSON.parse(
+      fs.readFileSync(transcriptHarnessMarkerPath(dataDir, convBase), "utf8"),
+    );
+    return typeof parsed === "object" && parsed !== null ? parseImportPlan(parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
+function readCaptureMarker(dataDir: string, convBase: string, warn: Warn): CaptureMarker {
   const markerPath = transcriptProcessingHarnessMarkerPath(dataDir, convBase);
-  if (!fs.existsSync(markerPath)) return { harness: null, project: null };
+  if (!fs.existsSync(markerPath)) return { harness: null, project: null, importPlan: null };
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(markerPath, "utf8"));
     if (
@@ -759,13 +844,13 @@ function readCaptureMarker(
       "project" in parsed && typeof parsed.project === "string" && parsed.project.trim() !== ""
         ? parsed.project
         : null;
-    return { harness: parsed.harness, project };
+    return { harness: parsed.harness, project, importPlan: parseImportPlan(parsed) };
   } catch (err) {
     warn(
       { file: path.basename(markerPath), err: (err as Error).message },
       "transcript harness-marker read failed; omitting harness attribution (fail-soft)",
     );
-    return { harness: null, project: null };
+    return { harness: null, project: null, importPlan: null };
   }
 }
 

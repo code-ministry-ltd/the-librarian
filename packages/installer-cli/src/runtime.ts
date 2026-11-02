@@ -9,7 +9,10 @@
 // / `setServerProbe`). NOTHING here touches the real system, network, or
 // stdin in tests.
 
+import os from "node:os";
 import { runInstall } from "./commands/install.js";
+import { runImport } from "./import/command.js";
+import { IMPORT_HARNESSES, type HarnessId } from "./import/readers.js";
 import { runUninstall } from "./commands/uninstall.js";
 import { runUpdate } from "./commands/update.js";
 import { formatConfig, readConfig, redact, setConfig, type LibrarianConfig } from "./config.js";
@@ -128,12 +131,81 @@ async function dispatch(argv: string[], options: RuntimeOptions): Promise<CliRes
   if (command === "server") {
     return runServerCommand(rest, options);
   }
+  if (command === "import") {
+    return runImportCommand(rest, options);
+  }
 
   if (PHASE_2_STUBS.has(command)) {
     return runPhase2Stub(command);
   }
 
   return err(`Unknown command: ${command}\n\n${usage()}`);
+}
+
+// --- import (spec 079) ----------------------------------------------------
+
+async function runImportCommand(rest: string[], options: RuntimeOptions): Promise<CliResult> {
+  const { flags } = parseArgs(rest);
+  if (flagBool(flags.help) || flagBool(flags.h)) return ok(importUsage());
+  const config = readConfig(options.home);
+  if (!config || !config.token || !config.serverUrl) {
+    return err(
+      "librarian import: this machine isn't connected to a Librarian yet. Run " +
+        "`librarian config --mcp-url <url> --token <token>` (or `librarian install`) first.",
+    );
+  }
+  const onlyRaw = flagString(flags.only);
+  if (onlyRaw !== undefined && onlyRaw !== "memories" && onlyRaw !== "journal") {
+    return err(`librarian import: expected --only memories or --only journal, got '${onlyRaw}'`);
+  }
+  const harnessRaw = flagString(flags.harness);
+  const harnesses = harnessRaw
+    ? harnessRaw
+        .split(",")
+        .map((h) => h.trim())
+        .filter(Boolean)
+    : undefined;
+  const unknown = harnesses?.filter((h) => !IMPORT_HARNESSES.includes(h as HarnessId)) ?? [];
+  if (unknown.length > 0) {
+    return err(
+      `librarian import: unknown harness '${unknown.join("', '")}'. Expected one or more of: ${IMPORT_HARNESSES.join(", ")}`,
+    );
+  }
+  const prompter = options.prompter ?? createPrompter();
+  try {
+    const outcome = await runImport({
+      serverUrl: config.serverUrl,
+      token: config.token,
+      home: options.home ?? os.homedir(),
+      env: options.env ?? process.env,
+      ...(onlyRaw ? { only: onlyRaw } : {}),
+      ...(harnesses ? { harnesses: harnesses as HarnessId[] } : {}),
+      dryRun: flagBool(flags["dry-run"]),
+      yes: flagBool(flags.yes) || flagBool(flags.y),
+      prompter,
+      log: (line) => process.stdout.write(`${line}\n`),
+    });
+    return outcome.ok ? ok(outcome.output) : errOut(outcome.output);
+  } finally {
+    prompter.close();
+  }
+}
+
+export function importUsage(): string {
+  return [
+    "Usage: librarian import [--only memories|journal] [--harness <list>] [--dry-run] [--yes]",
+    "",
+    "Send this machine's past conversations through the Librarian's memory intake and journal.",
+    "Each step only takes conversations that ended before that step first ran on the server;",
+    "after that, live capture already has them. The server also caps how far back an import",
+    "reaches and how many conversations it takes (Settings → Curator → Import).",
+    "",
+    "Flags:",
+    "  --only memories|journal  run just one step (default: both)",
+    `  --harness <list>         comma-separated: ${IMPORT_HARNESSES.join(", ")} (default: all)`,
+    "  --dry-run                show the server's plan and send nothing",
+    "  --yes, -y                don't ask before sending",
+  ].join("\n");
 }
 
 // --- config (fully implemented) ------------------------------------------
@@ -485,6 +557,7 @@ export function usage(): string {
     "  doctor                 Diagnose token, server reachability, harness CLIs",
     "  config                 Show or set MCP URL, token, server URL",
     "  server                 Self-host the Librarian server (run `server` for its commands)",
+    "  import                 Import past conversations into memories and the journal",
     "  self-update            Update the librarian CLI itself",
     "  report                 Push this machine's state to the server",
     "",

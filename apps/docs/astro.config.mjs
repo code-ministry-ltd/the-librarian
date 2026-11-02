@@ -123,6 +123,7 @@ export default defineConfig({
             { slug: "guides/backups-restore" },
             { slug: "guides/configuring-the-curator" },
             { slug: "guides/journal" },
+            { slug: "guides/importing-conversations" },
           ],
         },
         {

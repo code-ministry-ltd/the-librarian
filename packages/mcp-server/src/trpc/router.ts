@@ -16,6 +16,7 @@ import { authRouter } from "./auth.js";
 import { autoupdateRouter } from "./autoupdate.js";
 import { awarenessRouter } from "./awareness.js";
 import { backupRouter } from "./backup.js";
+import { importRouter } from "./import.js";
 import { journalRouter } from "./journal.js";
 import { examplesRouter } from "./examples.js";
 import { groomingRouter } from "./grooming.js";
@@ -46,6 +47,7 @@ export const coreRouterRecord = {
   awareness: awarenessRouter,
   backup: backupRouter,
   journal: journalRouter,
+  import: importRouter,
   examples: examplesRouter,
   grooming: groomingRouter,
   handoffs: handoffsRouter,

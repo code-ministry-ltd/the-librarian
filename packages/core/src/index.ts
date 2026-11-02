@@ -1004,3 +1004,41 @@ export {
   runRepair,
   selectRepairItems,
 } from "./grooming-repair.js";
+
+// Import past conversations (spec 079): the conversation ledger and the import policy.
+export {
+  ANY_HARNESS,
+  CONVERSATION_LEDGER_FILE,
+  type LedgerRow,
+  ensureLedger,
+  ledgerExists,
+  ledgerSize,
+  lookupLedger,
+  recordLedger,
+} from "./import/ledger.js";
+export {
+  DEFAULT_IMPORT_ALLOWANCE,
+  DEFAULT_IMPORT_MAX_AGE_DAYS,
+  IMPORT_ALLOWANCE_KEY,
+  IMPORT_JOURNAL_CUTOFF_KEY,
+  IMPORT_MAX_AGE_DAYS_KEY,
+  IMPORT_MEMORIES_CUTOFF_KEY,
+  IMPORT_MIN_AGE_MS,
+  MAX_IMPORT_ALLOWANCE,
+  MAX_IMPORT_MAX_AGE_DAYS,
+  QUEUED,
+  ImportConfigError,
+  type ImportCandidate,
+  type ImportConfig,
+  type ImportPlan,
+  type ImportPolicy,
+  type ImportStep,
+  acceptImport,
+  freezeImportCutoffs,
+  importPolicy,
+  planImport,
+  planQueuesAnything,
+  readImportConfig,
+  writeImportConfig,
+} from "./import/policy.js";
+export { IMPORT_BUFFERS_PER_TICK } from "./transcript-sweep.js";
