@@ -146,6 +146,18 @@ describe("opencode messages → turns extraction", () => {
     expect(turns[0].ts).toBe(new Date(1_750_000_000_000).toISOString());
   });
 
+  it("skips the compaction recap (assistant message flagged summary:true)", () => {
+    const turns = transcript.messagesToTurns([
+      userMsg("carry on"),
+      {
+        info: { id: "a0", role: "assistant", summary: true, time: { created: 2 } },
+        parts: [{ type: "text", text: "Summary of the conversation so far…" }],
+      },
+      assistantMsg("on it"),
+    ]);
+    expect(turns.map((t: { text: string }) => t.text)).toEqual(["carry on", "on it"]);
+  });
+
   it("drops synthetic text parts, reasoning, and tool parts (prose only)", () => {
     const turns = transcript.messagesToTurns([
       {

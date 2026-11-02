@@ -9,6 +9,31 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.40.1] — 2026-11-02
+
+### Fixed
+
+- **Long sessions are no longer squeezed into one journal entry.** A conversation
+  with no 30-minute break was summarised whole into a few bullets, so a six-hour
+  session kept only its first hour. A long conversation is now split into
+  consecutive parts of about 30,000 characters, each with its own entry
+  (`…#s4`, `…#s4-1`, …). A retry resumes at the first part that hadn't landed.
+- **Compaction recaps are no longer captured as if you'd typed them.** Claude Code
+  (`isCompactSummary`) and OpenCode (`summary: true`) write a recap of the
+  conversation when they compact it. The adapters now skip it, so intake no
+  longer re-mines facts it has already seen and the journal no longer writes a
+  duplicate entry.
+- **A prompt that never got a reply makes no journal entry** and costs no model
+  call.
+
+### Changed
+
+- **Journal entries are more selective.** The episode prompt now asks for a work
+  log: outcomes, direction-setting decisions with their reason, and anything left
+  open. Exact values, paths, small cosmetic corrections, step-by-step narration and
+  unaccepted offers are left out. At most 5 one-sentence bullets per entry (was 8).
+  Weekly and monthly summaries follow the same rules.
+
 ## [1.40.0] — 2026-11-02
 
 ### Removed
@@ -5326,6 +5351,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.40.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.40.0...v1.40.1
 [1.40.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.37.0...v1.38.0

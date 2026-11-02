@@ -22,19 +22,28 @@ export const MONTH_MAX_CHARS = 1_600;
 
 export type SummaryOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-const KEEP_RULES = `WHAT TO KEEP, in priority order:
-1. What only the dialogue holds: decisions and the reasons for them; corrections the user made ("no, not like that"); stated preferences; options that were rejected and why; anything left open or unresolved.
-2. The shape of the work: what was asked, what happened, how it ended.
+const KEEP_RULES = `Write it the way a colleague keeps a work log: what was asked for, what got done, which way things went and why, and what was left open. Someone reading it months later should learn WHAT happened and WHY, then look in the code or the memories for the details.
 
-WHAT TO DROP: tool narration, code, command output, file paths, and anything recoverable from the repository or its history — unless the dialogue says why it mattered.
+WHAT TO KEEP, in priority order:
+1. Outcomes: what was built, fixed, shipped, decided or abandoned, at the level of the feature or problem (for example "built and installed a custom shell theme", "fixed a crash-looping daemon caused by invalid YAML in task files").
+2. Decisions that set a direction, with the reason: a choice between real alternatives, an option rejected and why, a correction from the user that changed the approach.
+3. Anything left open or unresolved that someone would need to pick up.
 
-STYLE: third person, past tense, terse. Name the project or thing each point is about, so the point still makes sense when read on its own months later. Call the human "the user".`;
+WHAT TO DROP:
+- Specifics the code, config or history already holds: exact values, colours, formats, paths, versions, commit hashes, command lines, file names, settings.
+- Small cosmetic corrections and tweaks (a missing character, a colour change, a wording fix).
+- Step-by-step narration of how the work was done, tool output, and debugging blow-by-blow.
+- Offers the assistant made that the user never took up.
+
+When in doubt, leave it out: a short entry that says what mattered beats a complete one.
+
+STYLE: each bullet is ONE short sentence of at most 25 words — no lists of fixes or features inside a bullet; name the change, not its parts. Third person, past tense. Name the project or thing each point is about, so the point still makes sense when read on its own months later. Call the human "the user".`;
 
 const EPISODE_SYSTEM = `You write one entry in a working journal kept for an AI assistant. You read ONE conversation transcript between the user and the assistant and summarise it as a few dense bullet points.
 
 ${KEEP_RULES}
 
-Return at most 8 bullets and at most ${EPISODE_MAX_CHARS} characters in total. A trivial conversation (a greeting, a one-line factual answer) gets an empty list.
+Return at most 5 bullets and at most ${EPISODE_MAX_CHARS} characters in total; most conversations need 2 or 3. A trivial conversation (a greeting, a one-line factual answer, a check that something works) gets an empty list.
 
 Output STRICT JSON only, exactly: {"bullets": ["…", "…"]}. No prose, no markdown fences.
 
@@ -115,7 +124,7 @@ function rollupSystem(period: JournalPeriod): string {
 ${KEEP_RULES}
 
 COMPRESSION RULES:
-- Preserve EVERY decision, correction and preference. Compress narrative first.
+- Preserve every direction-setting decision with its reason, and anything still open. Compress narrative first; drop detail that only mattered on the day.
 - Keep each project's name in the text, so the summary can be found by project.
 - Group points by project when there is more than one. Use short markdown bullets; a project name may lead a bullet in bold.
 - If an EXISTING SUMMARY is included, fold the new entries into it; do not drop anything it already says unless a newer entry supersedes it.

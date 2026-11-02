@@ -46,6 +46,64 @@ export function episodeTiming(bufferText: string, fallback: Date): { date: strin
   return { date: localDate(last), time: start === end ? start : `${start}–${end}` };
 }
 
+const TURN_HEAD_RE = /^### (user|assistant) \(seq=/;
+
+/**
+ * Does the buffer hold an actual exchange — at least one user turn AND one assistant
+ * turn? A lone prompt with no reply (or a lone reply) has nothing worth journalling.
+ */
+export function hasExchange(bufferText: string): boolean {
+  return /^### user \(seq=/m.test(bufferText) && /^### assistant \(seq=/m.test(bufferText);
+}
+
+/**
+ * The most buffer text one episode summarises. An episode is capped at a few bullets
+ * (EPISODE_MAX_CHARS), so a long unbroken working session summarised whole lost most of
+ * what happened; it is split into consecutive segments of at most this size instead,
+ * each its own episode.
+ */
+export const EPISODE_SEGMENT_MAX_CHARS = 30_000;
+
+/**
+ * Split a buffer into consecutive segments of at most `maxChars`, cutting only between
+ * turns (a single oversized turn stays whole, as its own segment). A buffer that fits
+ * is returned as one segment, unchanged.
+ */
+export function splitEpisodeSegments(
+  bufferText: string,
+  maxChars = EPISODE_SEGMENT_MAX_CHARS,
+): string[] {
+  if (bufferText.length <= maxChars) return [bufferText];
+  const turns: string[] = [];
+  let current: string[] = [];
+  for (const line of bufferText.split("\n")) {
+    if (TURN_HEAD_RE.test(line) && current.length > 0) {
+      turns.push(current.join("\n"));
+      current = [];
+    }
+    current.push(line);
+  }
+  if (current.length > 0) turns.push(current.join("\n"));
+  const segments: string[] = [];
+  let segment = "";
+  for (const turn of turns) {
+    if (segment && segment.length + 1 + turn.length > maxChars) {
+      segments.push(segment);
+      segment = turn;
+    } else {
+      segment = segment ? `${segment}\n${turn}` : turn;
+    }
+  }
+  if (segment.trim()) segments.push(segment);
+  return segments;
+}
+
+/** Is an episode with this key already in its day file? */
+export function episodeExists(files: JournalFileStore, date: string, key: string): boolean {
+  const raw = files.read(dayPeriod(date).path);
+  return raw !== null && parseDay(date, raw).episodes.some((e) => e.key === key);
+}
+
 export type AppendOutcome = "written" | "exists" | "empty";
 
 /**

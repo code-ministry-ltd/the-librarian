@@ -102,6 +102,10 @@ function userText(content) {
  *   - sidechain/subagent entries (`isSidechain:true`) — defense in depth even
  *     though we only ever read the top-level `<session_id>.jsonl` (§6)
  *   - meta entries (`isMeta:true`, e.g. the local-command caveat banner)
+ *   - compaction summaries (`isCompactSummary:true`): Claude Code's recap of the
+ *     conversation so far, written as a user entry after a compaction. Capturing it
+ *     would re-feed everything it summarises to intake and the journal as if the
+ *     user had typed it.
  *   - empty-after-extraction turns (a tool-only assistant step, a tool_result
  *     user step)
  *
@@ -113,6 +117,7 @@ export function entriesToTurns(entries) {
     if (!e || typeof e !== "object") continue;
     if (e.isSidechain === true) continue;
     if (e.isMeta === true) continue;
+    if (e.isCompactSummary === true) continue;
     const type = e.type;
     if (type !== "user" && type !== "assistant") continue;
     const message = e.message;
