@@ -69,6 +69,8 @@ export interface CaptureInput {
   env: Record<string, string | undefined>;
   /** Explicit-end hint (the session is ending) — the settle-sweep accelerator. */
   ended?: boolean;
+  /** Spec 078: the journal's project label, or null when the server can't take it. */
+  project?: string | null;
 }
 
 /** The orchestration outcome (mostly for tests / diagnostics). */
@@ -156,7 +158,13 @@ export async function runCapture(input: CaptureInput, deps: CaptureDeps): Promis
     }
 
     const seq = prior.seq + 1;
-    const payload = buildPayload({ convId, seq, turns: kept, ended });
+    const payload = buildPayload({
+      convId,
+      seq,
+      turns: kept,
+      ended,
+      project: input.project ?? null,
+    });
 
     // SHIP. A non-2xx (`ok:false`) or a thrown network error → DO NOT advance seq:
     // the delta re-ships next turn (idempotent; server/curator dedup). A 2xx →
@@ -195,13 +203,23 @@ function errMsg(error: unknown): string {
  * "conv_id = getSessionId()" maps to `ctx.sessionManager.getSessionId()`. Any
  * throw / non-string → "" so the orchestrator no-ops (NEVER cwd/$USER).
  */
-function readSessionId(ctx: unknown): string {
+export function readSessionId(ctx: unknown): string {
   try {
     const sm = (ctx as { sessionManager?: { getSessionId?: () => unknown } })?.sessionManager;
     const id = sm?.getSessionId?.();
     return typeof id === "string" ? id : "";
   } catch {
     return "";
+  }
+}
+
+/** The session's working directory from the handler ctx (`ctx.cwd`), fail-soft. */
+export function readCwd(ctx: unknown): string | undefined {
+  try {
+    const cwd = (ctx as { cwd?: unknown })?.cwd;
+    return typeof cwd === "string" ? cwd : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -213,8 +231,13 @@ function readSessionId(ctx: unknown): string {
  * getSessionId(); the delta re-ships next turn on any non-2xx.
  *
  * @param dataDir - the resolved plugin data dir (per-session state home).
+ * @param projectFor - the journal's project label for a cwd, or null (spec 078).
  */
-export function registerCaptureHook(pi: ExtensionAPI, dataDir: string): void {
+export function registerCaptureHook(
+  pi: ExtensionAPI,
+  dataDir: string,
+  projectFor: (cwd: string | undefined) => Promise<string | null> = async () => null,
+): void {
   // Opportunistic, fail-soft pruning of stale sibling state (never clear-all).
   try {
     pruneOldState(dataDir, PRUNE_MAX_AGE_MS);
@@ -228,7 +251,8 @@ export function registerCaptureHook(pi: ExtensionAPI, dataDir: string): void {
       const messages = Array.isArray((event as { messages?: unknown }).messages)
         ? (event as { messages: unknown[] }).messages
         : [];
-      await runCapture({ convId, messages, env: process.env }, { dataDir });
+      const project = await projectFor(readCwd(ctx));
+      await runCapture({ convId, messages, env: process.env, project }, { dataDir });
     } catch {
       // Defensive net — runCapture already swallows its own errors, but a
       // top-level throw must never break the user's turn or leak a stack trace.

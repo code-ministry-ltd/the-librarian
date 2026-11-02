@@ -33,10 +33,16 @@ class FakeClient:
         fail: set[str] | None = None,
         primer: str = PRIMER,
         primer_fail: bool = False,
+        journal: str | None = None,
+        journal_fail: bool = False,
     ) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.primer_fetches = 0
         self.primer_fail = primer_fail
+        # Spec 078: the journal window (None = the server has none to show).
+        self.journal = journal
+        self.journal_fail = journal_fail
+        self.journal_fetches: list[int] = []
         self._responses = responses or {}
         self._fail = fail or set()
         self._primer = primer
@@ -52,6 +58,12 @@ class FakeClient:
         if self.primer_fail:
             raise LibrarianClientError("network", "primer could not reach the Librarian")
         return self._primer
+
+    def fetch_journal(self, max_chars: int) -> str | None:
+        self.journal_fetches.append(max_chars)
+        if self.journal_fail:
+            raise LibrarianClientError("network", "journal could not reach the Librarian")
+        return self.journal
 
 
 def rpc_text_body(text: str) -> bytes:

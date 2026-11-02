@@ -44,9 +44,10 @@ export function isAutoSaveOff(env) {
  * Run one capture pass for a `chat.message` fire.
  *
  * @param {{sessionID?:string, messages?:unknown[], env?:Record<string,string|undefined>,
- *          ended?:boolean}} input - the fire context: the stable sessionID, the
- *          full session message list, the process env (URL + token + kill-switch),
- *          and an explicit-end hint.
+ *          ended?:boolean, project?:string|null}} input - the fire context: the stable
+ *          sessionID, the full session message list, the process env (URL + token +
+ *          kill-switch), an explicit-end hint, and the journal's project label (set
+ *          only for a server that accepts it — spec 078).
  * @param {{store:{read:Function,write:Function}, post?: typeof postDelta,
  *          log?: (msg:string)=>void}} deps - the in-memory cursor store, an
  *          injectable network ship (tests), and a fail-soft logger.
@@ -115,7 +116,9 @@ export async function runCapture(input, deps) {
     }
 
     const seq = prior.seq + 1;
-    const payload = buildPayload({ convId, seq, turns: kept, ended });
+    // Spec 078: the shell passes `project` only for a server that accepts it.
+    const project = typeof input.project === "string" && input.project ? input.project : null;
+    const payload = buildPayload({ convId, seq, turns: kept, ended, project });
 
     // SHIP. A non-2xx (`ok:false`) or a thrown network error → DO NOT advance the
     // cursor: the delta re-ships next fire (idempotent; server/curator dedup). A

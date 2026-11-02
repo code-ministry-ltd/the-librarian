@@ -144,11 +144,13 @@ def build_payload(
     seq: int,
     turns: list[dict[str, str]],
     ended: bool = False,
+    project: str | None = None,
 ) -> dict[str, Any]:
     """Build the uniform, harness-agnostic delta the server contract expects:
-    ``{conv_id, harness:"hermes", seq, turns[], ended?}``. ``ended`` is omitted
-    unless true (the server treats its mere presence as the explicit-end
-    accelerator)."""
+    ``{conv_id, harness:"hermes", seq, turns[], ended?, project?}``. ``ended`` is
+    omitted unless true (the server treats its mere presence as the explicit-end
+    accelerator). ``project`` (spec 078) is set only by a caller that knows the
+    server accepts it."""
     payload: dict[str, Any] = {
         "conv_id": conv_id,
         "harness": HARNESS,
@@ -157,4 +159,6 @@ def build_payload(
     }
     if ended:
         payload["ended"] = True
+    if project:
+        payload["project"] = project
     return payload

@@ -68,6 +68,7 @@ header), plus `http_headers` / `env_http_headers` if you need extra headers.
 | --- | --- | --- |
 | `LIBRARIAN_AGENT_TOKEN` | yes | Bearer token. Referenced by *name* in `config.toml`; Codex sends it only in the `Authorization` request header. |
 | `LIBRARIAN_MCP_URL` | for the CLI one-liner | The Librarian HTTP MCP URL, e.g. `https://librarian.example.com/mcp`. Codex stores the resolved URL in `config.toml`. |
+| `LIBRARIAN_JOURNAL` | no | Set to `off` (or `false` / `0` / `no`) to stop loading the journal at session start on this machine. The `journal` tool stays available. |
 
 The Librarian's no-auth mode is **localhost-only** — a remote endpoint must
 carry a token over **HTTPS**. On the Librarian host:
@@ -78,7 +79,7 @@ LIBRARIAN_HOST=0.0.0.0 LIBRARIAN_AGENT_TOKENS="codex:<strong-token>" pnpm run se
 
 ## What you get
 
-**The 7 Librarian tools:**
+**The 8 Librarian tools:**
 
 | Tool | Purpose |
 | --- | --- |
@@ -98,6 +99,17 @@ alongside the server's tools. The Librarian serves its ≤2KB primer there
 the behavioural loop — recall before answering, remember durable facts,
 the handoff protocol, private mode — rides into every Codex session with
 zero Codex-side setup.
+
+**The journal at session start:** a `SessionStart` hook
+(`scripts/on-session-start.mjs`, installed with the capture hooks) loads the
+recent window of the [journal](https://librarian-docs.codeministry.net/guides/journal/)
+(`GET /journal.md?max_chars=9500`) as developer context when a session starts,
+resumes, forks, is cleared or has just been compacted — skipped for subagents.
+Codex spills hook context over ~2,500 tokens to a file, so the hook entry sets
+`additionalContextLimit: 4000` (older Codex releases ignore the key). The same hook
+checks `/healthz` and records whether the server accepts a `project` label, which
+the capture hook then adds (the git repository name, else the folder name). Every
+failure prints nothing; the session starts as usual.
 
 ## Automatic capture (default-on, with two gates)
 

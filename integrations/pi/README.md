@@ -22,6 +22,12 @@ Librarian primer into the system prompt. One install, zero config files.
 - **Primer injection** — the operator-editable `vault/primer.md` (≤2KB) is
   fetched once per process from `GET <server>/primer.md` and appended to the
   system prompt via `before_agent_start`.
+- **The journal at session start** — the recent window of the
+  [journal](https://librarian-docs.codeministry.net/guides/journal/)
+  (`GET <server>/journal.md?max_chars=9500`) follows the primer in the system
+  prompt, fetched once per Pi session and then reused so the prompt stays the same
+  every turn. Captured turns are labelled with their project (the git repository
+  name, else the folder name) once `/healthz` shows the server accepts it.
 - **Automatic per-turn capture** — after every completed turn Pi fires
   `agent_end` with the turn's messages in-payload, and the adapter ships the
   non-private prose as a delta to the server's `POST /transcript` door for the
@@ -84,6 +90,7 @@ Set two environment variables in the shell that launches `pi`:
 | `LIBRARIAN_AGENT_TOKEN` | A per-agent bearer token issued by your Librarian |
 | `LIBRARIAN_TIMEOUT_MS` | *(optional)* per-call timeout for the tool proxies, default `15000` |
 | `LIBRARIAN_AUTO_SAVE` | *(optional)* set to `false` to disable automatic capture on this machine (default-on). Anything else (unset, `true`, …) leaves capture on. |
+| `LIBRARIAN_JOURNAL` | *(optional)* set to `off` (or `false` / `0` / `no`) to stop loading the journal at session start on this machine. The `journal` tool stays available. |
 | `LIBRARIAN_PI_DATA` | *(optional)* where the per-session capture state lives, default `$HOME/.librarian/pi-extension-data` |
 
 Without both required variables the extension stays **dormant**: no tools, no

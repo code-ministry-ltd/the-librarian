@@ -22,6 +22,13 @@ dependencies).
   (cached per session). The primer teaches the recall/remember loop and the
   handoff / learn / private-mode protocols, so no per-harness prompt code is
   needed.
+- **The journal at session start** — the same block carries the recent window of
+  the [journal](https://librarian-docs.codeministry.net/guides/journal/)
+  (`GET /journal.md?max_chars=9500`, token in the header) after the primer,
+  fetched once per Hermes session. Set `LIBRARIAN_JOURNAL=off` to leave it out;
+  the `journal` tool stays available. Captured exchanges are labelled with the git
+  repository Hermes runs in (none outside a repository — a gateway's service
+  folder isn't a project), once `/healthz` shows the server accepts the label.
 - **Automatic per-turn capture** — after every completed turn Hermes hands the
   provider both halves of the exchange (`sync_turn`), and the adapter ships that
   as a delta to the server's `POST /transcript` door for the curator to mine for

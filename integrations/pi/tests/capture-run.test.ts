@@ -86,6 +86,20 @@ describe("runCapture happy path (a public turn ships and advances seq)", () => {
     await runCapture({ convId: "s", messages: [userMsg("q2")], env: ENV }, { dataDir, post });
     expect(post.mock.calls.map((c) => (c[1] as { seq: number }).seq)).toEqual([1, 2]);
   });
+
+  it("labels the payload with the project it is given (spec 078), and omits it otherwise", async () => {
+    const post = okPost();
+    await runCapture(
+      { convId: "a", messages: [userMsg("q1")], env: ENV, project: "pi-repo" },
+      { dataDir, post },
+    );
+    await runCapture(
+      { convId: "b", messages: [userMsg("q1")], env: ENV, project: null },
+      { dataDir, post },
+    );
+    expect((post.mock.calls[0]![1] as { project?: string }).project).toBe("pi-repo");
+    expect(post.mock.calls[1]![1]).not.toHaveProperty("project");
+  });
 });
 
 // ---- conv_id is required and never cwd/$USER ----

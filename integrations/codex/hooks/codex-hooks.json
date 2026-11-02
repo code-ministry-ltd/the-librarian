@@ -1,6 +1,18 @@
 {
-  "//": "The Librarian Codex auto-capture hooks (spec 2026-06-16-harness-auto-capture, Phase 2A). MERGED into ~/.codex/hooks.json by the installer CLI (packages/installer-cli/src/harnesses/codex.ts). The ${LIBRARIAN_CODEX_ROOT} placeholder is rewritten to the absolute install path of this integration; the 'the-librarian-codex' owner marker in each command string makes the merge idempotent (re-install strips owned entries first). Codex requires `codex_hooks = true` under [features] in ~/.codex/config.toml for these to fire. Hook delivery and native rollout JSONL parsing are confirmed against Codex 0.144.3; see scripts/lib/transcript.mjs for the canonical-record and duplicate-filtering rules.",
+  "//": "The Librarian Codex hooks: auto-capture (spec 2026-06-16-harness-auto-capture, Phase 2A) and the session-start journal (spec 078; additionalContextLimit lifts Codex's default ~2,500-token spill threshold so the ~9,500-character window reaches the model whole — older Codex releases ignore the key). MERGED into ~/.codex/hooks.json by the installer CLI (packages/installer-cli/src/harnesses/codex.ts). The ${LIBRARIAN_CODEX_ROOT} placeholder is rewritten to the absolute install path of this integration; the 'the-librarian-codex' owner marker in each command string makes the merge idempotent (re-install strips owned entries first). Codex requires `codex_hooks = true` under [features] in ~/.codex/config.toml for these to fire. Hook delivery and native rollout JSONL parsing are confirmed against Codex 0.144.3; see scripts/lib/transcript.mjs for the canonical-record and duplicate-filtering rules.",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LIBRARIAN_CODEX_ROOT=\"${LIBRARIAN_CODEX_ROOT}\" node \"${LIBRARIAN_CODEX_ROOT}/scripts/on-session-start.mjs\" # the-librarian-codex",
+            "timeout": 10,
+            "additionalContextLimit": 4000
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

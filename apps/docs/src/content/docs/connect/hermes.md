@@ -48,6 +48,9 @@ hermes memory setup          # pick "librarian", enter the endpoint
 - **The primer in the system prompt** — fetched from your server and added to the
   agent's prompt, so it learns the recall/remember loop and the handoff, learn,
   and private-mode protocols.
+- **The journal at session start** — when the server's [journal](/guides/journal/)
+  is on, your recent entries follow the primer, fetched once per session. Entries
+  are labelled with the git repository Hermes runs in, if any. Turn it off per machine with `LIBRARIAN_JOURNAL=off`.
 - **Automatic capture** — after each completed turn Hermes hands the provider both
   halves of the exchange and the adapter ships it to your server for the curator
   to mine. On by default; opt out with `LIBRARIAN_AUTO_SAVE=false`. Private mode is

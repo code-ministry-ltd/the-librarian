@@ -33,6 +33,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { CURSOR_VERSION, cursorPath, readCursor, writeCursor } from "./cursor.mjs";
+import { deriveProject, serverSupportsJournal } from "./journal.mjs";
 import { deriveTranscriptUrl, postDelta } from "./post.mjs";
 import {
   buildPayload,
@@ -383,7 +384,10 @@ export async function runCapture(hook, env, deps = {}) {
     }
 
     const seq = prior.seq + 1;
-    const payload = buildPayload({ convId, seq, turns: kept, ended });
+    // Spec 078: label the journal entry with the project — only for a server known to
+    // accept the field (the SessionStart probe recorded it); older servers reject it.
+    const project = serverSupportsJournal(dataDir) ? deriveProject(hook.cwd) : null;
+    const payload = buildPayload({ convId, seq, turns: kept, ended, project });
 
     // SHIP. A non-2xx (`ok:false`) or a thrown network error → DO NOT advance the
     // cursor: the delta re-ships next run (idempotent; server/curator dedup). A

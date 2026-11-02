@@ -7,6 +7,7 @@ import traceback
 
 import pytest
 from _helpers import ENDPOINT, TOKEN, rpc_text_body
+
 from librarian import client as client_mod
 from librarian.client import (
     LibrarianClient,
@@ -297,7 +298,7 @@ def test_primer_url_is_server_root_not_mcp_path() -> None:
 
 
 def test_fetch_primer_is_an_unauthenticated_get() -> None:
-    client, calls = _client_with(lambda *_: (200, "# Primer\n".encode("utf-8")))
+    client, calls = _client_with(lambda *_: (200, b"# Primer\n"))
     out = client.fetch_primer()
     assert out == "# Primer\n"
     assert calls[0]["method"] == "GET"

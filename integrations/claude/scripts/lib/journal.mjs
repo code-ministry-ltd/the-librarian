@@ -1,17 +1,25 @@
-// Claude journal adapter (spec 077 PR C) — pure, testable pieces behind the
-// `SessionStart` journal hook and the `Stop` hook's `project` field.
+// Journal adapter (spec 077 PR C; shared by Codex and OpenCode in spec 078) — pure,
+// testable pieces behind each harness's session-start journal injection and the
+// `project` field on /transcript.
 //
-//   - fetchJournal: GET /journal.md?max_chars=… — the recent window, sized for Claude
-//     Code's hook cap. Claude Code moves ANY hook output over 10,000 characters to a
+// ONE FILE, THREE COPIES: integrations/claude/scripts/lib/journal.mjs is the source;
+// integrations/codex/scripts/lib/journal.mjs and integrations/opencode/plugin/lib/
+// journal.mjs are byte-identical copies (each integration installs standalone, so
+// none can import another's). test/journal-adapter-copies.test.ts fails on any drift
+// — edit this file, then copy it over the other two.
+//
+//   - fetchJournal: GET /journal.md?max_chars=… — the recent window. Sized for Claude
+//     Code's hook cap: Claude Code moves ANY hook output over 10,000 characters to a
 //     file and shows the model only a 2,000-character preview (and never asks it to
-//     read the file), so the window must fit under the cap to be seen at all. The
-//     server trims oldest-first, entry by entry, and ends with a note pointing at the
-//     `journal` tool; we also trim client-side in case an older server ignores the
-//     parameter.
+//     read the file), so the window must fit under the cap to be seen at all. Every
+//     other harness asks for the same size (spec 078) so they all see the same
+//     window. The server trims oldest-first, entry by entry, and ends with a note
+//     pointing at the `journal` tool; we also trim client-side in case an older
+//     server ignores the parameter.
 //   - deriveProject: the conversation's project label (git repo name, else folder).
-//   - server features: the SessionStart probe records whether /healthz advertises the
-//     journal; the Stop hook sends `project` only then — an older server 400s on an
-//     unknown /transcript key, which would stall capture.
+//   - probeJournalSupport / server features: whether /healthz advertises the journal.
+//     Adapters send `project` only then — an older server 400s on an unknown
+//     /transcript key, which would stall capture.
 //
 // Node stdlib only. Every function is fail-soft: it returns null/false, never throws.
 // The token goes in the Authorization header only, never a URL or a log.
@@ -178,5 +186,46 @@ export function serverSupportsJournal(dataDir) {
     return Boolean(parsed && parsed.journal_supported === true);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Does the server accept `project` on /transcript? True only when `GET /healthz`
+ * answers with a JSON object carrying a `journal` key (its presence, enabled or not,
+ * is the signal). Every failure resolves to false — the safe default. 2 s timeout.
+ *
+ * @param {Record<string,string|undefined>} env
+ * @param {{fetch?: typeof globalThis.fetch, timeoutMs?: number}} [deps]
+ * @returns {Promise<boolean>}
+ */
+export async function probeJournalSupport(env, deps = {}) {
+  const doFetch = deps.fetch ?? globalThis.fetch;
+  let url = null;
+  try {
+    const parsed = new URL(String((env && env.LIBRARIAN_MCP_URL) || ""));
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      url = `${parsed.origin}/healthz`;
+    }
+  } catch {
+    url = null;
+  }
+  if (!url || typeof doFetch !== "function") return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deps.timeoutMs ?? 2_000);
+  try {
+    // /healthz is unauthenticated, so no token is sent.
+    const response = await doFetch(url, { redirect: "error", signal: controller.signal });
+    if (!response.ok) return false;
+    const json = await response.json();
+    return Boolean(
+      json &&
+      typeof json === "object" &&
+      !Array.isArray(json) &&
+      Object.prototype.hasOwnProperty.call(json, "journal"),
+    );
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
 }

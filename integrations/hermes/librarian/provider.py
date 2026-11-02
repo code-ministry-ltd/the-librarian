@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import capture as _capture
 from . import capture_state as _capture_state
+from . import journal as _journal
 from .client import LibrarianClient, LibrarianClientError
 
 if TYPE_CHECKING:
@@ -404,6 +405,11 @@ class LibrarianProvider(_Base):
         # seq/private state home). Both None until initialize wires them.
         self._session_id: str | None = None
         self._hermes_home: str | None = None
+        # Spec 078: the recent journal window, fetched once per Hermes session id
+        # (so the system prompt is byte-stable within a session) — "" means "none".
+        self._journal_windows: dict[str, str] = {}
+        # Whether the server accepts `project` on /transcript (probed once).
+        self._journal_supported: bool | None = None
 
     # ---- identity / availability / config (the ABC surface) ----
 
@@ -470,18 +476,31 @@ class LibrarianProvider(_Base):
         self._primer = None
         self._session_id = None
         self._hermes_home = None
+        self._journal_windows = {}
+        self._journal_supported = None
 
     # ---- system prompt (the primer — D10's connect-time channel) ----
 
     def system_prompt_block(self) -> str:
-        """The operator-editable primer from ``GET /primer.md``, verbatim.
+        """The operator-editable primer from ``GET /primer.md``, verbatim, then
+        the recent window of the conversation journal (spec 078).
 
-        Cached for the session after the first successful fetch. Fail-soft:
-        any error returns an empty string and the prompt assembles without us
-        — the user's work is never blocked on the Librarian being reachable.
-        No local wording is added: the server-side primer is already screened
-        against injection-shaped phrasing (Hermes regex-screens this content).
+        The primer is cached after the first successful fetch; the journal window
+        once per session id, whatever the first fetch yields, so the block is
+        byte-stable within a session. Fail-soft: any error drops that part and
+        the prompt assembles without it — the user's work is never blocked on
+        the Librarian being reachable. No local wording is added: both parts are
+        server-produced (Hermes joins provider blocks into the system prompt
+        without screening them — checked against hermes-agent
+        ``agent/memory_manager.py`` ``build_system_prompt``).
         """
+        if self._client is None:
+            return ""
+        primer = self._primer_block()
+        window = self._journal_block()
+        return "\n\n".join(part for part in (primer, window) if part.strip())
+
+    def _primer_block(self) -> str:
         if self._primer is not None:
             return self._primer
         if self._client is None:
@@ -493,6 +512,41 @@ class LibrarianProvider(_Base):
             return ""
         self._primer = primer
         return primer
+
+    def _journal_block(self) -> str:
+        """The journal window for the current session, fetched once per session
+        id. ``LIBRARIAN_JOURNAL=off`` skips it; every failure is ""."""
+        if self._client is None or _journal.is_journal_injection_off(self._env):
+            return ""
+        key = self._session_id or ""
+        if key in self._journal_windows:
+            return self._journal_windows[key]
+        window = ""
+        try:
+            text = self._client.fetch_journal(_journal.JOURNAL_MAX_CHARS)
+            window = _journal.fit_journal(text) if text else ""
+        except LibrarianClientError as err:
+            self._log("warn", f"librarian: journal fetch failed: {err}")
+        except Exception as err:  # noqa: BLE001 - fail-soft: never break the prompt
+            self._log("warn", f"librarian: journal fetch failed (fail-soft): {err}")
+        self._journal_windows[key] = window
+        return window
+
+    def _project_label(self) -> str | None:
+        """The journal's project label for /transcript — the git repo the agent
+        runs in, or None outside one — sent only to a server that accepts it."""
+        if self._client is None:
+            return None
+        try:
+            if self._journal_supported is None:
+                self._journal_supported = self._client.journal_supported()
+            if not self._journal_supported:
+                return None
+            return _journal.derive_project(os.getcwd())
+        except Exception as err:  # noqa: BLE001 - a label must never cost a capture
+            self._log("warn", f"librarian: project label skipped (fail-soft): {err}")
+            self._journal_supported = False
+            return None
 
     # ---- auto-capture (Phase 2B — sync_turn / on_session_end) ----
 
@@ -586,7 +640,9 @@ class LibrarianProvider(_Base):
             return
 
         seq = prior["seq"] + 1
-        payload = _capture.build_payload(conv_id=conv_id, seq=seq, turns=kept, ended=ended)
+        payload = _capture.build_payload(
+            conv_id=conv_id, seq=seq, turns=kept, ended=ended, project=self._project_label()
+        )
 
         try:
             ack = self._client.post_transcript(payload)

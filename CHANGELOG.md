@@ -9,6 +9,46 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.38.0] — 2026-11-02
+
+### Added
+
+- **The journal in every harness** (spec 078). Codex, OpenCode, Pi and Hermes now
+  load the recent window of the
+  [journal](https://librarian-docs.codeministry.net/guides/journal/) when a session
+  starts, as Claude Code has since 1.36.0, and label captured conversations with
+  their project, so their entries no longer show `—` and the `journal` tool's
+  `project` filter finds them.
+  - **Codex** — a new `SessionStart` hook (`scripts/on-session-start.mjs`, installed
+    with the capture hooks) adds the window as developer context on start, resume,
+    fork, clear and after a compaction. It raises Codex's ~2,500-token spill
+    threshold with `additionalContextLimit` so the window arrives whole; older
+    Codex releases ignore the key. Subagents don't get it.
+  - **OpenCode** — the capture plugin adds the window to the system prompt through
+    `experimental.chat.system.transform`, once per session.
+  - **Pi** — the window follows the primer in the system prompt, once per session
+    (`@the-librarian/pi-extension` 1.23.0).
+  - **Hermes** — the window follows the primer in `system_prompt_block()`, once per
+    session. Hermes labels a project only inside a git repository, since it often
+    runs as a chat gateway from a service folder; its entries still say `hermes`.
+  - Every harness asks for the same ~9,500 characters as Claude Code. The window is
+    fetched once per session and then reused, so it doesn't disturb prompt caching.
+    `LIBRARIAN_JOURNAL=off` turns it off on a machine; the `journal` tool stays
+    available. Every failure leaves the session exactly as before.
+  - The `project` label is sent only after `/healthz` shows the server accepts it,
+    so an older server never sees the field.
+
+### Changed
+
+- The Claude adapter's journal helpers (`integrations/claude/scripts/lib/journal.mjs`)
+  are now shared: Codex and OpenCode carry byte-identical copies, pinned by a drift
+  test, and the lib gains `probeJournalSupport`.
+
+### Fixed
+
+- Two Ruff findings and one formatting drift in the Hermes test suite.
+- The Codex README listed "7" Librarian tools; there are 8.
+
 ## [1.37.0] — 2026-11-02
 
 ### Added
@@ -5244,6 +5284,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.38.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.34.0...v1.35.0
