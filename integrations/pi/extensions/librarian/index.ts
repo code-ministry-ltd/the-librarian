@@ -4,8 +4,8 @@
 // rethink retires the conv-state injection, the per-turn conv_state fetch, and
 // the 3-tool limitation; what survives is exactly:
 //
-//   - the 7 agent verbs (recall / remember / flag_memory / store_handoff /
-//     list_handoffs / claim_handoff / search_references) as native Pi tool
+//   - the 8 agent verbs (recall / remember / flag_memory / store_handoff /
+//     list_handoffs / claim_handoff / search_references / journal) as native Pi tool
 //     proxies over the Librarian's stateless /mcp endpoint — see `tools.ts`;
 //   - the ≤2KB primer, fetched from `GET /primer.md` once per process and
 //     appended to the system prompt via `before_agent_start` — see `primer.ts`;
@@ -47,14 +47,14 @@ export default function librarian(pi: ExtensionAPI): void {
     return;
   }
 
-  // One shared MCP client for all 7 tool proxies.
+  // One shared MCP client for all 8 tool proxies.
   const mcp = createMcpClient({
     endpoint: config.endpoint,
     token: config.token,
     ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
   });
 
-  // Expose the Librarian's 7 verbs to the model directly (no mcp.json needed).
+  // Expose the Librarian's 8 verbs to the model directly (no mcp.json needed).
   registerLibrarianTools(pi, mcp);
 
   // Primer → system prompt, once per turn, cached per process, fail-soft.

@@ -8,7 +8,7 @@
 # lands at ~/.hermes/plugins/librarian/ regardless of where it was copied from.
 name: librarian
 version: 1.0.0
-description: Memory Provider backed by The Librarian — the 7-verb surface (recall, remember, flag_memory, store_handoff, list_handoffs, claim_handoff, search_references) plus the operator-editable primer in the system prompt.
+description: Memory Provider backed by The Librarian — the 8-verb surface (recall, remember, flag_memory, store_handoff, list_handoffs, claim_handoff, search_references, journal) plus the operator-editable primer in the system prompt.
 # kind: standalone is REQUIRED here even though we're a memory provider. Without
 # it, Hermes auto-coerces any user-installed plugin whose __init__.py mentions
 # `register_memory_provider`/`MemoryProvider` to kind: "exclusive"

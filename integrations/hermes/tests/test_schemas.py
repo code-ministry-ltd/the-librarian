@@ -1,4 +1,4 @@
-"""The 7 tool schemas — shape, required params, and parity with the server.
+"""The 8 tool schemas — shape, required params, and parity with the server.
 
 Source of truth for the parameter shapes is the server's advertised
 ``inputSchema`` per tool in ``packages/mcp-server/src/mcp/tools/*.ts`` (plus
@@ -26,6 +26,7 @@ EXPECTED_NAMES = [
     "list_handoffs",
     "claim_handoff",
     "search_references",
+    "journal",
 ]
 
 # Adapter-advertised required params. These mirror the server's `required`
@@ -39,6 +40,7 @@ EXPECTED_REQUIRED: dict[str, list[str]] = {
     "list_handoffs": [],
     "claim_handoff": ["handoff_id"],
     "search_references": ["query"],
+    "journal": [],
 }
 
 # Fields the provider resolves itself (config scoping / provenance) or that
@@ -59,7 +61,7 @@ def _by_name() -> dict[str, dict]:
     return {schema["name"]: schema for schema in tool_schemas()}
 
 
-def test_exactly_seven_tools_with_the_canonical_names() -> None:
+def test_exactly_eight_tools_with_the_canonical_names() -> None:
     schemas = tool_schemas()
     assert [s["name"] for s in schemas] == EXPECTED_NAMES
     assert TOOL_NAMES == frozenset(EXPECTED_NAMES)
@@ -149,6 +151,7 @@ _TS_SOURCES = {
     "list_handoffs": ("list-handoffs.ts", "list-handoffs.ts"),
     "claim_handoff": ("claim-handoff.ts", "claim-handoff.ts"),
     "search_references": ("search-references.ts", "search-references.ts"),
+    "journal": ("journal.ts", "journal.ts"),
 }
 
 
@@ -188,6 +191,11 @@ def test_parity_with_server_ts_sources() -> None:
         # agent_id, and never names anything the adapter doesn't advertise.
         adapter_required = set(params.get("required", []))
         assert adapter_required >= _server_required(props_text) - {"agent_id"}, name
+        if name == "journal":
+            # The journal mirror carries the server's teaching description verbatim.
+            assert by_name[name]["description"] == _typescript_string_expression(
+                def_text, "description"
+            )
         if name == "flag_memory":
             assert by_name[name]["description"] == _typescript_string_expression(
                 def_text, "description"

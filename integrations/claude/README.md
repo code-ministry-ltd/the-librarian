@@ -1,9 +1,9 @@
 # The Librarian — Claude Code integration
 
 [The Librarian](https://github.com/code-ministry-ltd/the-librarian) gives Claude Code
-durable, shared memory and cross-harness handoffs over plain MCP: 7 tools
+durable, shared memory and cross-harness handoffs over plain MCP: 8 tools
 (`recall`, `remember`, `flag_memory`, `store_handoff`, `list_handoffs`,
-`claim_handoff`, `search_references`) plus a ≤2KB primer that Claude Code
+`claim_handoff`, `search_references`, `journal`) plus a ≤2KB primer that Claude Code
 loads natively from the MCP server's `instructions` field at connect time.
 
 **The MCP config alone is fully functional.** Claude Code renders the
@@ -76,7 +76,7 @@ export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
 That's everything. The primer arrives via MCP `instructions` at session
-start; the 7 tools appear under the `librarian` server.
+start; the 8 tools appear under the `librarian` server.
 
 ## Option B — the plugin (Option A + slash commands)
 
@@ -199,7 +199,7 @@ curl -X POST "$LIBRARIAN_MCP_URL" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-A healthy response lists exactly 7 tools.
+A healthy response lists exactly 8 tools.
 
 **The agent doesn't follow the protocols.** The primer is served from the
 server's `vault/primer.md` (editable in the dashboard); check

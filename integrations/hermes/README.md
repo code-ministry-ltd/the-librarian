@@ -8,9 +8,9 @@ dependencies).
 
 ## What you get
 
-- **The 7-verb agent surface** as Hermes tools — `recall`, `remember`,
+- **The 8-verb agent surface** as Hermes tools — `recall`, `remember`,
   `flag_memory`, `store_handoff`, `list_handoffs`, `claim_handoff`,
-  `search_references`. Each call is proxied over HTTP MCP (`tools/call`),
+  `search_references`, `journal`. Each call is proxied over HTTP MCP (`tools/call`),
   auto-scoped to your configured `agent_id` (and `project_key` for handoffs),
   with memory ids surfaced so the flag-after-recall loop works.
 - **Curator review of flagged memories** — `flag_memory` asks the curator to

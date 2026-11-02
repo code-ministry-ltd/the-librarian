@@ -2,7 +2,7 @@
 //
 // The /ingest endpoint (browser extension / mobile share) authenticates with a
 // least-privilege `capture` token. The wall must hold BOTH ways:
-//   - a capture token must NOT reach the /mcp agent surface (the 7 verbs);
+//   - a capture token must NOT reach the /mcp agent surface (the 8 verbs);
 //   - an agent token must NOT reach /ingest;
 //   - the localhost no-auth bypass (an agent identity) must NOT grant capture.
 // A wrong-scope-but-valid credential is 403 (forbidden), distinct from 401
@@ -51,7 +51,7 @@ describe("authenticatePublic — agent surface (/mcp, /transcript) requires agen
     expect(r).toEqual({ ok: true, result: { role: "agent", scope: "agent" } });
   });
 
-  it("FORBIDS a capture token (403, not 401) — it can never reach the 7 verbs", () => {
+  it("FORBIDS a capture token (403, not 401) — it can never reach the 8 verbs", () => {
     expect(authenticatePublic(reqWith("cap-tok"), config, "agent")).toEqual({
       ok: false,
       status: 403,
@@ -125,7 +125,7 @@ describe("capture-scope isolation end-to-end", () => {
         headers: { accept: "text/event-stream", authorization: `Bearer ${token}` },
       });
     try {
-      // /mcp: agent reaches the 7 verbs; a capture token is FORBIDDEN (403), not
+      // /mcp: agent reaches the 8 verbs; a capture token is FORBIDDEN (403), not
       // merely unauthorized — the wall's first direction.
       expect((await post("/mcp", agentTok.token)).status).toBe(200);
       expect((await post("/mcp", captureTok.token)).status).toBe(403);

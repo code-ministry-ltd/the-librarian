@@ -302,6 +302,13 @@ export {
 } from "./journal/summarize.js";
 export { JOURNAL_DIR, type JournalFileStore } from "./store/journal-types.js";
 export {
+  type JournalQueryInput,
+  JOURNAL_QUERY_DEFAULTS,
+  JournalQueryError,
+  parseJournalQueryArgs,
+  queryJournal,
+} from "./journal/query.js";
+export {
   type GroomingMemoryRecord,
   type GroomingMemorySource,
   type GroomingTombstoneRecord,

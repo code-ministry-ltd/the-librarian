@@ -11,9 +11,9 @@ Librarian primer into the system prompt. One install, zero config files.
 
 ## What you get
 
-- **7 tools, identical to every other harness** — `recall`, `remember`,
+- **8 tools, identical to every other harness** — `recall`, `remember`,
   `flag_memory`, `store_handoff`, `list_handoffs`, `claim_handoff`,
-  `search_references`. Descriptions and schemas mirror the server's
+  `search_references`, `journal`. Descriptions and schemas mirror the server's
   (a drift-guard test pins them), so the model is taught the same protocol in
   Pi as in Claude Code, Codex, OpenCode, and Hermes. `flag_memory` asks
   the curator to review a wrong or outdated memory: it may correct it in place,

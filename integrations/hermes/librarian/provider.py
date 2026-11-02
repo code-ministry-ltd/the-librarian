@@ -1,11 +1,11 @@
-"""The Librarian-backed Hermes Memory Provider (rethink v1.0 — 7-verb surface).
+"""The Librarian-backed Hermes Memory Provider (rethink v1.0 — 8-verb surface).
 
 Maps the Hermes ``MemoryProvider`` hooks onto The Librarian's 7 MCP tools via
 :class:`client.LibrarianClient`. Three invariants dominate:
 
-- **The 7-verb agent contract.** ``get_tool_schemas()`` advertises exactly
+- **The 8-verb agent contract.** ``get_tool_schemas()`` advertises exactly
   ``recall``, ``remember``, ``flag_memory``, ``store_handoff``,
-  ``list_handoffs``, ``claim_handoff``, ``search_references``. Each schema's
+  ``list_handoffs``, ``claim_handoff``, ``search_references``, ``journal``. Each schema's
   parameters mirror the server's advertised ``inputSchema``
   (``packages/mcp-server/src/mcp/tools/*.ts``), minus the fields the provider
   resolves itself (``agent_id`` and the ``claiming_*`` provenance, injected
@@ -347,6 +347,28 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "required": ["query"],
             },
         },
+        {
+            "name": "journal",
+            "description": (
+                "Read or search your journal: a dated history of your past conversations "
+                "with the owner — recent days in detail, older weeks and months summarised. "
+                "Your session may already include the last ~6 weeks. Use this for anything "
+                "older, or to find what happened on a project or topic. Facts belong to "
+                "`recall`; this is what happened and why."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": 500},
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    "project": {"type": "string", "maxLength": 200},
+                    "harness": {"type": "string", "maxLength": 50},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "max_tokens": {"type": "integer", "minimum": 1000, "maximum": 40000},
+                },
+            },
+        },
     ]
 
 
@@ -360,7 +382,7 @@ def _error_result(kind: str, message: str) -> str:
 
 
 class LibrarianProvider(_Base):
-    """Hermes Memory Provider backed by The Librarian (7-verb surface)."""
+    """Hermes Memory Provider backed by The Librarian (8-verb surface)."""
 
     def __init__(
         self,
@@ -586,7 +608,7 @@ class LibrarianProvider(_Base):
         return tool_schemas()
 
     def handle_tool_call(self, tool_name: str, args: dict[str, Any], **kwargs: Any) -> str:
-        """Proxy one of the 7 verbs over HTTP MCP (``tools/call``).
+        """Proxy one of the 8 verbs over HTTP MCP (``tools/call``).
 
         Always returns a JSON string per the ABC contract and never raises:
         ``{"ok": true, "result": <server text>}`` on success,
@@ -618,8 +640,8 @@ class LibrarianProvider(_Base):
         - store_handoff/list_handoffs: `project_key`; store_handoff also stamps
           `harness: hermes` provenance;
         - claim_handoff: `claiming_agent_id` + `claiming_harness`;
-        - flag_memory (keyed by the global memory_id) and search_references
-          pass through verbatim.
+        - flag_memory (keyed by the global memory_id), search_references and
+          journal pass through verbatim.
         """
         out = dict(args)
         agent_id = self._config.agent_id if self._config else None

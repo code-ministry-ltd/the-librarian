@@ -19,9 +19,10 @@ product, so confidentiality of the vault and of those credentials comes first.
 
 Three processes:
 
-- **Public listener**, `packages/mcp-server`, port 3838. `/mcp` (the 7 MCP
+- **Public listener**, `packages/mcp-server`, port 3838. `/mcp` (the 8 MCP
   tools), `/ingest` (capture from harness hooks and the browser extension),
-  `/healthz` and `/primer.md`. An agent bearer token authenticates `/mcp` and
+  `/healthz`, `/primer.md` and `/journal.md` (the recent conversation journal,
+  spec 077). An agent bearer token authenticates `/mcp`, `/journal.md` and
   `/ingest`. With no token configured and a loopback bind, `/mcp` runs without
   auth for local development (`resolveAllowNoAuth` in
   `packages/mcp-server/src/http/auth.ts`).

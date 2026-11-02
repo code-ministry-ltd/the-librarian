@@ -56,7 +56,7 @@ Then set the token in your shell profile and restart Codex:
 export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
-The `/mcp` panel should now list `librarian` with 7 tools.
+The `/mcp` panel should now list `librarian` with 8 tools.
 
 Config reference: [Codex MCP docs](https://developers.openai.com/codex/mcp)
 — `url` (required), `bearer_token_env_var` (sent as the `Authorization`
@@ -89,6 +89,7 @@ LIBRARIAN_HOST=0.0.0.0 LIBRARIAN_AGENT_TOKENS="codex:<strong-token>" pnpm run se
 | `list_handoffs` | List unclaimed handoffs waiting to be picked up |
 | `claim_handoff` | Atomically claim a handoff and receive its document |
 | `search_references` | Search long-form reference docs (deliberately not auto-recalled) |
+| `journal` | Read or search the dated history of past conversations ([guide](https://librarian-docs.codeministry.net/guides/journal/)) |
 
 **The primer as namespace description:** Codex reads the MCP `instructions`
 field returned at initialization and presents it as server-wide guidance
@@ -100,7 +101,7 @@ zero Codex-side setup.
 
 ## Automatic capture (default-on, with two gates)
 
-Beyond the 7 tools, the Codex integration can capture your conversation
+Beyond the 8 tools, the Codex integration can capture your conversation
 **automatically** so durable lessons are extracted with the agent making zero
 memory calls (spec `2026-06-16-harness-auto-capture`, Phase 2A). A per-turn hook
 ships each turn's delta to the server's `POST /transcript` endpoint, which
@@ -176,7 +177,7 @@ and the model drives them from what you say:
 | "hand this off" / "we're done for now" | Authors a five-section document — Start & intent, Journey, Current state, What's left, Open questions — and persists it via `store_handoff` |
 | "pick up where I left off" / "what was I doing" | `list_handoffs`, presents the candidates, atomically claims your pick with `claim_handoff`, resumes from the document |
 | "save what we learned" | Extracts durable lessons, submits the ones you approve via `remember` (one call per lesson; the curator dedupes and files them) |
-| "go private" / "back on the record" | Emits the `[librarian:private=on\|off]` marker — pure in-conversation. While private: no `remember`/`store_handoff`/`flag_memory`; `recall`/`search_references` stay allowed (those queries reach the server's logs). Private mode is an in-conversation instruction; the server cannot verify its marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work. |
+| "go private" / "back on the record" | Emits the `[librarian:private=on\|off]` marker — pure in-conversation. While private: no `remember`/`store_handoff`/`flag_memory`; `recall`/`search_references`/`journal` stay allowed (those queries reach the server's logs). Private mode is an in-conversation instruction; the server cannot verify its marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work. |
 | "what do I know about …" | `recall` |
 | "remember that …" | `remember` |
 | (a recalled memory was wrong) | `flag_memory(memory_id, reason)` |
@@ -197,7 +198,7 @@ curl -X POST "https://librarian.example.com/mcp" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-A healthy response lists exactly 7 tools.
+A healthy response lists exactly 8 tools.
 
 **If the server is down**, the tools fail at the harness level and the
 primer tells the agent to continue without memory — your turn is never

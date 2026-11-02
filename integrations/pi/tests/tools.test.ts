@@ -41,11 +41,11 @@ function fakeClient(responder: (name: string, args: Record<string, unknown>) => 
 }
 
 describe("registerLibrarianTools", () => {
-  it("registers exactly the 7 agent verbs of the rethink contract (§5.1)", () => {
+  it("registers exactly the 8 agent verbs of the rethink contract (§5.1, ADR 0016)", () => {
     const { pi, tools } = mockPi();
     registerLibrarianTools(pi, fakeClient(() => "ok").client);
     expect(tools.map((t) => t.name).sort()).toEqual([...LIBRARIAN_TOOL_NAMES].sort());
-    expect(tools).toHaveLength(7);
+    expect(tools).toHaveLength(8);
   });
 
   it("does not register any retired verb", () => {
@@ -182,6 +182,7 @@ describe("librarianToolSpecs (schema shape)", () => {
     expect(required.get("list_handoffs")).toEqual([]);
     expect(required.get("claim_handoff")).toEqual(["handoff_id"]);
     expect(required.get("search_references")).toEqual(["query"]);
+    expect(required.get("journal")).toEqual([]);
   });
 
   it("teaches the handoff protocol in the store_handoff description", () => {

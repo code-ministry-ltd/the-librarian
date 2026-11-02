@@ -5,6 +5,7 @@
 import type { ToolDefinition, ToolRegistry } from "../tool.js";
 import claimHandoff from "./claim-handoff.js";
 import flagMemory from "./flag-memory.js";
+import journal from "./journal.js";
 import listHandoffs from "./list-handoffs.js";
 import recall from "./recall.js";
 import remember from "./remember.js";
@@ -19,6 +20,7 @@ export const tools: ToolDefinition[] = [
   listHandoffs,
   claimHandoff,
   searchReferences,
+  journal,
 ];
 
 export const toolsByName: Map<string, ToolDefinition> = new Map(

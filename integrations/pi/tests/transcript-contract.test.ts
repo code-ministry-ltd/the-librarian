@@ -6,7 +6,7 @@
 // 400), so this pins the Pi payload to EXACTLY those keys. If the server contract
 // changes, this fails until the Pi adapter (buildPayload / messagesToTurns) is
 // re-synced — the same drift-guard posture as tests/schema-parity.test.ts for the
-// 7 tools and the Hermes adapter's wire-shape tests.
+// 8 tools and the Hermes adapter's wire-shape tests.
 
 import { describe, expect, it } from "vitest";
 import {
