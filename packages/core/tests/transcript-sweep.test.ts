@@ -913,6 +913,99 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     expect((dayFile() ?? "").match(/<!-- episode: conv-f#s4 -->/g)).toHaveLength(1);
   });
 
+  it("journals nothing for a buffer with no exchange (a lone prompt with no reply), but finishes it", async () => {
+    enableJournal();
+    const bufferPath = writeBuffer(
+      "conv-lone",
+      "### user (seq=2 ts=2026-11-02T14:05:00.000Z)\n\nAre you there?\n",
+      IDLE_MS + 60_000,
+    );
+    const client = bothClient({ facts: [], bullets: ["Must not appear."] });
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
+    expect(client.calls.journal).toBe(0);
+    expect(summary.episodes).toBe(0);
+    expect(dayFile()).toBeNull();
+    expect(fs.existsSync(bufferPath)).toBe(false);
+  });
+
+  /** Six ~11k-character turns: too long for one episode segment. */
+  function longBuffer(): string {
+    const turns: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const role = i % 2 === 0 ? "user" : "assistant";
+      const ts = `2026-11-02T1${i}:00:00.000Z`;
+      turns.push(`### ${role} (seq=${i} ts=${ts})\n\nturn ${i} ${"x".repeat(11_000)}\n`);
+    }
+    return turns.join("\n");
+  }
+
+  it("splits a long session into several episodes, so later work isn't squeezed out", async () => {
+    enableJournal();
+    writeBuffer("conv-long", longBuffer(), IDLE_MS + 60_000);
+    let n = 0;
+    const client: LlmClient = {
+      complete: async ({ messages }) => {
+        if ((messages[0]?.content ?? "").includes("Memory Extractor")) {
+          return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
+        }
+        n += 1;
+        // Each segment's episode names the turns it was given.
+        const seen = [...(messages[1]?.content ?? "").matchAll(/turn (\d)/g)].map((m) => m[1]);
+        return {
+          content: JSON.stringify({ bullets: [`Segment ${n} covered turns ${seen.join(",")}.`] }),
+          model: "m",
+          usage: null,
+        };
+      },
+    };
+    const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => client });
+    expect(n).toBe(3);
+    expect(summary.episodes).toBe(1); // one buffer journalled (its episodes counted once)
+    const day = dayFile() ?? "";
+    expect(day).toContain("<!-- episode: conv-long#s0 -->");
+    expect(day).toContain("<!-- episode: conv-long#s0-1 -->");
+    expect(day).toContain("<!-- episode: conv-long#s0-2 -->");
+    expect(day).toContain("- Segment 1 covered turns 0,1.");
+    expect(day).toContain("- Segment 3 covered turns 4,5.");
+  });
+
+  it("resumes a long session after a mid-way failure without re-summarising earlier segments", async () => {
+    enableJournal();
+    writeBuffer("conv-resume", longBuffer(), IDLE_MS + 60_000);
+    const t0 = Date.now();
+    const calls: number[] = [];
+    function client(failOn: number | null): LlmClient {
+      let n = 0;
+      return {
+        complete: async ({ messages }) => {
+          if ((messages[0]?.content ?? "").includes("Memory Extractor")) {
+            return { content: JSON.stringify({ facts: [] }), model: "m", usage: null };
+          }
+          n += 1;
+          calls.push(n);
+          if (n === failOn) return { content: "not json", model: "m", usage: null };
+          return { content: JSON.stringify({ bullets: [`ok ${n}`] }), model: "m", usage: null };
+        },
+      };
+    }
+    const tick1 = await runTranscriptSweepTick({
+      store: store!,
+      now: () => t0,
+      buildClient: () => client(2),
+    });
+    expect(tick1.failed).toBe(1);
+    expect((dayFile() ?? "").match(/<!-- episode: conv-resume#s0(-\d)? -->/g)).toHaveLength(1);
+
+    calls.length = 0;
+    await runTranscriptSweepTick({
+      store: store!,
+      now: () => t0 + 61 * 60_000,
+      buildClient: () => client(null),
+    });
+    expect(calls).toHaveLength(2); // only the two segments that hadn't landed
+    expect((dayFile() ?? "").match(/<!-- episode: conv-resume#s0(-\d)? -->/g)).toHaveLength(3);
+  });
+
   it("re-redacts a secret-shaped bullet before the episode is committed to the vault", async () => {
     enableJournal();
     writeBuffer("conv-sec", JOURNAL_BUFFER, IDLE_MS + 60_000);

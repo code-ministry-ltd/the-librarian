@@ -100,6 +100,18 @@ describe("parse: JSONL entries → user/assistant turns", () => {
     expect(turns.map((t) => t.text)).toEqual(["main turn"]);
   });
 
+  it("skips Claude Code's compaction summary (isCompactSummary:true) — it would re-feed the whole recap", () => {
+    const jsonl =
+      userLine("This session is being continued from a previous conversation…", {
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+      }) +
+      userLine("carry on") +
+      assistantLine("on it");
+    const turns = transcript.entriesToTurns(transcript.parseEntries(jsonl));
+    expect(turns.map((t) => t.text)).toEqual(["carry on", "on it"]);
+  });
+
   it("drops assistant tool_use / thinking blocks, keeps text only", () => {
     const line = `${JSON.stringify({
       type: "assistant",

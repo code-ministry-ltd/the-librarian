@@ -5,8 +5,10 @@ description: A dated, self-compressing history of your conversations with your a
 
 The **journal** is a dated history of what you and your agents talked about. Every
 captured conversation gets a short entry: when it happened, which harness and
-project it was in, and what was decided, corrected, preferred, rejected or left
-open. Recent days stay detailed; older weeks and months are summarised.
+project it was in, what was done, which way things went and why, and what was left
+open. Entries are deliberately brief, like a colleague's work log: they record the
+outcome, not details such as exact values, paths or small tweaks that the code
+already holds. Recent days stay detailed; older weeks and months are summarised.
 
 Memories answer *what is true*. The journal answers *what happened, and why*. "We
 tried X, it broke Y, so we moved to Z" survives in the journal as a story, where
@@ -24,13 +26,17 @@ model.
 
 - **One extra model call per conversation.** When a captured conversation settles
   (30 minutes idle, or when the session ends), the intake model writes its entry
-  alongside the usual fact extraction.
+  alongside the usual fact extraction. A long session with no break is split into
+  consecutive parts of about 30,000 characters, each with its own entry and model
+  call, so the later work isn't squeezed out of a single short entry. A prompt that
+  never got a reply makes no entry and costs nothing.
 - **One model call per week and per month** of history, when older entries are
   summarised.
 
 Only the conversation text is used: capture never sends tool calls, tool output or
 the model's private reasoning, and [private mode](/guides/private-mode/) turns are
-never captured at all.
+never captured at all. Neither is the recap a harness writes when it compacts a long
+conversation (Claude Code, OpenCode): it only repeats what was already captured.
 
 ## Where it lives
 
@@ -57,8 +63,9 @@ A day's entry looks like this:
 - Open: whether to keep raw dialogue for exact lookups.
 ```
 
-The `<!-- episode: … -->` line identifies the conversation, so a retried
-conversation never gets a second entry. Leave it in place if you edit the file.
+The `<!-- episode: … -->` line identifies the conversation (and the part, for a long
+session split into several entries: `…#s4-1`, `…#s4-2`), so a retried conversation
+never gets a second entry. Leave it in place if you edit the file.
 
 ## How it compresses
 

@@ -77,7 +77,13 @@ import {
 import { tryExtractTranscriptFacts } from "./transcript-extract.js";
 import { DEFAULT_SHELF, type Shelf, validateShelfSet } from "./vault-router.js";
 import { isJournalActive } from "./journal/config.js";
-import { appendEpisode, episodeTiming } from "./journal/journal.js";
+import {
+  appendEpisode,
+  episodeExists,
+  episodeTiming,
+  hasExchange,
+  splitEpisodeSegments,
+} from "./journal/journal.js";
 import { summarizeEpisode } from "./journal/summarize.js";
 
 /** Idle window: a buffer untouched this long is settled (spec Q-settle = 30 min). */
@@ -616,9 +622,18 @@ function firstSeq(text: string): string {
 type JournalStepResult = { ok: true; written: boolean } | { ok: false; error: unknown };
 
 /**
- * The journal step (spec 077 §4.2/§4.6): summarise the buffer into an episode and append
- * it to its day file. Idempotent on `<conv_id>#s<first seq>`, so a retry after a crash
- * never writes the same episode twice.
+ * The journal step (spec 077 §4.2/§4.6): summarise the buffer into episodes and append
+ * them to their day files.
+ *
+ * - A buffer without an actual exchange (no user turn, or no assistant turn) is done
+ *   with no model call and no episode.
+ * - A long buffer is split into consecutive segments (`splitEpisodeSegments`), one
+ *   episode each, so a long unbroken session isn't squeezed into one capped entry.
+ *
+ * Idempotent: the first segment's key is `<conv_id>#s<first seq>` (unchanged from a
+ * one-episode buffer), later segments add `-<n>`. A segment whose episode already landed
+ * is skipped before its model call, so a retry after a mid-buffer failure resumes where
+ * it stopped and never writes an episode twice.
  */
 async function writeJournalEpisode(
   store: LibrarianStore,
@@ -628,23 +643,31 @@ async function writeJournalEpisode(
   now: () => number,
   warn: Warn,
 ): Promise<JournalStepResult> {
-  if (!text.trim()) return { ok: true, written: false };
-  const outcome = await summarizeEpisode(text, client);
-  if (!outcome.ok) return { ok: false, error: outcome.error };
+  if (!text.trim() || !hasExchange(text)) return { ok: true, written: false };
+  const baseKey = `${convBase}#s${firstSeq(text)}`;
+  let written = false;
   try {
     const marker = readCaptureMarker(store.dataDir, convBase, warn);
-    const timing = episodeTiming(text, new Date(now()));
     const files = store.systemJournal(journalShelfFor(store.dataDir, convBase, warn));
-    const result = appendEpisode(files, timing.date, {
-      key: `${convBase}#s${firstSeq(text)}`,
-      time: timing.time,
-      harness: marker.harness ?? "unknown",
-      project: marker.project,
-      // Defense in depth, as for facts: the buffer was redacted on intake, but the episode is
-      // about to be committed to the git vault, so re-redact what the model wrote.
-      bullets: outcome.value.map((bullet) => redactSecrets(bullet).redacted),
-    });
-    return { ok: true, written: result === "written" };
+    const segments = splitEpisodeSegments(text);
+    for (const [index, segment] of segments.entries()) {
+      const key = index === 0 ? baseKey : `${baseKey}-${index}`;
+      const timing = episodeTiming(segment, new Date(now()));
+      if (episodeExists(files, timing.date, key)) continue;
+      const outcome = await summarizeEpisode(segment, client);
+      if (!outcome.ok) return { ok: false, error: outcome.error };
+      const result = appendEpisode(files, timing.date, {
+        key,
+        time: timing.time,
+        harness: marker.harness ?? "unknown",
+        project: marker.project,
+        // Defense in depth, as for facts: the buffer was redacted on intake, but the episode
+        // is about to be committed to the git vault, so re-redact what the model wrote.
+        bullets: outcome.value.map((bullet) => redactSecrets(bullet).redacted),
+      });
+      if (result === "written") written = true;
+    }
+    return { ok: true, written };
   } catch (error) {
     return { ok: false, error };
   }

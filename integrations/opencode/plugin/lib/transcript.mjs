@@ -81,6 +81,10 @@ export function messagesToTurns(messages) {
     if (!info || typeof info !== "object") continue;
     const role = info.role;
     if (role !== "user" && role !== "assistant") continue;
+    // OpenCode's compaction writes its recap of the conversation so far as an
+    // assistant message flagged `summary: true` (@opencode-ai/sdk AssistantMessage).
+    // Capturing it would re-feed everything it summarises to intake and the journal.
+    if (info.summary === true) continue;
 
     const text = messageText(m.parts);
     if (!text) continue;
