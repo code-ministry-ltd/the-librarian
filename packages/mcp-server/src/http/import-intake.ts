@@ -94,6 +94,17 @@ function teach(error: z.ZodError, what: string): ImportResult {
   };
 }
 
+const BUSY =
+  "already queued, or being captured right now; it is processed shortly and then recorded";
+
+/** Is there a buffer for this conversation waiting or in progress? */
+function isBusy(store: LibrarianStore, convId: string): boolean {
+  return (
+    fs.existsSync(transcriptBufferPath(store.dataDir, convId)) ||
+    fs.existsSync(transcriptProcessingPath(store.dataDir, convId))
+  );
+}
+
 export function handleImportPolicy(store: LibrarianStore): ImportResult {
   return { status: 200, body: { ...importPolicy(store) } };
 }
@@ -104,6 +115,9 @@ export function handleImportPlan(store: LibrarianStore, raw: unknown, now: Date)
   importPolicy(store); // freezes any cutoff that now has evidence
   let allowance = readImportConfig(store).allowanceRemaining;
   const plans = parsed.data.conversations.map((c) => {
+    if (isBusy(store, c.conv_id)) {
+      return { conv_id: c.conv_id, harness: c.harness, memories: BUSY, journal: BUSY };
+    }
     const plan = planImport(
       store,
       { ...c, ...(parsed.data.only ? { only: parsed.data.only } : {}) },
@@ -153,18 +167,8 @@ export function handleImport(
     }
 
     const bufferPath = transcriptBufferPath(store.dataDir, payload.conv_id);
-    if (
-      fs.existsSync(bufferPath) ||
-      fs.existsSync(transcriptProcessingPath(store.dataDir, payload.conv_id))
-    ) {
-      return {
-        status: 200,
-        body: {
-          accepted: false,
-          conv_id: payload.conv_id,
-          reason: "This conversation is being captured or imported right now. Try again later.",
-        },
-      };
+    if (isBusy(store, payload.conv_id)) {
+      return { status: 200, body: { accepted: false, conv_id: payload.conv_id, reason: BUSY } };
     }
 
     const turns = dropPrivateTurns(payload.turns);

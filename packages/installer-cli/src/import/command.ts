@@ -233,6 +233,7 @@ export async function runImport(opts: ImportOptions): Promise<ImportOutcome> {
     // Send, oldest first. The server re-checks everything.
     let accepted = 0;
     let skipped = 0;
+    const refusals = new Map<string, number>();
     for (const [index, c] of queued.entries()) {
       const res = await call<{
         accepted: boolean;
@@ -250,8 +251,11 @@ export async function runImport(opts: ImportOptions): Promise<ImportOutcome> {
         accepted += 1;
       } else {
         skipped += 1;
-        const why =
-          res.reason ?? [res.steps?.memories, res.steps?.journal].filter(Boolean).join("; ");
+        const reasons = [res.steps?.memories, res.steps?.journal].filter(
+          (r): r is string => typeof r === "string" && r !== QUEUED,
+        );
+        const why = res.reason ?? ([...new Set(reasons)].join("; ") || "refused by the server");
+        refusals.set(why, (refusals.get(why) ?? 0) + 1);
         if (/allowance is used up/.test(why)) {
           out(
             `Stopped after ${accepted} conversation(s): the server's import allowance is used up.`,
@@ -267,6 +271,7 @@ export async function runImport(opts: ImportOptions): Promise<ImportOutcome> {
     out(
       `Done: ${accepted} conversation(s) queued on the server${skipped ? `, ${skipped} refused` : ""}.`,
     );
+    for (const [why, n] of refusals) out(`    ${n} × ${why}`);
     out(
       "They're processed a few at a time, after live capture, so they appear in your memories and",
     );
