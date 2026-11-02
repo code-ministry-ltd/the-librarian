@@ -9,9 +9,9 @@ for finding things later. It uses a language model to do this, so before it can
 work you give it a provider, and then you decide how aggressively it runs. This
 guide covers both, plus how to keep improving it.
 
-## The three jobs
+## The two jobs
 
-The Curator settings contain three distinct jobs, configured side by side under
+The Curator settings contain two distinct jobs, configured side by side under
 **[Settings → Curator](/dashboard/settings/#curator)**:
 
 - **Intake** consolidates each new submission as it arrives — gathering the evidence
@@ -28,10 +28,6 @@ The Curator settings contain three distinct jobs, configured side by side under
   scheduled or manual pass it also
   [repairs](#repairing-memories-that-are-already-damaged) a few long or merged
   memories.
-- **Chronicle** writes a searchable weekly review under `references/chronicle/`.
-  Its factual digest does not require an LLM; a configured model adds an optional
-  narrative and possible blog seeds. It never changes memories. See
-  [The Chronicle](/guides/chronicle/) for the full walkthrough.
 
 You can enable each job independently. If you turn **intake off**, new memories from
 agents (and automatic capture) stop being filed — so leave it on unless you have a
@@ -102,8 +98,7 @@ memories after each run** on the Grooming tab.
 
 On **Settings → Curator**, add an **LLM provider** (such as Anthropic or OpenAI)
 with its API credentials and **test** the connection. Then, in the Intake and
-Grooming tabs, pick the model to use; Chronicle can optionally use a model for its
-narrative. The provider's API key is one of the
+Grooming tabs, pick the model to use. The provider's API key is one of the
 server's own secrets — it is encrypted at rest with your master key, and it never
 appears in a memory, a backup, or a log. (Your memories themselves stay as plain
 Markdown by design; the master key protects the curator's credentials, not your
@@ -117,7 +112,7 @@ down per model, to balance quality against cost.
 Each job's model settings have two more fields:
 
 - **Output limit (tokens)** caps how long one reply can be. The defaults are
-  16,384 for Intake, 32,768 for Grooming, 8,192 for Chronicle, and 16,384 for the
+  16,384 for Intake, 32,768 for Grooming, and 16,384 for the
   curator chat. Any thinking the model does counts towards this limit, so a model
   that thinks heavily needs more room. You can set anything from 256 to
   1,048,576.
@@ -126,8 +121,8 @@ Each job's model settings have two more fields:
   also the right choice for a provider that doesn't support the field.
 
 A reply that reaches the output limit before it finishes is **thrown away, never
-used**. The curator never files a memory, applies a correction, or writes a
-chronicle narrative from a cut-off answer. What happens instead depends on the
+used**. The curator never files a memory or applies a correction from a cut-off
+answer. What happens instead depends on the
 job: an intake submission is retried later (see below), and a flagged memory
 stays waiting for the curator's next look. If you see these, raise that job's
 output limit.

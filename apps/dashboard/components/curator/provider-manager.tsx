@@ -42,7 +42,7 @@ export function ProviderManager({
 }: {
   initialProviders: LlmProvider[];
   /** Per-provider list of consumer labels currently referencing this provider
-   *  ("Intake", "Grooming", "Chronicle"). Used by the Delete confirm to warn what breaks. */
+   *  ("Intake", "Grooming"). Used by the Delete confirm to warn what breaks. */
   references: Record<string, readonly string[]>;
   actions: ProviderManagerActions;
 }) {
@@ -91,7 +91,7 @@ export function ProviderManager({
       <div className="border border-ink-hairline bg-ink-surface">
         {providers.length === 0 && !adding ? (
           <p className="px-4 py-6 text-sm text-foreground/70">
-            No providers yet. Add one to configure Intake, Grooming, and Chronicle models.
+            No providers yet. Add one to configure the Intake and Grooming models.
           </p>
         ) : null}
 

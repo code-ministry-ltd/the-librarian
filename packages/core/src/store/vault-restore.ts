@@ -167,7 +167,8 @@ export async function restoreVaultToCommit(
  *   admin    `vault: …` (explorer/editor + restores), `primer: update`,
  *            `memory: approve/reject/purge/resolve-flags/bulk-update …`,
  *            `handoff: purge …` — admin-only surfaces.
- *   system   `backup: snapshot`, `vault: pre-restore snapshot`, `chronicle: …`,
+ *   system   `backup: snapshot`, `vault: pre-restore snapshot`, `chronicle: …` (historical:
+ *            Chronicle was retired in 1.40.0, its commits remain in existing vaults),
  *            `journal: episode/rollup …` (spec 077). `journal: delete …` is admin.
  *   other    anything else (e.g. hand-made commits from a checkout).
  */

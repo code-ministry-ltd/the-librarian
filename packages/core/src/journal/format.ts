@@ -31,7 +31,7 @@ const SEP = " · ";
 /**
  * Make model-authored text passive and single-purpose: no raw HTML (so it can never
  * open an HTML comment and forge a key), no image/embed syntax, no newlines inside a
- * bullet. Mirrors Chronicle's sanitiser, plus line flattening for bullets.
+ * bullet. Line flattening for bullets is in `flattenBullet`.
  */
 export function sanitizeJournalText(value: string): string {
   return value.replaceAll("![", "&#33;[").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

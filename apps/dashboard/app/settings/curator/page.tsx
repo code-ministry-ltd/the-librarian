@@ -1,5 +1,5 @@
 // Curator configuration cockpit (Phase 4 rebuild). Shared LLM providers on
-// top, three tabbed jobs (Intake / Grooming / Chronicle) below. Each tab holds the
+// top, two tabbed jobs (Intake / Grooming) below. Each tab holds the
 // Enablement & schedule, Model, and Recent runs sections — flat layout,
 // hairline-separated, no nested cards.
 
@@ -9,10 +9,8 @@ import {
   deleteProviderAction,
   listModelsAction,
   loadIntakeOperationsAction,
-  runChronicleNowAction,
   runGroomingNowAction,
   runIntakeNowAction,
-  saveChronicleConfigAction,
   saveGroomingConfigAction,
   saveJournalConfigAction,
   setConsumerConfigAction,
@@ -20,8 +18,6 @@ import {
   testConnectionAction,
   updateProviderAction,
 } from "@/app/curator/actions";
-import { ChronicleConfigForm } from "@/components/curator/chronicle-config-form";
-import { ChronicleRunsTable } from "@/components/curator/chronicle-runs-table";
 import { GroomingConfigForm } from "@/components/curator/config-form";
 import { ConsumerModelSelector } from "@/components/curator/consumer-model-selector";
 import { IntakeConfigForm } from "@/components/curator/intake-config-form";
@@ -30,7 +26,6 @@ import { JournalConfigForm } from "@/components/curator/journal-config-form";
 import { ProviderManager } from "@/components/curator/provider-manager";
 import {
   RunNowButton,
-  renderChronicleResult,
   renderGroomingResult,
   renderIntakeResult,
 } from "@/components/curator/run-now-button";
@@ -50,38 +45,20 @@ export default async function CuratorSettingsPage() {
   let intakeRuns: Awaited<ReturnType<typeof serverTRPC.intake.runs.query>> = [];
   let intakeConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
   let grooming: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null = null;
-  let chronicleConfig: Awaited<ReturnType<typeof serverTRPC.chronicle.config.query>> | null = null;
-  let chronicleRuns: Awaited<ReturnType<typeof serverTRPC.chronicle.runs.query>> = [];
-  let chronicleConsumer: Awaited<ReturnType<typeof serverTRPC.llm.consumerConfig.query>> | null =
-    null;
   let journalConfig: Awaited<ReturnType<typeof serverTRPC.journal.config.query>> | null = null;
   let error: string | null = null;
   try {
-    [
-      config,
-      runs,
-      providers,
-      intakeConfig,
-      intakeRuns,
-      intakeConsumer,
-      grooming,
-      chronicleConfig,
-      chronicleRuns,
-      chronicleConsumer,
-      journalConfig,
-    ] = await Promise.all([
-      serverTRPC.grooming.config.query(),
-      serverTRPC.grooming.runs.query({ limit: 50 }),
-      serverTRPC.llm.listProviders.query(),
-      serverTRPC.intake.config.query(),
-      serverTRPC.intake.runs.query({ limit: 50 }),
-      serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
-      serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
-      serverTRPC.chronicle.config.query(),
-      serverTRPC.chronicle.runs.query({ limit: 50 }),
-      serverTRPC.llm.consumerConfig.query({ consumer: "chronicle" }),
-      serverTRPC.journal.config.query(),
-    ]);
+    [config, runs, providers, intakeConfig, intakeRuns, intakeConsumer, grooming, journalConfig] =
+      await Promise.all([
+        serverTRPC.grooming.config.query(),
+        serverTRPC.grooming.runs.query({ limit: 50 }),
+        serverTRPC.llm.listProviders.query(),
+        serverTRPC.intake.config.query(),
+        serverTRPC.intake.runs.query({ limit: 50 }),
+        serverTRPC.llm.consumerConfig.query({ consumer: "intake" }),
+        serverTRPC.llm.consumerConfig.query({ consumer: "grooming" }),
+        serverTRPC.journal.config.query(),
+      ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -91,25 +68,23 @@ export default async function CuratorSettingsPage() {
   const references: Record<string, readonly string[]> = {};
   function addRef(consumer: ConfigurableJobConsumer, providerId: string | null | undefined) {
     if (!providerId) return;
-    const label = { intake: "Intake", grooming: "Grooming", chronicle: "Chronicle" }[consumer];
+    const label = { intake: "Intake", grooming: "Grooming" }[consumer];
     references[providerId] = [...(references[providerId] ?? []), label];
   }
   addRef("intake", intakeConsumer?.providerId);
   addRef("grooming", grooming?.providerId);
-  addRef("chronicle", chronicleConsumer?.providerId);
 
   const intakeLastRun = intakeRuns[0];
   const groomingLastRun = runs[0];
-  const chronicleLastRun = chronicleRuns[0];
 
   return (
     <main className="flex flex-col gap-8 p-6">
       <header className="flex flex-col gap-1.5">
         <h1 className="font-display text-xl text-foreground">Curator</h1>
         <p className="text-sm text-foreground/60">
-          Three jobs keep the corpus useful: <strong>Intake</strong> files new submissions,{" "}
-          <strong>Grooming</strong> curates the corpus, and <strong>Chronicle</strong> writes a
-          weekly review. They share the LLM providers below.
+          Two jobs keep the corpus useful: <strong>Intake</strong> files new submissions and{" "}
+          <strong>Grooming</strong> curates the corpus. The journal is set up on the Intake tab.
+          They share the LLM providers below.
         </p>
       </header>
 
@@ -250,62 +225,6 @@ export default async function CuratorSettingsPage() {
             </section>
           </section>
         }
-        chronicle={
-          <section className="flex flex-col gap-8" aria-label="Chronicle">
-            <p className="max-w-3xl text-sm text-foreground/70">
-              Chronicle turns each week&apos;s activity into a searchable entry under{" "}
-              <span className="font-mono text-xs">references/chronicle/</span>. It always writes a
-              deterministic digest; a model adds the narrative and possible blog seeds.
-            </p>
-
-            <section className="flex flex-col gap-3" aria-label="Chronicle enablement and schedule">
-              <SectionLabel as="h3">Enablement &amp; schedule</SectionLabel>
-              {chronicleConfig ? (
-                <ChronicleConfigForm initial={chronicleConfig} onSave={saveChronicleConfigAction} />
-              ) : null}
-            </section>
-
-            <Hairline />
-
-            <section className="flex flex-col gap-3" aria-label="Chronicle model">
-              <header className="flex flex-col gap-1">
-                <SectionLabel as="h3">Narrative model</SectionLabel>
-                <p className="text-xs text-foreground/60">
-                  Optional. Without a working model, Chronicle still writes the factual digest.
-                </p>
-              </header>
-              {chronicleConsumer ? (
-                <ConsumerModelSelector
-                  consumer="chronicle"
-                  config={chronicleConsumer}
-                  providers={providers}
-                  onSave={setConsumerConfigAction}
-                  onListModels={listModelsAction}
-                />
-              ) : null}
-            </section>
-
-            <Hairline />
-
-            <section className="flex flex-col gap-3" aria-label="Chronicle run history">
-              <header className="flex flex-wrap items-center justify-between gap-3">
-                <SectionLabel as="h3">Recent runs</SectionLabel>
-                <RunNowButton
-                  onRun={runChronicleNowAction}
-                  renderResult={renderChronicleResult}
-                  label="Run Chronicle now"
-                  ariaLabel="Run Chronicle now"
-                />
-              </header>
-              {chronicleLastRun ? (
-                <p className="text-xs text-foreground/60">
-                  Last run: {renderChronicleRunDigest(chronicleLastRun)}
-                </p>
-              ) : null}
-              <ChronicleRunsTable runs={chronicleRuns} />
-            </section>
-          </section>
-        }
       />
     </main>
   );
@@ -319,15 +238,4 @@ function renderIntakeResultDigest(run: { summary: string | null; status: string 
 function renderGroomingRunDigest(run: { summary: string | null; status: string }): string {
   if (run.status !== "completed") return `${run.status} — ${run.summary ?? "no summary"}`;
   return run.summary ?? "completed";
-}
-
-function renderChronicleRunDigest(run: {
-  iso_week: string;
-  shelf_id: string;
-  shelf_label: string | null;
-  status: string;
-  narrative: string;
-}): string {
-  const output = run.narrative === "generated" ? "narrated" : "digest only";
-  return `${run.iso_week} · ${run.shelf_label ?? run.shelf_id} · ${run.status} · ${output}`;
 }

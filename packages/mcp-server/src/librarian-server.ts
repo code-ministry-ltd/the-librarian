@@ -40,7 +40,6 @@ import {
   readIntakeInterval,
   readLastIntakeSweepAt,
   runBackupTick,
-  runScheduledChronicle,
   runGroomingTick,
   runJournalCompactionTick,
   runIntakeTick,
@@ -127,8 +126,6 @@ export interface LibrarianServerOptions {
   intakePollMs: number;
   /** Grooming poll cadence in ms; 0 disables the scheduler entirely. */
   groomingPollMs: number;
-  /** Chronicle due-check poll cadence in ms; 0 disables the scheduler entirely. */
-  chroniclePollMs: number;
   /** Transcript settle-sweep poll cadence in ms; 0 disables the scheduler entirely. */
   transcriptSweepTickMs: number;
   /**
@@ -171,7 +168,7 @@ export interface LibrarianServerOptions {
  * @internal
  */
 export interface LibrarianServerInternals {
-  /** The live schedulers (backup/intake/grooming/chronicle/transcript order), nulls excluded. */
+  /** The live schedulers (backup/intake/grooming/transcript order), nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
   /**
    * The two assembled HTTP listeners `start()` binds: the PUBLIC agent surface and the
@@ -288,7 +285,6 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     backupTickMs,
     intakePollMs,
     groomingPollMs,
-    chroniclePollMs,
     transcriptSweepTickMs,
     transcriptIdleMs,
     transcriptMaxBytes,
@@ -561,38 +557,6 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
-  // Chronicle scheduler: the interval is only a due-check resolution. The core
-  // job owns the operator-configured weekday/time, default-off enablement, and
-  // last-success stamp. Its log is deliberately value-free: it records counts,
-  // period, and outcome only — never memories, handoffs, prompts, or narratives.
-  async function runChronicleIfDue(s: LibrarianStore): Promise<void> {
-    const result = await runScheduledChronicle({ store: s });
-    if (!result.ran) return;
-    const details = {
-      trigger: result.trigger,
-      isoWeek: result.period.isoWeek,
-      attempted: result.attempted,
-      completed: result.completed,
-      failed: result.failed,
-      generated: result.generated,
-      digestOnly: result.digestOnly,
-    };
-    if (result.failed > 0) logger.warn(details, "chronicle tick completed with failures");
-    else logger.info(details, "chronicle tick completed");
-  }
-
-  const chronicleScheduler =
-    chroniclePollMs > 0
-      ? createSerialScheduler({
-          task: () => runChronicleIfDue(store),
-          intervalMs: chroniclePollMs,
-          // Value-free by contract: an unexpected thrown error may carry a vault
-          // path or provider detail. Per-shelf failures are already classified in
-          // Chronicle's run log; this is only the scheduler-level alarm.
-          onError: () => logger.error("chronicle tick failed"),
-        })
-      : null;
-
   // Transcript settle-sweep scheduler (spec 2026-06-16-harness-auto-capture, T2):
   // a serial poll that scans `<dataDir>/transcripts/` for SETTLED capture buffers
   // (idle / explicit-end / size-cap), atomically claims each, makes one extractor
@@ -684,7 +648,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
-  // The load-bearing scheduler set: backup/intake/grooming/chronicle/transcript/flag-groom
+  // The load-bearing scheduler set: backup/intake/grooming/transcript/flag-groom
   // order, with interval-disabled pollers excluded. start()/stop() iterate this,
   // preserving today's `?.start()` / `?.stop()` semantics (a null scheduler is a
   // no-op) exactly (ADR 0008 shutdown parity, spec 060 SC 3).
@@ -692,7 +656,6 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     backupScheduler,
     intakeScheduler,
     groomingScheduler,
-    chronicleScheduler,
     transcriptSweepScheduler,
     flagGroomScheduler,
     journalScheduler,
@@ -728,9 +691,6 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
       void runScheduledGrooming({ store }).catch((error) =>
         logger.error({ err: error }, "grooming boot scan failed"),
       );
-    }
-    if (chronicleScheduler) {
-      void chronicleScheduler.runNow().catch(() => logger.error("chronicle boot scan failed"));
     }
     // Warm the recall index in the background (spec 075): building it embeds every memory's
     // sections, which after an upgrade can take minutes on CPU. A recall that arrives

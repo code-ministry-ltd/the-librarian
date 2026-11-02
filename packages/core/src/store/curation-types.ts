@@ -29,7 +29,7 @@ export interface CurationRun {
   id: string;
   status: string;
   trigger: string;
-  /** Missing on pre-Chronicle sidecar rows; readers attribute those rows to the main shelf. */
+  /** Missing on older sidecar rows; readers attribute those rows to the main shelf. */
   shelf_id?: string | null;
   shelf_label?: string | null;
   mode: string;
@@ -78,7 +78,7 @@ export interface CurationOperation {
 export interface ListCurationRunsInput {
   status?: string;
   trigger?: string;
-  /** Restrict before paging, so a Chronicle never borrows another shelf's operational facts. */
+  /** Restrict before paging, so one shelf's listing never borrows another shelf's runs. */
   shelfId?: string;
   /** Exclusive run-id cursor in the deterministic newest-first ordering. */
   before?: string;

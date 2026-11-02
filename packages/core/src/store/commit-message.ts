@@ -96,9 +96,6 @@ export const commitSubject = {
   curatorIntakeExamplesUpdate: (): string => "curator: intake-examples update",
   curatorIntakeExamplesRollback: (): string => "curator: intake-examples rollback",
 
-  // ── Chronicle (librarian-store.ts) ──────────────────────────────────────────
-  chronicle: (isoWeek: string): string => `chronicle: ${oneLine(isoWeek)}`,
-
   // ── Journal (librarian-store.ts, spec 077) ──────────────────────────────────
   /** A settled conversation's episode appended to a day file. */
   journalEpisode: (date: string): string => `journal: episode ${oneLine(date)}`,

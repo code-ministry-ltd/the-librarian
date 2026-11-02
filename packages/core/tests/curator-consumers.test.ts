@@ -370,62 +370,6 @@ describe("per-consumer LLM resolution", () => {
     });
   });
 
-  describe("Chronicle consumer (grooming fallback)", () => {
-    it("inherits the whole grooming connection while keeping Chronicle enablement", () => {
-      const { store } = s!;
-      const groom = addProvider(store, {
-        name: "Groom",
-        endpoint: "https://groom.example/v1",
-        token: "dummy-groom-token",
-      });
-      writeConsumerConfig(store, "grooming", {
-        providerId: groom.id,
-        model: "groom-model",
-        timeoutMs: 42_000,
-      });
-      writeConsumerConfig(store, "chronicle", { enabled: true });
-
-      expect(readConsumerConfig(store, "chronicle")).toMatchObject({
-        consumer: "chronicle",
-        enabled: true,
-        providerId: groom.id,
-        model: "groom-model",
-        timeoutMs: 42_000,
-        isOperational: true,
-      });
-      expect(resolveConsumerToken(store, "chronicle")).toBe("dummy-groom-token");
-      expect(store.getSetting("chronicle.enabled")).toBe("true");
-    });
-
-    it("uses its own connection once a Chronicle provider is selected", () => {
-      const { store } = s!;
-      const groom = addProvider(store, {
-        name: "Groom",
-        endpoint: "https://groom.example/v1",
-        token: "dummy-groom-token",
-      });
-      const chronicle = addProvider(store, {
-        name: "Chronicle",
-        endpoint: "https://chronicle.example/v1",
-        token: "dummy-chronicle-token",
-      });
-      writeConsumerConfig(store, "grooming", { providerId: groom.id, model: "groom-model" });
-      writeConsumerConfig(store, "chronicle", {
-        providerId: chronicle.id,
-        model: "chronicle-model",
-        timeoutMs: 30_000,
-      });
-
-      expect(readConsumerConfig(store, "chronicle")).toMatchObject({
-        providerId: chronicle.id,
-        endpoint: "https://chronicle.example/v1",
-        model: "chronicle-model",
-        timeoutMs: 30_000,
-      });
-      expect(resolveConsumerToken(store, "chronicle")).toBe("dummy-chronicle-token");
-    });
-  });
-
   describe("legacy migration", () => {
     const LEGACY_KEYS = llmConnectionKeys("curator.llm");
 
@@ -535,7 +479,6 @@ describe("per-consumer LLM resolution", () => {
         reasoningEffort: null,
       });
       expect(readConsumerConfig(store, "grooming").maxOutputTokens).toBe(32_768);
-      expect(readConsumerConfig(store, "chronicle").maxOutputTokens).toBe(32_768); // inherits grooming
     });
 
     it("saves both, and carries them into the client connection", () => {

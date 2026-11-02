@@ -117,7 +117,7 @@ describe("tRPC llm provider surface", () => {
     }
   });
 
-  it("round-trips per-consumer config and keeps intake, grooming, and Chronicle independent", async () => {
+  it("round-trips per-consumer config and keeps intake and grooming independent", async () => {
     const dataDir = makeTempDir();
     const server = await startHttpServer({ dataDir });
     try {
@@ -142,11 +142,6 @@ describe("tRPC llm provider surface", () => {
         providerId: strong.id,
         model: "max",
       });
-      await trpcPost<ConsumerConfig>(server, "llm.setConsumerConfig", {
-        consumer: "chronicle",
-        providerId: cheap.id,
-        model: "narrator",
-      });
 
       const intake = await trpcGet<ConsumerConfig>(server, "llm.consumerConfig", {
         consumer: "intake",
@@ -154,19 +149,12 @@ describe("tRPC llm provider surface", () => {
       const grooming = await trpcGet<ConsumerConfig>(server, "llm.consumerConfig", {
         consumer: "grooming",
       });
-      const chronicle = await trpcGet<ConsumerConfig>(server, "llm.consumerConfig", {
-        consumer: "chronicle",
-      });
       expect(intake.endpoint).toBe("https://cheap.example/v1");
       expect(intake.model).toBe("mini");
       expect(intake.isOperational).toBe(true);
       expect(grooming.endpoint).toBe("https://strong.example/v1");
       expect(grooming.model).toBe("max");
       expect(grooming.isOperational).toBe(true);
-      expect(chronicle.consumer).toBe("chronicle");
-      expect(chronicle.endpoint).toBe("https://cheap.example/v1");
-      expect(chronicle.model).toBe("narrator");
-      expect(chronicle.isOperational).toBe(true);
     } finally {
       await server.stop();
       cleanupTempDir(dataDir);

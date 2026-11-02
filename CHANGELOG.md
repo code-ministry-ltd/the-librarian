@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.40.0] — 2026-11-02
+
+### Removed
+
+- **Chronicle is retired.** It was meant to be a readable catch-up on the week, but it
+  only ever recorded what the Librarian did to its own corpus (commits, merges,
+  curator runs, handoff titles), not what you worked on. The journal now does that
+  job: a dated record of each conversation, loaded at session start and searchable
+  with the `journal` tool. Removed: the weekly scheduler and its
+  `LIBRARIAN_CHRONICLE_TICK_MS` setting, the Chronicle tab on **Settings → Curator**
+  and its model selector, the `chronicle.*` dashboard API, and the Chronicle guide
+  (its URL now redirects to the journal guide).
+- **Your existing entries are untouched.** Weekly reviews already written stay in
+  the vault under `references/chronicle/` with their history; delete them from the
+  Vault page if you don't want them. Old `chronicle:` commits are still classified
+  as system activity in the activity feed and audit export. Leftover
+  `chronicle.*` settings and `chronicle-runs.json` in the data directory are
+  ignored.
+
 ## [1.39.0] — 2026-11-02
 
 ### Changed
@@ -5307,6 +5326,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.40.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.39.0...v1.40.0
 [1.39.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.36.0...v1.37.0

@@ -1,6 +1,5 @@
 export * from "./memory-store.js";
 export * from "./curation-store.js";
-export * from "./chronicle-types.js";
 export * from "./intake-store.js";
 export * from "./split-memory.js";
 export * from "./settings-store.js";

@@ -2,8 +2,6 @@
 
 import type {
   ChatResponse,
-  ChronicleConfigPatch,
-  ChronicleTickResult,
   ConfigurableJobConsumer,
   IntakeOperation,
   IntakeTickResult,
@@ -28,8 +26,6 @@ export type RunNowResult = { ok: true; result: GroomingTickResult } | { ok: fals
 type IntakeRunResult = IntakeTickResult | { ran: false; reason: "disabled" };
 export type RunIntakeNowResult =
   { ok: true; result: IntakeRunResult } | { ok: false; error: string };
-export type RunChronicleNowResult =
-  { ok: true; result: ChronicleTickResult } | { ok: false; error: string };
 
 export type SaveConfigResult = { ok: true } | { ok: false; error: string };
 
@@ -115,7 +111,7 @@ export async function deleteProviderAction(id: string): Promise<ProviderListResu
   }
 }
 
-// --- Per-job (intake / grooming / Chronicle) provider+model selection ---------
+// --- Per-job (intake / grooming) provider+model selection ---------------------
 
 export async function setConsumerConfigAction(
   consumer: ConfigurableJobConsumer,
@@ -126,30 +122,6 @@ export async function setConsumerConfigAction(
     revalidatePath("/curator");
     revalidatePath("/settings/curator");
     return { ok: true, config };
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-}
-
-// --- Chronicle ---------------------------------------------------------------
-
-export async function saveChronicleConfigAction(
-  patch: ChronicleConfigPatch,
-): Promise<SaveConfigResult> {
-  try {
-    await serverTRPC.chronicle.setConfig.mutate(patch);
-    revalidatePath("/settings/curator");
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: message(error) };
-  }
-}
-
-export async function runChronicleNowAction(): Promise<RunChronicleNowResult> {
-  try {
-    const result = await serverTRPC.chronicle.runNow.mutate();
-    revalidatePath("/settings/curator");
-    return { ok: true, result };
   } catch (error) {
     return { ok: false, error: message(error) };
   }

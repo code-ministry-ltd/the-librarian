@@ -310,11 +310,11 @@ export function actionForSubject(subject: string): AuditAction {
   if (subject.startsWith("vault: delete ")) return "vault.delete";
   if (subject.startsWith("curator: addendum ")) return "curator.addendum";
   if (subject.startsWith("curator: rollback ")) return "curator.addendum-rollback";
-  // Chronicle is additive derived system output. Keep the permanent v1 AuditAction union stable;
-  // its system provenance still comes from classifyVaultCommit, while its action is `other`.
+  // Chronicle (retired in 1.40.0) left `chronicle: <week>` commits in existing vault
+  // histories: derived system output, action `other`, so old audit exports read the same.
   if (subject.startsWith("chronicle: ")) return "other";
-  // The journal (spec 077) is derived system output plus owner deletes; like Chronicle it
-  // keeps the permanent v1 AuditAction union stable and maps to `other`.
+  // The journal (spec 077) is derived system output plus owner deletes; it keeps the
+  // permanent v1 AuditAction union stable and maps to `other`.
   if (subject.startsWith("journal: ")) return "other";
   return "other";
 }

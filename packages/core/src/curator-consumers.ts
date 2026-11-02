@@ -17,7 +17,6 @@
 
 import { z } from "zod";
 import type { LlmClientConfig, ReasoningEffort } from "./grooming-llm-client.js";
-import { CHRONICLE_ENABLED_KEY } from "./chronicle/config.js";
 import { GROOMING_ENABLED_KEY } from "./grooming-config.js";
 import { INTAKE_ENABLED_KEY } from "./intake-config.js";
 import {
@@ -40,8 +39,8 @@ import {
 export type CuratorConsumer = "intake" | "grooming";
 export const CURATOR_CONSUMERS: readonly CuratorConsumer[] = ["intake", "grooming"];
 
-/** Scheduled LLM jobs configurable through the model selector. Chronicle has no prompt addendum. */
-export type ConfigurableJobConsumer = CuratorConsumer | "chronicle";
+/** Scheduled LLM jobs configurable through the model selector. */
+export type ConfigurableJobConsumer = CuratorConsumer;
 
 // The CONFIG-ONLY superset of LLM consumers (spec 044 D-8). `chat` is the
 // interactive curator chat endpoint's LLM (D6b) — it has its OWN
@@ -59,7 +58,6 @@ export type LlmConsumer = ConfigurableJobConsumer | "chat";
 // this job's config (spec 044 D-8): provider + model + token + timeout. Set
 // chat's own provider to override the fallback entirely.
 const CHAT_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
-const CHRONICLE_FALLBACK_CONSUMER: CuratorConsumer = "grooming";
 
 // 5 min default (was 60 s): slow self-hosted models (e.g. a 9B with 27–31K
 // prompt tokens: ~10 s prefill + thousands of output tokens at ~40–60 t/s)
@@ -75,7 +73,6 @@ const MAX_TIMEOUT_MS = 600_000;
 export const DEFAULT_MAX_OUTPUT_TOKENS: Readonly<Record<LlmConsumer, number>> = {
   intake: 16_384,
   grooming: 32_768,
-  chronicle: 8_192,
   chat: 16_384,
 };
 const MIN_MAX_OUTPUT_TOKENS = 256;
@@ -187,9 +184,7 @@ export function consumerConnection(config: ConsumerConfig): ConsumerConnection {
 // spec 043 D-E). Kept as fixed constants in curator-config.ts so the migration,
 // the http gate, and this per-consumer surface all agree.
 function enabledKey(consumer: ConfigurableJobConsumer): string {
-  if (consumer === "intake") return INTAKE_ENABLED_KEY;
-  if (consumer === "grooming") return GROOMING_ENABLED_KEY;
-  return CHRONICLE_ENABLED_KEY;
+  return consumer === "intake" ? INTAKE_ENABLED_KEY : GROOMING_ENABLED_KEY;
 }
 
 // Bounded timeout parse: a valid in-range integer, else undefined. The read path
@@ -217,20 +212,10 @@ function parseTimeoutMs(raw: string | null): number {
  * job, so its resolved `enabled` is always `false`.
  */
 export function readConsumerConfig(store: ConsumerReader, consumer: LlmConsumer): ConsumerConfig {
-  const fallback =
-    consumer === "chat"
-      ? CHAT_FALLBACK_CONSUMER
-      : consumer === "chronicle"
-        ? CHRONICLE_FALLBACK_CONSUMER
-        : null;
-  // Config-only chat and the Chronicle narrator inherit WHOLE-CONSUMER from grooming while their
-  // own provider is unset. Chronicle keeps its own enablement; chat is never enabled.
-  if (fallback && (store.getSetting(consumerKeys(consumer).provider) ?? "") === "") {
-    return {
-      ...readConsumerConfig(store, fallback),
-      consumer,
-      enabled: consumer === "chat" ? false : store.getSetting(enabledKey(consumer)) === "true",
-    };
+  // Config-only chat inherits WHOLE-CONSUMER from grooming while its own provider is
+  // unset; chat is never enabled.
+  if (consumer === "chat" && (store.getSetting(consumerKeys(consumer).provider) ?? "") === "") {
+    return { ...readConsumerConfig(store, CHAT_FALLBACK_CONSUMER), consumer, enabled: false };
   }
 
   const keys = consumerKeys(consumer);
@@ -326,10 +311,7 @@ export function resolveConsumerToken(store: ConsumerReader, consumer: LlmConsume
   const target =
     consumer === "chat" && (store.getSetting(consumerKeys("chat").provider) ?? "") === ""
       ? CHAT_FALLBACK_CONSUMER
-      : consumer === "chronicle" &&
-          (store.getSetting(consumerKeys("chronicle").provider) ?? "") === ""
-        ? CHRONICLE_FALLBACK_CONSUMER
-        : consumer;
+      : consumer;
   const providerId = store.getSetting(consumerKeys(target).provider) ?? "";
   if (!providerId) return null;
   return resolveProviderToken(store, providerId);
