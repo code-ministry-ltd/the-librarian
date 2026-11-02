@@ -10,13 +10,14 @@
 import { describe, expect, it } from "vitest";
 import { toolsByName } from "../../dist/mcp/tools/index.js";
 
-// The agent-facing tool surface (rethink spec §5.1, D8/D10): exactly the
-// 7 memory/handoff/reference verbs. The skills subsystem (`list_skills` /
+// The agent-facing tool surface (rethink spec §5.1, D8/D10; ADR 0016): exactly the
+// 7 memory/handoff/reference verbs plus `journal` (spec 077). The skills subsystem (`list_skills` /
 // `get_skill`) was deleted in rethink T1; the conv_state trio in rethink T2.
 // Kept sorted so a diff reads cleanly when the contract intentionally changes.
 const EXPECTED_TOOL_NAMES = [
   "claim_handoff",
   "flag_memory",
+  "journal",
   "list_handoffs",
   "recall",
   "remember",
@@ -69,9 +70,9 @@ describe("MCP tool registry contract", () => {
     expect(actual).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });
 
-  it("registers exactly 7 tools", () => {
+  it("registers exactly 8 tools", () => {
     expect(toolsByName.size).toBe(EXPECTED_TOOL_NAMES.length);
-    expect(EXPECTED_TOOL_NAMES).toHaveLength(7);
+    expect(EXPECTED_TOOL_NAMES).toHaveLength(8);
   });
 
   it("no longer exposes the retired admin/skills/conv_state verbs", () => {
@@ -92,7 +93,7 @@ describe("MCP tool registry contract", () => {
     expect(toolsByName.has("session_manifest")).toBe(false);
   });
 
-  it("exposes no internal/admin-only tools — all 7 verbs are agent-callable", () => {
+  it("exposes no internal/admin-only tools — all 8 verbs are agent-callable", () => {
     for (const tool of toolsByName.values()) {
       expect(tool.adminOnly, `${tool.name} must not be adminOnly`).not.toBe(true);
     }
@@ -114,6 +115,12 @@ describe("MCP tool descriptions carry their protocols (rethink T12)", () => {
         `${tool.name} description must be ≤1KB`,
       ).toBeLessThanOrEqual(1024);
     }
+  });
+
+  it("journal: what happened and why, beyond the injected window; facts belong to recall", () => {
+    expect(description("journal")).toMatch(/dated history of your past conversations/i);
+    expect(description("journal")).toMatch(/last ~6 weeks/);
+    expect(description("journal")).toContain("`recall`");
   });
 
   it("recall: call before answering when prior context may exist; memories only", () => {

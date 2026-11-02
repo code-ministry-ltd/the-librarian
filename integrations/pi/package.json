@@ -5,7 +5,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Pi coding-agent package for The Librarian: the 7 memory/handoff tools + primer injection, backed by a remote Librarian MCP server.",
+  "description": "Pi coding-agent package for The Librarian: the 8 memory/handoff/journal tools + primer injection, backed by a remote Librarian MCP server.",
   "license": "Apache-2.0",
   "type": "module",
   "author": {

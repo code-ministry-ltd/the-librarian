@@ -683,7 +683,7 @@ async function handleMcp(ctx: RouteContext): Promise<void> {
   // Public surface: agent-role only — the default provider has NO admin path here, so /mcp can
   // never resolve to admin (ADR 0008 P3), and the factory-owned public-admin guard refuses an
   // admin principal from a substitute provider (403) before dispatch. It also requires `agent`
-  // SCOPE: a least-privilege capture token is FORBIDDEN (403), never reaching the 7 verbs (ingest
+  // SCOPE: a least-privilege capture token is FORBIDDEN (403), never reaching the 8 verbs (ingest
   // spec D21). We consult the deps-threaded PROVIDER (spec 061 T4 — the factory's guarded plugin
   // provider, or T1's default) and read its Principal directly: the lossy AuthResult would drop
   // the env-token / localhost SENTINEL actorId, which SC 4 needs as the no-id fallback actor. With

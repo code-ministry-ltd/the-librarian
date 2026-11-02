@@ -23,15 +23,16 @@ The default, when nothing has been said, is **off** — normal operation.
 
 - **Paused on the agent's own initiative:** remembering facts, storing handoffs, and
   flagging memories — the agent will not do any of these unprompted while private.
-- **Still allowed:** recalling memories and searching references. You can still ask
-  "what do we know about X?" while private.
+- **Still allowed:** recalling memories, searching references and reading the
+  [journal](/guides/journal/). You can still ask "what do we know about X?" while
+  private.
 - **Asks first, then proceeds:** an *explicit* `/handoff` (or `/learn`) is your
   override. Ask to hand off while private and the agent does not silently skip it —
   it confirms you really want this conversation written, then stores it only on a
   yes. Private mode blocks *automatic* writes, not a deliberate, confirmed one.
 
-There is one honest caveat worth knowing: those *read* queries (recall and
-reference search) still reach the server, so the **search text appears in the
+There is one honest caveat worth knowing: those *read* queries (recall, reference
+search and the journal) still reach the server, so the **search text appears in the
 server's logs** even in private mode. Private mode stops new memories being
 written; it does not make a read invisible to the server you own. If you ask, the
 agent will tell you this.

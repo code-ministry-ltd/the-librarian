@@ -28,7 +28,7 @@ pnpm run seed              # writes sample memories into ./data
 Verify everything is wired up:
 
 ```sh
-pnpm run healthcheck       # vault durability, index rebuild, stdio MCP, the 7-verb tool surface, HTTP MCP + auth
+pnpm run healthcheck       # vault durability, index rebuild, stdio MCP, the 8-verb tool surface, HTTP MCP + auth
 pnpm test                  # full test suite (Vitest across all packages + root test/)
 ```
 
@@ -49,7 +49,7 @@ the-librarian/
 │   └── dashboard/         # Next.js 15 admin UI (port 3000)
 ├── packages/
 │   ├── core/              # Vault store, hybrid index, curator, schemas (no I/O outside the data dir)
-│   ├── mcp-server/        # public 3838: /mcp (7 verbs) + /healthz + /primer.md; internal 3840: /trpc/* admin API (ADR 0008)
+│   ├── mcp-server/        # public 3838: /mcp (8 verbs) + /healthz + /primer.md + /journal.md; internal 3840: /trpc/* admin API (ADR 0008)
 │   ├── cli/               # `the-librarian` binary (rebuild, seed, backup, export, auth, handoffs)
 │   └── intake-eval/       # Eval harness for the curator's intake mode
 ├── integrations/          # All five harness surfaces, in-tree (rethink D14)
@@ -71,9 +71,10 @@ the-librarian/
 
 ```
    agent ──────────►  mcp-server PUBLIC listener (3838, published)
-   (agent token)         │   /mcp (7 verbs) ┐
+   (agent token)         │   /mcp (8 verbs) ┐
                          │   /healthz       │── @librarian/core ──► ./data/vault/   (markdown + git — the source of truth)
-                         │   /primer.md     ┘                       ./data/*.json   (settings + run bookkeeping sidecars)
+                         │   /primer.md     │
+                         │   /journal.md    ┘                       ./data/*.json   (settings + run bookkeeping sidecars)
                                             (NO /trpc here — a /trpc request 404s)   in-memory hybrid index (disposable, rebuilt from the vault)
                             ▲
                             │ NO bearer — the internal listener is trusted by
@@ -96,7 +97,7 @@ architecture decisions behind this shape.
 
 ### A new MCP tool
 
-**Stop first:** the agent-facing surface is **exactly 7 verbs by design**
+**Stop first:** the agent-facing surface is **exactly 8 verbs by design**
 (rethink D10/D12 — pinned by `tests/mcp/tool-registry.test.ts` and
 `scripts/healthcheck.js`). A new agent tool is an architecture decision, not a
 recipe — admin capability belongs on tRPC instead. If the decision is made:

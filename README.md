@@ -24,7 +24,7 @@ can read, edit, and reorganise yourself (in the dashboard or in Obsidian); git
 gives it history; nothing is locked in a database.
 
 Practically, that makes it a portable **memory + handoff layer for AI agents**:
-served to any harness over MCP as **7 verbs**, taught to agents by one ≤2KB
+served to any harness over MCP as **8 verbs**, taught to agents by one ≤2KB
 **primer**, with an explicit **cross-harness handoff surface** so work started
 in one harness (Claude Code, Codex, Hermes, OpenCode, Pi) can be packaged into a
 single document and picked up cleanly in another.
@@ -108,12 +108,12 @@ exact config and install steps live in its README:
 | Claude Code | [`integrations/claude`](./integrations/claude) | MCP config; optional plugin adds 4 slash commands |
 | Codex | [`integrations/codex`](./integrations/codex) | MCP config block in `~/.codex/config.toml` — no code |
 | OpenCode | [`integrations/opencode`](./integrations/opencode) | MCP config + one remote-URL `instructions` line — no code |
-| Hermes | [`integrations/hermes`](./integrations/hermes) | Python MemoryProvider (stdlib-only) proxying the 7 verbs |
-| Pi | [`integrations/pi`](./integrations/pi) | Pi extension: primer hook + 7 native tool proxies |
+| Hermes | [`integrations/hermes`](./integrations/hermes) | Python MemoryProvider (stdlib-only) proxying the 8 verbs |
+| Pi | [`integrations/pi`](./integrations/pi) | Pi extension: primer hook + 8 native tool proxies |
 
 All five teach the model the same protocols: the primer rides each harness's
 thinnest native channel (MCP `instructions` where honored, a one-hook adapter
-where not), and the 7 tools carry protocol-bearing descriptions that render in
+where not), and the 8 tools carry protocol-bearing descriptions that render in
 every harness.
 
 ## Features
@@ -169,12 +169,12 @@ the master-key externalization ladder — lives in
 [Authentication & secrets](apps/docs/src/content/docs/deploy-and-operate/auth-and-secrets.md)
 in the docs site.
 
-## MCP tools — the 7-verb agent surface
+## MCP tools — the 8-verb agent surface
 
 Agents talk to the Librarian over `/mcp` with a bearer token. The endpoint
 accepts JSON-RPC over POST; because it offers no standalone server-push SSE
 stream, authenticated GET probes receive `405 Method Not Allowed`. The surface
-is exactly seven tools — contract-tested, with zero internal tools:
+is exactly eight tools — contract-tested, with zero internal tools:
 
 ### Memory
 
@@ -204,6 +204,14 @@ live on the dashboard tRPC surface (ADR 0006).
 
 - `search_references` — search the long-form reference corpus. A separate verb
   by design: references are background material, never auto-recalled.
+
+### Journal
+
+- `journal` — read or search the dated history of past conversations (spec 077,
+  [ADR 0016](./docs/adr/0016-journal-verb.md)): retrieve a date range oldest-first,
+  or search with `query`; filter by `project` / `harness`. Read-only; returns a
+  "journal is off" note when the operator hasn't enabled it. See
+  [The journal](apps/docs/src/content/docs/guides/journal.md).
 
 ## Teaching the agent — the primer
 

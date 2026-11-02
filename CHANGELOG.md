@@ -9,6 +9,34 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.35.0] — 2026-11-02
+
+### Added
+
+- **The `journal` MCP tool — the eighth agent verb** ([ADR 0016](docs/adr/0016-journal-verb.md)).
+  Agents in every harness can now read the [journal](https://librarian-docs.codeministry.net/guides/journal/)
+  added in 1.34.0. With no `query` it returns a date range oldest first (default:
+  the last 30 days); with a `query` it searches the last year by relevance. Both
+  take `project` and `harness` filters, and `max_tokens` caps the reply. When a
+  retrieve is cut short, the reply names the `to` date to ask for next. It only
+  reads, so it stays available in private mode, like `recall`. When the operator
+  hasn't turned the journal on, the tool says so instead of failing.
+- The Hermes and Pi adapters expose `journal` with the server's description and
+  schema, pinned by their drift-guard tests.
+
+### Changed
+
+- **The agent surface is 8 verbs.** The tool-registry test, the healthcheck, the
+  generated MCP verbs reference, the README, AGENTS.md and every integration README
+  now name `journal`.
+- **The default primer mentions the journal** and lists it among the reads that
+  stay available in private mode. To stay within the 2 KB budget, one parenthetical
+  in its Memory paragraph is shorter; the instruction is unchanged. An operator's
+  edited `vault/primer.md` is left as it is.
+- **The private-mode contract names `journal`** among the allowed reads, in
+  `docs/slash-commands.md` and every `/toggle-private` template (Claude Code,
+  OpenCode, Codex, Hermes, Pi).
+
 ## [1.34.0] — 2026-11-02
 
 ### Added
@@ -5148,6 +5176,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.35.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.7...v1.34.0
 [1.33.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.6...v1.33.7
 [1.33.6]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.33.5...v1.33.6

@@ -35,6 +35,7 @@ describe("MCP dispatch", () => {
         "store_handoff",
         "list_handoffs",
         "claim_handoff",
+        "journal",
       ]) {
         expect(toolNames).toContain(expected);
       }
