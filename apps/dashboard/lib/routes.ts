@@ -100,6 +100,18 @@ export const ROUTES: readonly Route[] = [
     docsSlug: "dashboard/memories",
   },
   {
+    href: "/journal",
+    group: "primary",
+    label: "Journal",
+    match: { kind: "exact", paths: ["/journal"] },
+    id: "nav-journal",
+    paletteLabel: "Go to Journal",
+    // No g-jump: `j` is "next" on the journal (and the vault), so `g j` would also step.
+    hint: "",
+    inPalette: true,
+    docsSlug: "guides/journal",
+  },
+  {
     href: "/handoffs",
     group: "primary",
     label: "Handoffs",
