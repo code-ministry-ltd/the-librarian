@@ -27,18 +27,27 @@ the server's command line — see
 
 ## Primer
 
-**Settings → Primer** is a single editor for the **briefing** every agent loads at
-the start of a session (the file `vault/primer.md`). It teaches your agents the
-core habits — recall before answering, remember durable facts, the handoff and
-private-mode rules. Edit it and **Save**; the server enforces a 2 KB limit so it
-stays short, and every save is tracked in history. Keep it generic guidance — never
-put secrets or person-specific detail in it, because it is served to agents and is
-readable without a token.
+The **primer** is the briefing every agent receives when it connects. It teaches the
+core habits: recall before answering, what is worth remembering, flagging wrong memories,
+handoffs, and private mode. It has two parts:
 
-If you have never edited the primer, upgrading The Librarian replaces it with the new
-default when the default changes. Once you have edited it, it is yours: upgrades never
-touch it, so compare it with the [shipped default](/reference/primer/) after an upgrade
-if you want the newer wording.
+- **The default** ships with The Librarian and is the same on every install. You can't
+  edit or turn it off, and it updates when you upgrade. The page shows it, and you can
+  also read it on the [primer reference page](/reference/primer/).
+- **Your addendum** is optional text added after the default, for anything specific to
+  how you work. It is stored as `vault/primer.md`, and every save is tracked in history.
+
+**Settings → Primer** edits the addendum and shows the complete primer agents will
+receive, updating as you type. The whole primer must fit in 2 KB, because some harnesses
+(Claude Code among them) cut server instructions off there, so the page shows how much
+room the addendum has. Keep it generic guidance and never put secrets in it. The primer
+is served to agents and can be read without a token.
+
+Before version 1.47.0, the primer was a single document that your edits replaced. On
+upgrade, a primer you never edited is cleared and the new default takes over. A primer
+you did edit is moved into the addendum, so agents get the default followed by your old
+text, and the page asks you to review it, because it probably repeats parts of the
+default. Trim it to what the default doesn't say, then save.
 
 Every recall an agent makes by search also ends with one line asking it to `remember`
 the answer if it had to find it some other way, so the next recall finds it. That line

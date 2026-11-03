@@ -154,8 +154,10 @@ describe("included canonical docs (slash commands, capture matrix)", () => {
 });
 
 describe("private-mode correction caveat parity", () => {
+  // The default primer no longer carries the full caveat (spec 083 keeps it to the trigger, the
+  // blocked writes and the logging note). The toggle commands, shown when private mode is
+  // switched on, still carry it in full, and so do the harness docs.
   const surfaces = [
-    "packages/core/src/primer.ts",
     "docs/slash-commands.md",
     "integrations/claude/README.md",
     "integrations/claude/commands/toggle-private.md",

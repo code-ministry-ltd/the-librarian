@@ -221,12 +221,12 @@ live on the dashboard tRPC surface (ADR 0006).
 
 ## Teaching the agent — the primer
 
-Agents are taught by the **primer** — one ≤2KB operator-editable document at
-`vault/primer.md`, served at connect time as the MCP `initialize` `instructions`
-field and at the unauthenticated `GET /primer.md` endpoint — plus each tool's own
-protocol-bearing description. It carries the recall/remember loop, the
-handoff/takeover and learn protocols, private mode, and the fail-soft rule. Edit
-it from the dashboard's Vault page (the server enforces the 2KB cap). Design:
+Agents are taught by the **primer**, served at connect time as the MCP `initialize`
+`instructions` field and at the unauthenticated `GET /primer.md` endpoint, plus each
+tool's own protocol-bearing description. The primer is a short default that ships with
+the server (the recall loop, what to remember, flagging, handoffs, private mode, and the
+fail-soft rule), followed by an optional operator addendum at `vault/primer.md`, edited
+in Settings → Primer. The whole primer is capped at 2 KB. Design:
 [`docs/adr/0007-the-rethink.md`](./docs/adr/0007-the-rethink.md).
 
 The four optional slash commands (`/handoff`, `/takeover`, `/learn`, and the

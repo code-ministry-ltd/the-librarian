@@ -18,7 +18,7 @@ dependencies).
   correction, or leave the flag for a person. Its response reports queue
   status, not completion.
 - **The primer in the system prompt** — `system_prompt_block()` returns the
-  operator-editable primer fetched from the server's `GET /primer.md`
+  primer (shipped default plus optional addendum) fetched from the server's `GET /primer.md`
   (cached per session). The primer teaches the recall/remember loop and the
   handoff / learn / private-mode protocols, so no per-harness prompt code is
   needed.

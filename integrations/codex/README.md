@@ -95,9 +95,9 @@ LIBRARIAN_HOST=0.0.0.0 LIBRARIAN_AGENT_TOKENS="codex:<strong-token>" pnpm run se
 **The primer as namespace description:** Codex reads the MCP `instructions`
 field returned at initialization and presents it as server-wide guidance
 alongside the server's tools. The Librarian serves its ≤2KB primer there
-(source: `vault/primer.md` on your server, editable in the dashboard), so
-the behavioural loop — recall before answering, remember durable facts,
-the handoff protocol, private mode — rides into every Codex session with
+(the shipped default plus your server's optional addendum, edited in the
+dashboard), so the behavioural loop — recall before answering, what to
+remember, the handoff protocol, private mode — rides into every Codex session with
 zero Codex-side setup.
 
 **The journal at session start:** a `SessionStart` hook

@@ -9,6 +9,34 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.47.0] — 2026-11-03
+
+### Changed
+
+- **The primer is now a fixed default plus your addendum.** Before, the primer was copied
+  into `vault/primer.md` at first boot, and Settings → Primer replaced it outright. So
+  every install kept whichever default it started with, and an edited primer never saw
+  another improvement. Now the default lives in the server, is the same everywhere,
+  can't be edited or turned off, and updates when you upgrade. `vault/primer.md` holds
+  only an optional addendum, added after the default. Settings → Primer edits the
+  addendum and shows the complete primer agents receive. The whole primer must fit in
+  2 KB, because harnesses such as Claude Code cut server instructions off there.
+- **A much shorter default primer.** It is about half the length, and says less about
+  `remember`: only save what will matter later and isn't obvious from the working
+  directory, plus what you found when recall couldn't answer, because conversations may
+  already be harvested. A memory is flagged only when it is factually wrong or outdated,
+  not merely unhelpful. The `learn` paragraph is gone, and the handoff sections now live
+  only in `store_handoff`'s description.
+
+### Upgrade notes
+
+- On first start, a primer that is exactly an earlier shipped default is cleared, so you
+  get the new default. A primer you edited becomes your addendum, so agents get the new
+  default followed by your old text, and Settings → Primer asks you to review it. Trim it
+  to what the default doesn't say. An empty primer no longer disables it.
+- The admin tRPC call `awareness.setPrimer` is replaced by `awareness.setAddendum`, and
+  `awareness.primer` now returns the default, the addendum and the complete primer.
+
 ## [1.46.0] — 2026-11-03
 
 ### Changed
@@ -5462,6 +5490,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.47.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.46.0...v1.47.0
 [1.46.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.45.0...v1.46.0
 [1.45.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.44.0...v1.45.0
 [1.44.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.43.0...v1.44.0

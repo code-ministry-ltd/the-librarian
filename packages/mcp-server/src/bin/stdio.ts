@@ -52,9 +52,8 @@ try {
 
 const store = createLibrarianStore({ secretKey, dataDir });
 
-// Primer seed-on-boot (rethink T11, spec §5.2): vault/primer.md must exist
-// before the first `initialize` reads it into the `instructions` field.
-// Idempotent + no-clobber — an operator-edited primer is never touched.
+// Primer migration (spec 083): move a pre-083 vault/primer.md to the addendum model before the
+// first `initialize`. Idempotent, safe every boot.
 seedPrimer(store);
 
 // The stdio server runs no curator jobs: a flag recorded here is picked up by the

@@ -3,14 +3,14 @@
 // The primer (vault/primer.md) rides the initialize result's `instructions`
 // field — the connect-time channel every MCP harness renders into the system
 // layer. Under test:
-//   - the seeded primer text comes back verbatim on initialize;
-//   - an edit is served FRESH to the next initialize (no process-start
+//   - the default comes back verbatim on initialize;
+//   - an addendum edit is served FRESH to the next initialize (no process-start
 //     snapshot — the store's cache refreshes on write);
-//   - a disabled ("") primer omits the field entirely;
+//   - the default is always sent: an empty or absent addendum can't remove it (spec 083);
 //   - both transports share this dispatch path (stdio + HTTP wrap
 //     handleMcpPayload), so dispatch-level coverage covers both.
 
-import { DEFAULT_PRIMER, seedPrimer } from "@librarian/core";
+import { DEFAULT_PRIMER, composePrimer, seedPrimer } from "@librarian/core";
 import { handleMcpPayload } from "@librarian/mcp-server";
 import { describe, expect, it } from "vitest";
 import { withStore } from "../../../../test/helpers.js";
@@ -33,32 +33,25 @@ describe("MCP initialize carries the primer as instructions", () => {
     });
   });
 
-  it("serves an edited primer fresh on the next initialize (not process-cached stale)", async () => {
+  it("serves an edited addendum fresh on the next initialize (not process-cached stale)", async () => {
     await withStore(async (store) => {
       seedPrimer(store);
       const first = (await initialize(store)) as InitializeResponse;
       expect(first.result.instructions).toBe(DEFAULT_PRIMER);
 
-      store.writePrimer("Edited primer for the next session.");
+      store.writePrimer("Addendum for the next session.");
       const second = (await initialize(store)) as InitializeResponse;
-      expect(second.result.instructions).toBe("Edited primer for the next session.");
+      expect(second.result.instructions).toBe(composePrimer("Addendum for the next session."));
     });
   });
 
-  it("omits the instructions field when the primer is disabled ('')", async () => {
+  it("always sends the default, even when the addendum file is empty or absent (spec 083)", async () => {
     await withStore(async (store) => {
+      const absent = (await initialize(store)) as InitializeResponse;
+      expect(absent.result.instructions).toBe(DEFAULT_PRIMER);
       store.writePrimer("");
-      const response = (await initialize(store)) as InitializeResponse;
-      expect(response.result.serverInfo.name).toBe("the-librarian");
-      expect("instructions" in response.result).toBe(false);
-    });
-  });
-
-  it("initializes fail-soft when the primer was never seeded (no instructions, no throw)", async () => {
-    await withStore(async (store) => {
-      const response = (await initialize(store)) as InitializeResponse;
-      expect(response.result.serverInfo.name).toBe("the-librarian");
-      expect("instructions" in response.result).toBe(false);
+      const empty = (await initialize(store)) as InitializeResponse;
+      expect(empty.result.instructions).toBe(DEFAULT_PRIMER);
     });
   });
 });

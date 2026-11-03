@@ -1,11 +1,5 @@
-// Primer admin field (spec 041 A1, repointed by rethink T11).
-//
-// The labelled textarea over vault/primer.md. Asserts: it pre-fills with the
-// current primer; the hint names the storage (vault/primer.md), the delivery
-// (on connect) and the 2 KB cap (so the operator understands its reach);
-// editing + Save sends the new text to the action; an emptied textarea sends
-// "" (which disables the primer); a failed save surfaces the error (incl. the
-// server's over-2KB teaching message).
+// Settings → Primer (spec 083). The default is shown, not editable; the addendum is the only
+// field; the preview shows default + addendum live; a review notice appears after migration.
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -15,48 +9,70 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const { AwarenessPrimerForm } = await import("@/components/settings/awareness-primer-form");
 
+const DEFAULT = "You are connected to The Librarian.\n";
+
+function renderForm(overrides: Partial<Parameters<typeof AwarenessPrimerForm>[0]> = {}) {
+  const props = {
+    defaultPrimer: DEFAULT,
+    initialAddendum: "",
+    addendumMaxBytes: 1000,
+    reviewPending: false,
+    onSave: vi.fn().mockResolvedValue({ ok: true }),
+    onDismissReview: vi.fn().mockResolvedValue({ ok: true }),
+    ...overrides,
+  };
+  render(<AwarenessPrimerForm {...props} />);
+  return props;
+}
+
 describe("AwarenessPrimerForm", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("pre-fills the textarea with the current primer", () => {
-    render(<AwarenessPrimerForm initial="Current primer text." onSave={vi.fn()} />);
-    expect(screen.getByLabelText("Awareness primer text")).toHaveValue("Current primer text.");
+  it("pre-fills the addendum and shows the complete primer", () => {
+    renderForm({ initialAddendum: "Be brief." });
+    expect(screen.getByLabelText("Addendum")).toHaveValue("Be brief.");
+    expect(screen.getByTestId("primer-preview").textContent).toBe(
+      "You are connected to The Librarian.\n\nBe brief.\n",
+    );
   });
 
-  it("hint names vault/primer.md, on-connect delivery, and the 2 KB cap", () => {
-    render(<AwarenessPrimerForm initial="x" onSave={vi.fn()} />);
-    expect(screen.getByText(/vault\/primer\.md/i)).toBeInTheDocument();
-    expect(screen.getByText(/when an agent connects/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 KB/i)).toBeInTheDocument();
+  it("explains the default is fixed, the addendum is added, and both are public", () => {
+    renderForm();
+    expect(screen.getByText(/updates when you upgrade/i)).toBeInTheDocument();
+    expect(screen.getByText(/keep secrets out of it/i)).toBeInTheDocument();
+    expect(screen.getByText(/Added after the default/i)).toBeInTheDocument();
   });
 
-  it("sends the edited primer to onSave and shows a saved status", async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: true });
-    render(<AwarenessPrimerForm initial="" onSave={onSave} />);
-
-    await userEvent.type(screen.getByLabelText("Awareness primer text"), "New primer");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave).toHaveBeenCalledWith("New primer");
+  it("previews live and sends the addendum to onSave", async () => {
+    const { onSave } = renderForm();
+    await userEvent.type(screen.getByLabelText("Addendum"), "New line");
+    expect(screen.getByTestId("primer-preview").textContent).toContain("New line");
+    await userEvent.click(screen.getByRole("button", { name: "Save addendum" }));
+    expect(onSave).toHaveBeenCalledWith("New line");
     await vi.waitFor(() => expect(screen.getByText("Saved.")).toBeInTheDocument());
   });
 
-  it("sends '' when the textarea is cleared (disables the primer)", async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: true });
-    render(<AwarenessPrimerForm initial="Some default primer." onSave={onSave} />);
+  it("an empty addendum previews the default alone", () => {
+    renderForm();
+    expect(screen.getByTestId("primer-preview").textContent).toBe(DEFAULT);
+  });
 
-    await userEvent.clear(screen.getByLabelText("Awareness primer text"));
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  it("blocks saving past the addendum limit and says so", () => {
+    renderForm({ initialAddendum: "x".repeat(1001) });
+    expect(screen.getByText(/too long/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save addendum" })).toBeDisabled();
+  });
 
-    expect(onSave).toHaveBeenCalledWith("");
+  it("shows the migration review notice and dismisses it", async () => {
+    const { onDismissReview } = renderForm({ reviewPending: true, initialAddendum: "Old." });
+    expect(screen.getByText(/moved into the addendum/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissReview).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces the error from a failed save", async () => {
-    const onSave = vi.fn().mockResolvedValue({ ok: false, error: "boom" });
-    render(<AwarenessPrimerForm initial="x" onSave={onSave} />);
-
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    renderForm({ onSave: vi.fn().mockResolvedValue({ ok: false, error: "boom" }) });
+    await userEvent.click(screen.getByRole("button", { name: "Save addendum" }));
     await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("boom"));
   });
 });

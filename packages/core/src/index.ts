@@ -977,7 +977,13 @@ export {
   seedPrimer,
   PREVIOUS_DEFAULT_PRIMER_SHA256,
   isPreviousDefaultPrimer,
-  setPrimer,
+  composePrimer,
+  primerAddendumMaxBytes,
+  readPrimerAddendum,
+  setPrimerAddendum,
+  primerReviewPending,
+  PRIMER_ADDENDUM_MIGRATED_KEY,
+  PRIMER_REVIEW_PENDING_KEY,
 } from "./primer.js";
 export {
   type ClaimHandoffInput,

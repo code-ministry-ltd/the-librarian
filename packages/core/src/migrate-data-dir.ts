@@ -387,7 +387,7 @@ export function checkDataDirMigration(options: { dataDir?: string } = {}): strin
   if (primerBytes !== null) {
     findings.push(
       `vault/${PRIMER_PATH} is ${primerBytes} bytes — over the ${PRIMER_MAX_BYTES}-byte cap; ` +
-        `it rides every MCP initialize over budget until trimmed (dashboard vault editor)`,
+        `the primer addendum rides every MCP initialize over budget until trimmed (Settings → Primer)`,
     );
   }
 
@@ -464,7 +464,9 @@ export function migrateDataDir(options: MigrateDataDirOptions = {}): MigrateData
   try {
     seedPrimer(addendumStore);
     if (!primerExisted && vault.exists(PRIMER_PATH)) {
-      changes.push(`seeded vault/${PRIMER_PATH} (from the legacy settings primer when present)`);
+      changes.push(
+        `moved the legacy settings primer into vault/${PRIMER_PATH} (the primer addendum)`,
+      );
     }
   } catch {
     // fail-soft — an unreadable legacy primer is handled by the key sweep below
@@ -577,8 +579,8 @@ export function migrateDataDir(options: MigrateDataDirOptions = {}): MigrateData
   if (primerBytes !== null) {
     operatorNotes.push(
       `vault/${PRIMER_PATH} is ${primerBytes} bytes — over the ${PRIMER_MAX_BYTES}-byte cap ` +
-        `(a migrated legacy primer is exempt at write time); trim it via the dashboard so MCP ` +
-        `initialize instructions fit the budget`,
+        `(a migrated primer is exempt at write time); trim the addendum in Settings → Primer so ` +
+        `MCP initialize instructions fit the budget`,
     );
   }
 
