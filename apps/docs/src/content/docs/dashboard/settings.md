@@ -145,3 +145,17 @@ The page also shows the current version, the latest available, and when
 auto-update last ran. The full walkthrough — including what to check when
 auto-update seems to do nothing — is in
 [Automatic updates](/deploy-and-operate/self-host/#automatic-updates).
+
+## Telemetry
+
+**Settings → Telemetry** controls the anonymous weekly usage-stats ping. It's on by default
+and sends nothing until a day after the dashboard has shown you the notice about it. The page
+has:
+
+- the switch, and why nothing would be sent right now if that's the case
+- every field the ping carries, with what it means
+- the exact payload the next ping would send, and the last one as it was sent
+- a button that resets the random install id
+
+What is and isn't sent, and how to force it off for the whole server, is in
+[Anonymous usage stats](/deploy-and-operate/self-host/#anonymous-usage-stats).

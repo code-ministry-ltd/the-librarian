@@ -100,9 +100,10 @@ describe("SiteNav", () => {
       "Connect",
       "Captures",
       "Backups",
+      "Telemetry",
     ]);
     expect(items[0]).toHaveAttribute("href", "/settings/dashboard");
-    expect(items[items.length - 1]).toHaveAttribute("href", "/settings/backups");
+    expect(items[items.length - 1]).toHaveAttribute("href", "/settings/telemetry");
   });
 
   it("marks the Settings trigger active for any /settings/* route", () => {

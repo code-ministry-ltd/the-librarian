@@ -1,0 +1,21 @@
+# The Librarian usage-stats receiver (spec 085). Deploy steps: README.md in this folder.
+name = "librarian-telemetry"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+# The server sends to https://librarian-telemetry.codeministry.net/v1/ping by default.
+routes = [{ pattern = "librarian-telemetry.codeministry.net", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "librarian-telemetry"
+database_id = "REPLACE_WITH_THE_ID_FROM_wrangler_d1_create"
+
+# Retention: delete rows older than about 13 months, daily.
+[triggers]
+crons = ["17 3 * * *"]
+
+# Keep request logs off: the Worker never logs bodies, and Cloudflare's own logs should stay off.
+[observability]
+enabled = false

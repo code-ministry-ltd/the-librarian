@@ -7,6 +7,12 @@ The [one-command self-host](/deploy-and-operate/self-host/) path covers most peo
 This page is for operators who want to drive Docker themselves: the published
 all-in-one image, image-only Compose, the source-build Compose stack, or Fly.io.
 
+:::note[Anonymous usage stats]
+**Anonymous usage stats are on by default.** Once a week a server sends a few anonymous facts (a random install id, the version, OS, how it runs, which harness families are in use, a rough memory count and three feature switches), never anything from your memories. Nothing goes until a day after the dashboard has told you about it. Turn it off in Settings → Telemetry, or with `DO_NOT_TRACK=1` or `LIBRARIAN_TELEMETRY=off`. Add `-e DO_NOT_TRACK=1` (or the same in your Compose `environment:`) to
+make sure the first ping never goes. See
+[what is sent](/deploy-and-operate/self-host/#anonymous-usage-stats).
+:::
+
 The managed CLI path is deliberately stricter than these manual examples: stable
 `server up` and `server update` never use `latest`. They select an exact `vX.Y.Z`,
 match its source commit to the GitHub tag and its digest to the release receipt,

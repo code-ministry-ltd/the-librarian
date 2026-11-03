@@ -156,6 +156,8 @@ const intakePollMs = Number(process.env.LIBRARIAN_CONSOLIDATOR_TICK_MS ?? 60_000
 const groomingPollMs = Number(process.env.LIBRARIAN_GROOMING_TICK_MS ?? 15 * 60_000);
 const transcriptSweepTickMs = Number(process.env.LIBRARIAN_TRANSCRIPT_SWEEP_TICK_MS ?? 5 * 60_000);
 const journalPollMs = Number(process.env.LIBRARIAN_JOURNAL_TICK_MS ?? 15 * 60_000);
+// Usage stats (spec 085): an hourly due-check; a ping goes at most weekly, and only once allowed.
+const telemetryPollMs = Number(process.env.LIBRARIAN_TELEMETRY_TICK_MS ?? 60 * 60_000);
 const transcriptIdleMs = process.env.LIBRARIAN_TRANSCRIPT_IDLE_MS
   ? Number(process.env.LIBRARIAN_TRANSCRIPT_IDLE_MS)
   : undefined;
@@ -191,6 +193,7 @@ const server = createLibrarianServer({
   groomingPollMs,
   transcriptSweepTickMs,
   journalPollMs,
+  telemetryPollMs,
   ...(transcriptIdleMs !== undefined ? { transcriptIdleMs } : {}),
   ...(transcriptMaxBytes !== undefined ? { transcriptMaxBytes } : {}),
   ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),

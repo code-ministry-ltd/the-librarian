@@ -33,6 +33,9 @@ It runs as a small self-hosted server, reachable locally or over the network.
 
 ## Self-host in one command
 
+> **Anonymous usage stats are on by default.** Once a week a server sends a few anonymous facts (a random install id, the version, OS, how it runs, which harness families are in use, a rough memory count and three feature switches), never anything from your memories. Nothing goes until a day after the dashboard has told you about it. Turn it off in Settings → Telemetry, or with `DO_NOT_TRACK=1` or `LIBRARIAN_TELEMETRY=off`. Details:
+> [Usage stats](https://librarian-docs.codeministry.net/deploy-and-operate/self-host/#anonymous-usage-stats).
+
 The `librarian` CLI's `server` command group stands up the server for you — it
 resolves the latest stable release, pulls and verifies that exact published image,
 runs it by immutable image digest, surfaces the master key once, and hands you the

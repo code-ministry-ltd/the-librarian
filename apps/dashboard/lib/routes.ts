@@ -268,6 +268,13 @@ export const ROUTES: readonly Route[] = [
     inPalette: true,
     docsSlug: "dashboard/settings",
   },
+  {
+    href: "/settings/telemetry",
+    group: "settings",
+    label: "Telemetry",
+    match: { kind: "prefix", paths: ["/settings/telemetry"] },
+    docsSlug: "dashboard/settings",
+  },
   // Chrome-free / non-nav routes. `/health` still deep-links to docs; `/login`,
   // `/claim`, and `/settings/auth/reset` render their own first-run chrome.
   {

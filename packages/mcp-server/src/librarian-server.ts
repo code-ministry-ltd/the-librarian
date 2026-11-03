@@ -59,6 +59,7 @@ import { logger } from "./logging.js";
 import { logEmbedBacklog } from "./embed-backlog-log.js";
 import { createFlagGroomTrigger } from "./flag-groom-trigger.js";
 import { ensureInstallDate } from "./notices.js";
+import { sendIfDue } from "./telemetry.js";
 import {
   type ActorDisplayProvider,
   type GuardedAuthProvider,
@@ -136,6 +137,12 @@ export interface LibrarianServerOptions {
    * the scheduler. The bin passes LIBRARIAN_JOURNAL_TICK_MS (default 15 min).
    */
   journalPollMs?: number;
+  /**
+   * Usage-stats due-check cadence in ms (spec 085); absent or 0 disables the scheduler. The bin
+   * passes LIBRARIAN_TELEMETRY_TICK_MS (default 1 hour). A tick sends only when a ping is due and
+   * allowed (telemetry.ts), so most ticks do nothing.
+   */
+  telemetryPollMs?: number;
   /** Transcript idle settle window in ms; absent → the core default. */
   transcriptIdleMs?: number;
   /** Transcript size-cap safety valve in bytes; absent → the core default. */
@@ -294,6 +301,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     legacyIntakeEnv,
   } = options;
   const journalPollMs = options.journalPollMs ?? 0;
+  const telemetryPollMs = options.telemetryPollMs ?? 0;
   const bootstrapClaim = options.bootstrapClaim ?? createInertBootstrapClaimHandle();
 
   // The store construction site — the vaultRouter provider seam's delivery point (spec 062 T1,
@@ -660,6 +668,18 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         })
       : null;
 
+  const telemetryScheduler =
+    telemetryPollMs > 0
+      ? createSerialScheduler({
+          task: async () => {
+            const result = await sendIfDue(store);
+            if (result.sent) logger.info({ at: result.at }, "sent anonymous usage stats");
+          },
+          intervalMs: telemetryPollMs,
+          onError: () => logger.error("usage-stats tick failed"),
+        })
+      : null;
+
   const transcriptSweepScheduler =
     transcriptSweepTickMs > 0
       ? createSerialScheduler({
@@ -680,6 +700,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     transcriptSweepScheduler,
     flagGroomScheduler,
     journalScheduler,
+    telemetryScheduler,
   ].filter((scheduler): scheduler is SerialScheduler => scheduler !== null);
 
   const onInternalListening = (): void => {

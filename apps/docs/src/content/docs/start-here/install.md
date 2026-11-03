@@ -17,6 +17,10 @@ If someone on your team has already run The Librarian and given you an **MCP URL
 and an **agent token**, you can skip straight to step 2 and connect your agent.
 :::
 
+:::note[Anonymous usage stats]
+**Anonymous usage stats are on by default.** Once a week a server sends a few anonymous facts (a random install id, the version, OS, how it runs, which harness families are in use, a rough memory count and three feature switches), never anything from your memories. Nothing goes until a day after the dashboard has told you about it. Turn it off in Settings → Telemetry, or with `DO_NOT_TRACK=1` or `LIBRARIAN_TELEMETRY=off`. See [what is sent](/deploy-and-operate/self-host/#anonymous-usage-stats).
+:::
+
 ## Step 1 — Run a server
 
 On the machine that will host The Librarian (a spare box, a small cloud VM, or

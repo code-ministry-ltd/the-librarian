@@ -68,12 +68,14 @@ beforeEach(() => {
   store = createLibrarianStore({ dataDir });
   __resetNoticesCacheForTests();
   delete process.env.LIBRARIAN_DISABLE_NOTICES;
+  delete process.env.DO_NOT_TRACK;
 });
 
 afterEach(() => {
   store.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   delete process.env.LIBRARIAN_DISABLE_NOTICES;
+  delete process.env.DO_NOT_TRACK;
 });
 
 describe("parseNotices", () => {
@@ -262,6 +264,7 @@ describe("getRemoteNotices", () => {
 describe("notices tRPC", () => {
   it("lists, marks read and switches the fetch, for admins only", async () => {
     process.env.LIBRARIAN_DISABLE_NOTICES = "true";
+    process.env.DO_NOT_TRACK = "1"; // keep the usage-stats disclosure (spec 085) out of the count
     store.setSetting(PRIMER_REVIEW_PENDING_KEY, "true");
     const first = await caller().notices.list();
     expect(first.unread).toBe(1);
