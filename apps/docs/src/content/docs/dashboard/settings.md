@@ -35,6 +35,15 @@ stays short, and every save is tracked in history. Keep it generic guidance — 
 put secrets or person-specific detail in it, because it is served to agents and is
 readable without a token.
 
+If you have never edited the primer, upgrading The Librarian replaces it with the new
+default when the default changes. Once you have edited it, it is yours: upgrades never
+touch it, so compare it with the [shipped default](/reference/primer/) after an upgrade
+if you want the newer wording.
+
+Every recall an agent makes by search also ends with one line asking it to `remember`
+the answer if it had to find it some other way, so the next recall finds it. That line
+is part of the server, not the primer, and applies whatever your primer says.
+
 ## Curator
 
 **Settings → Curator** is where you configure the curator's language model and when

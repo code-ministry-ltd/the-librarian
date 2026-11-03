@@ -975,6 +975,8 @@ export {
   type PrimerStore,
   readPrimer,
   seedPrimer,
+  PREVIOUS_DEFAULT_PRIMER_SHA256,
+  isPreviousDefaultPrimer,
   setPrimer,
 } from "./primer.js";
 export {

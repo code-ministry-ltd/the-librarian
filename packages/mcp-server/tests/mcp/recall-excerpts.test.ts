@@ -3,6 +3,7 @@
 // returns whole memories — active ones only, in the order asked.
 
 import { handleMcpPayload } from "@librarian/mcp-server";
+import { RECALL_NUDGE } from "../../dist/mcp/tools/recall.js";
 import { describe, expect, it } from "vitest";
 import { withStore } from "../../../../test/helpers.js";
 
@@ -45,8 +46,16 @@ describe("recall excerpts", () => {
     await withStore(async (store) => {
       store.createMemory({ agent_id: "codex", title: "Port", body: "the api listens on 3838" });
       expect(await recall(store, { query: "api port" })).toBe(
-        "Relevant Memories\n\n- Port: the api listens on 3838",
+        `Relevant Memories\n\n- Port: the api listens on 3838\n\n${RECALL_NUDGE}`,
       );
+    });
+  });
+
+  it("ends every search with the nudge to remember an answer found elsewhere (spec 082)", async () => {
+    await withStore(async (store) => {
+      const text = await recall(store, { query: "nothing is stored yet" });
+      expect(text).toBe(`Relevant Memories\n\nNo relevant memories found.\n\n${RECALL_NUDGE}`);
+      expect(RECALL_NUDGE).toMatch(/find the answer another way, `remember` it/);
     });
   });
 });

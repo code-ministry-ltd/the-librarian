@@ -14,6 +14,7 @@
 // prompt-injection heuristics (no "ignore/disregard …instructions" phrasing) —
 // Hermes regex-screens MCP-adjacent content before it reaches the model.
 
+import { createHash } from "node:crypto";
 import type { SettingsStore } from "./store/settings-types.js";
 
 /** Vault-relative path of the primer file (operator-editable, git-committed). */
@@ -32,9 +33,9 @@ export const PRIMER_MAX_BYTES = 2048;
  * behavioral loop, (b) memory verbs, (c) handoff protocol, (d) learn protocol,
  * (e) references, (f) private mode (D11), (g) fail-soft posture.
  */
-export const DEFAULT_PRIMER = `You are connected to The Librarian — durable, shared memory across sessions, agents, and harnesses; recall before answering anything that may have prior context, and remember durable facts, preferences, and decisions as you learn them.
+export const DEFAULT_PRIMER = `You are connected to The Librarian — durable, shared memory across sessions, agents, and harnesses; recall before answering anything that may have prior context, and remember what you learn.
 
-Memory: you HAVE \`recall\` and \`remember\` — use them; do not rely on this window alone. Call \`recall\` before answering whenever prior context may exist, and ALWAYS after a compaction or context reset (earlier facts live on in memory). Call \`remember\` whenever you learn a durable fact, preference, or decision — fire-and-forget; the curator files it. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason: what is wrong and, if known, what is true now. Relay the returned status: queued review is not completion, so do not claim a correction until its outcome is confirmed.
+Memory: you HAVE \`recall\` and \`remember\` — use them; do not rely on this window alone. Call \`recall\` before answering whenever prior context may exist, and ALWAYS after a compaction or context reset. Call \`remember\` whenever you discover, learn or create something likely to be useful later that isn't obvious from the working directory, including answers you had to dig for. Fire-and-forget. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason: what is wrong and, if known, what is true now. Relay the returned status: queued review is not completion, so do not claim a correction until its outcome is confirmed.
 
 Handoffs: create a handoff only when the user has explicitly asked for one — to hand work off, call \`store_handoff\` with a document carrying the five required sections — Start & intent, Journey, Current state, What's left, Open questions. To take over work, call \`list_handoffs\`, then \`claim_handoff\` the one you want.
 
@@ -115,6 +116,9 @@ export function setPrimer(
  *    preamble appended when set — both rode the old primer channel. The
  *    migration write is exempt from the 2 KB cap, like the addendum migration.
  *  - File absent + no legacy value → seed the shipped DEFAULT_PRIMER.
+ *  - File present and byte-for-byte a previously shipped default (never edited) → replaced
+ *    with the current DEFAULT_PRIMER, so a changed default reaches installs that never
+ *    customised it (spec 082). An edited primer is never touched.
  *
  * The legacy keys are retired unconditionally once observed, so they can never
  * re-seed a later edit (mirrors migrateCuratorAddendum). Safe to run on every
@@ -127,13 +131,35 @@ export function seedPrimer(
   const legacyNote = readLegacySetting(store, LEGACY_AWARENESS_PRIMER_KEY);
   const legacyStyle = readLegacySetting(store, LEGACY_WORKING_STYLE_KEY);
 
-  if (store.readPrimer() === null) {
+  const current = store.readPrimer();
+  if (current === null) {
     store.writePrimer(composeLegacyPrimer(legacyNote, legacyStyle) ?? DEFAULT_PRIMER);
+  } else if (isPreviousDefaultPrimer(current)) {
+    store.writePrimer(DEFAULT_PRIMER);
   }
 
   // Retire the legacy keys regardless — they must never re-seed an edited file.
   if (legacyNote !== null) store.deleteSetting(LEGACY_AWARENESS_PRIMER_KEY);
   if (legacyStyle !== null) store.deleteSetting(LEGACY_WORKING_STYLE_KEY);
+}
+
+/**
+ * SHA-256 of every default primer shipped before the current one, oldest first (from the git
+ * history of DEFAULT_PRIMER). A primer.md matching one of these was seeded and never edited, so
+ * seedPrimer may upgrade it. Add the outgoing default's hash here whenever DEFAULT_PRIMER changes.
+ */
+export const PREVIOUS_DEFAULT_PRIMER_SHA256: readonly string[] = [
+  "9e746f4eb488866e93359b37f936d10ae94f8ac20cfbe2f250f3d5bc851625e4",
+  "01b6fcbaa445322e6416f8e18165d10069ba45714457820672f2e2b1c6f00cb7",
+  "92d10d040ebf539ab2d51855b428b5d9565487113a9026ce7affb8a47fbc8365",
+  "af38415613a24cb426c2fb422d088da711974ccf5b0c24cf8fc64ee9bcc3adb3",
+  "74a9ecb9f6ec38573adcb74cde58695c1617629a806fd14439ace571c7b074a0",
+  "134ccaee77a1b84ff57ddda9498713151cdbabd8cc2b691e9a980c67f843152b",
+];
+
+export function isPreviousDefaultPrimer(content: string): boolean {
+  const hash = createHash("sha256").update(content).digest("hex");
+  return PREVIOUS_DEFAULT_PRIMER_SHA256.includes(hash);
 }
 
 function readLegacySetting(store: Pick<SettingsStore, "getSetting">, key: string): string | null {
