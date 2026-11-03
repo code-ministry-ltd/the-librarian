@@ -109,6 +109,7 @@ export default defineConfig({
             { slug: "dashboard/curator" },
             { slug: "dashboard/vault" },
             { slug: "dashboard/activity" },
+            { slug: "dashboard/logs" },
             { slug: "dashboard/health" },
             { slug: "dashboard/settings" },
           ],

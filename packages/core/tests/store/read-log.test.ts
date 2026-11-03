@@ -3,22 +3,22 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { READ_LOG_FILE, ReadRecordSchema, createLibrarianStore } from "@librarian/core";
-import { buildReadRecord, createReadLog, readLogEnabled } from "@librarian/core/store-internal";
+import {
+  READ_LOG_ENABLED_KEY,
+  READ_LOG_FILE,
+  ReadRecordSchema,
+  createLibrarianStore,
+} from "@librarian/core";
+import { buildReadRecord, createReadLog } from "@librarian/core/store-internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let dataDir = "";
-let originalSwitch: string | undefined;
 
 beforeEach(() => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-read-log-"));
-  originalSwitch = process.env.LIBRARIAN_READ_LOG;
-  delete process.env.LIBRARIAN_READ_LOG;
 });
 
 afterEach(() => {
-  if (originalSwitch === undefined) delete process.env.LIBRARIAN_READ_LOG;
-  else process.env.LIBRARIAN_READ_LOG = originalSwitch;
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -34,12 +34,22 @@ const recallRead = {
 } as const;
 
 describe("read log switch", () => {
-  it("is off unless LIBRARIAN_READ_LOG is on, true or 1", () => {
-    expect(readLogEnabled({})).toBe(false);
-    expect(readLogEnabled({ LIBRARIAN_READ_LOG: "off" })).toBe(false);
-    expect(readLogEnabled({ LIBRARIAN_READ_LOG: "yes please" })).toBe(false);
-    for (const value of ["on", "ON", "true", "1", " on "]) {
-      expect(readLogEnabled({ LIBRARIAN_READ_LOG: value })).toBe(true);
+  it("follows the dashboard setting at once, with no restart", async () => {
+    const store = createLibrarianStore({ dataDir, readLog: { armed: true } });
+    try {
+      expect(store.readLogActive).toBe(false);
+      store.setSetting(READ_LOG_ENABLED_KEY, "true");
+      expect(store.readLogActive).toBe(true);
+      await store.recordRead(recallRead);
+      store.setSetting(READ_LOG_ENABLED_KEY, "false");
+      expect(store.readLogActive).toBe(false);
+      await store.recordRead(recallRead);
+      store.setSetting(READ_LOG_ENABLED_KEY, "true");
+      store.deleteSetting(READ_LOG_ENABLED_KEY);
+      expect(store.readLogActive).toBe(false);
+      expect((await store.readReads()).total).toBe(1);
+    } finally {
+      store.close();
     }
   });
 
@@ -56,9 +66,9 @@ describe("read log switch", () => {
   });
 
   it("writes nothing from an unarmed store even when switched on", async () => {
-    process.env.LIBRARIAN_READ_LOG = "on";
     const store = createLibrarianStore({ dataDir });
     try {
+      store.setSetting(READ_LOG_ENABLED_KEY, "true");
       expect(store.readLogActive).toBe(false);
       await store.recordRead(recallRead);
       expect(fs.existsSync(path.join(dataDir, READ_LOG_FILE))).toBe(false);
@@ -70,9 +80,9 @@ describe("read log switch", () => {
 
 describe("read log rows", () => {
   it("round-trips every kind newest-first, with 0600 permissions", async () => {
-    process.env.LIBRARIAN_READ_LOG = "on";
     const store = createLibrarianStore({ dataDir, readLog: { armed: true } });
     try {
+      store.setSetting(READ_LOG_ENABLED_KEY, "true");
       expect(store.readLogActive).toBe(true);
       await store.recordRead(recallRead);
       await store.recordRead({
@@ -94,6 +104,13 @@ describe("read log rows", () => {
       ]);
       expect(rows[3]).toMatchObject({ v: 1, ...recallRead });
       expect((await store.readReads({ kind: "primer" })).rows).toHaveLength(1);
+      const exported = await store.exportReads();
+      expect(exported.map((row) => row.kind)).toEqual([
+        "recall",
+        "search_references",
+        "primer",
+        "journal",
+      ]);
       const mode = fs.statSync(path.join(dataDir, READ_LOG_FILE)).mode & 0o777;
       expect(mode).toBe(0o600);
     } finally {

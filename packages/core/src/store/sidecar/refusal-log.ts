@@ -174,6 +174,8 @@ export type RefusalLogErrorSink = (error: unknown) => void;
 export interface RefusalLog {
   record(input: RecordRefusalInput): Promise<void>;
   read(options?: ReadRefusalsOptions): Promise<ReadRefusalsResult>;
+  /** Every valid row in both generations, oldest first, for a download (spec 081). */
+  exportAll(): Promise<RefusalRecord[]>;
   /** Persist accepted writes and one counted row for any finite dropped burst. */
   flush(): Promise<void>;
 }
@@ -528,12 +530,16 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
     return rows;
   };
 
-  const performRead = async (options: ReadRefusalsOptions): Promise<ReadRefusalsResult> => {
+  const readGenerations = async (): Promise<RefusalRecord[]> => {
     const [prior, current] = await Promise.all([
       readFile(`${deps.filePath}.1`),
       readFile(deps.filePath),
     ]);
-    const newestFirst = [...prior, ...current].reverse();
+    return [...prior, ...current];
+  };
+
+  const performRead = async (options: ReadRefusalsOptions): Promise<ReadRefusalsResult> => {
+    const newestFirst = (await readGenerations()).reverse();
     const filtered =
       options.kind === undefined
         ? newestFirst
@@ -574,5 +580,15 @@ export function createRefusalLog(deps: RefusalLogDeps): RefusalLog {
     return result;
   };
 
-  return { record, read, flush };
+  const exportAll = (): Promise<RefusalRecord[]> => {
+    void flush();
+    const result = queue.then(readGenerations).catch((error: unknown) => {
+      reportError(error);
+      return [] as RefusalRecord[];
+    });
+    queue = result.then(() => undefined);
+    return result;
+  };
+
+  return { record, read, exportAll, flush };
 }

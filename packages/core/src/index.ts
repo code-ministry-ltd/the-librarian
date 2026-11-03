@@ -691,7 +691,7 @@ export {
   type RecordReadInput,
   READ_LOG_FILE,
   ReadRecordSchema,
-  readLogEnabled,
+  READ_LOG_ENABLED_KEY,
   shortHash,
 } from "./store/sidecar/read-log.js";
 export {

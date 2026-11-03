@@ -18,8 +18,11 @@ export type SidecarErrorSink = (error: unknown) => void;
 
 export interface NdjsonSidecarDeps<R> {
   filePath: string;
-  /** False makes every write a no-op and never creates the file. */
-  active: boolean;
+  /**
+   * False makes every write a no-op and never creates the file. A function is consulted on each
+   * write, so a switch the operator flips at runtime takes effect without a restart.
+   */
+  active: boolean | (() => boolean);
   /** Every row is validated against this before it is written, and again when it is read. */
   schema: z.ZodType<R>;
   /** Build the counted row persisted for a burst of shed writes. */
@@ -50,6 +53,8 @@ export interface NdjsonSidecar<R> {
   /** Admit one already-built row. Always resolves; a failure is reported, never thrown. */
   append(build: (ts: string) => R | undefined): Promise<void>;
   read(options?: SidecarReadOptions<R>): Promise<SidecarReadResult<R>>;
+  /** Every valid row in both generations, oldest first, for a download. */
+  exportAll(): Promise<R[]>;
   flush(): Promise<void>;
   readonly active: boolean;
 }
@@ -71,6 +76,15 @@ export function createNdjsonSidecar<R>(deps: NdjsonSidecarDeps<R>): NdjsonSideca
   if (deps.maxBytes <= 0 || capacity <= 0 || refillPerSecond <= 0 || queueCapacity <= 0) {
     throw new Error("sidecar bounds must all be greater than zero");
   }
+
+  const isActive = (): boolean => {
+    if (typeof deps.active === "boolean") return deps.active;
+    try {
+      return deps.active();
+    } catch {
+      return false;
+    }
+  };
 
   let tokens = capacity;
   let lastRefillMs: number | undefined;
@@ -215,7 +229,7 @@ export function createNdjsonSidecar<R>(deps: NdjsonSidecarDeps<R>): NdjsonSideca
   };
 
   const append = (build: (ts: string) => R | undefined): Promise<void> => {
-    if (!deps.active) return Promise.resolve();
+    if (!isActive()) return Promise.resolve();
     try {
       const at = now();
       const ts = at.toISOString();
@@ -270,12 +284,16 @@ export function createNdjsonSidecar<R>(deps: NdjsonSidecarDeps<R>): NdjsonSideca
     return rows;
   };
 
-  const performRead = async (options: SidecarReadOptions<R>): Promise<SidecarReadResult<R>> => {
+  const readGenerations = async (): Promise<R[]> => {
     const [prior, current] = await Promise.all([
       readFile(`${deps.filePath}.1`),
       readFile(deps.filePath),
     ]);
-    const newestFirst = [...prior, ...current].reverse();
+    return [...prior, ...current];
+  };
+
+  const performRead = async (options: SidecarReadOptions<R>): Promise<SidecarReadResult<R>> => {
+    const newestFirst = (await readGenerations()).reverse();
     const filtered = options.filter ? newestFirst.filter(options.filter) : newestFirst;
     const limit = Math.max(1, Math.min(1_000, Math.trunc(options.limit ?? 200)));
     const offset = Math.max(0, Math.trunc(options.offset ?? 0));
@@ -286,7 +304,7 @@ export function createNdjsonSidecar<R>(deps: NdjsonSidecarDeps<R>): NdjsonSideca
 
   const flush = (): Promise<void> => {
     try {
-      if (deps.active) {
+      if (droppedCount > 0) {
         const snapshot = takeDropped(now().toISOString());
         if (snapshot !== undefined) enqueue(snapshot.record, () => restoreDropped(snapshot));
       }
@@ -308,5 +326,23 @@ export function createNdjsonSidecar<R>(deps: NdjsonSidecarDeps<R>): NdjsonSideca
     return result;
   };
 
-  return { append, read, flush, active: deps.active };
+  const exportAll = (): Promise<R[]> => {
+    void flush();
+    const result = queue.then(readGenerations).catch((error: unknown) => {
+      reportError(error);
+      return [] as R[];
+    });
+    queue = result.then(() => undefined);
+    return result;
+  };
+
+  return {
+    append,
+    read,
+    exportAll,
+    flush,
+    get active() {
+      return isActive();
+    },
+  };
 }

@@ -253,12 +253,13 @@ re-enabling enforcement. Deleting only the flag is not enough: an instance whose
 is still enabled refuses claims. Disabling only auth is also not enough: the durable
 burn flag refuses claims until the operator removes it.
 
-## Seeing what agents read (`LIBRARIAN_READ_LOG`)
+## Seeing what agents read
 
 The Librarian keeps a full history of what goes **into** memory. To see what comes **out**,
-switch on the read log by setting `LIBRARIAN_READ_LOG=on` in the server's environment and
-restarting it. It's off by default, because the queries agents send can be as personal as the
-memories themselves.
+turn on the read log in the dashboard under **Settings → Dashboard → Read log**. It takes
+effect at once, with no restart. It's off by default, because the queries agents send can be as
+personal as the memories themselves. Read it, or download it, on the
+[Logs](/dashboard/logs/) page.
 
 With it on, the server appends one line to `read-log.ndjson` in the data directory for every:
 

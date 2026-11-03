@@ -167,6 +167,17 @@ export const ROUTES: readonly Route[] = [
     inPalette: true,
     docsSlug: "dashboard/archive",
   },
+  {
+    href: "/logs",
+    group: "primary",
+    label: "Logs",
+    match: { kind: "exact", paths: ["/logs"] },
+    id: "nav-logs",
+    paletteLabel: "Go to Logs",
+    hint: "",
+    inPalette: true,
+    docsSlug: "dashboard/logs",
+  },
   // Activity — not a nav tab (its active state belongs to Vault, above), but a
   // command-palette target and a docs page in its own right.
   {

@@ -6,12 +6,14 @@ import { createNdjsonSidecar, type SidecarErrorSink } from "./ndjson-sidecar.js"
 
 /**
  * The read log (spec 080): one row per read an agent makes of the Librarian, so an operator can
- * see what agents ask for, what they get back, and what startup injection costs. Opt-in
- * (`LIBRARIAN_READ_LOG=on`) because query text can be as sensitive as the memories themselves;
- * it never leaves the server's data directory.
+ * see what agents ask for, what they get back, and what startup injection costs. Opt-in (the
+ * operator turns it on in the dashboard, spec 081) because query text can be as sensitive as the
+ * memories themselves; it never leaves the server's data directory.
  */
 
 export const READ_LOG_FILE = "read-log.ndjson";
+/** The settings key behind the dashboard switch. Absent or anything but `"true"` means off. */
+export const READ_LOG_ENABLED_KEY = "observability.readLog.enabled";
 export const READ_LOG_MAX_BYTES = 20 * 1024 * 1024;
 export const READ_LOG_BUCKET_CAPACITY = 240;
 export const READ_LOG_REFILL_PER_SECOND = 4;
@@ -120,6 +122,8 @@ export interface ReadReadsResult {
 export interface ReadLog {
   record(input: RecordReadInput): Promise<void>;
   read(options?: ReadReadsOptions): Promise<ReadReadsResult>;
+  /** Every retained row, oldest first, for a download. */
+  exportAll(): Promise<ReadRecord[]>;
   flush(): Promise<void>;
   /** True when this process writes rows; call sites skip building a row when it is false. */
   readonly active: boolean;
@@ -130,17 +134,11 @@ export interface ReadLogDeps {
   armed: boolean;
   onError?: SidecarErrorSink;
   now?: () => Date;
-  /** Test seam: overrides the `LIBRARIAN_READ_LOG` switch. */
-  enabled?: boolean;
+  /** The operator's switch, consulted on every read; absent means off. */
+  enabled?: boolean | (() => boolean);
   maxBytes?: number;
   bucketCapacity?: number;
   bucketRefillPerSecond?: number;
-}
-
-/** `on`, `true` and `1` (any case) switch the read log on; anything else leaves it off. */
-export function readLogEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = env.LIBRARIAN_READ_LOG?.trim().toLowerCase();
-  return raw === "on" || raw === "true" || raw === "1";
 }
 
 /** First 12 hex characters of the SHA-256 of a text: enough to tell primer versions apart. */
@@ -199,9 +197,10 @@ export function buildReadRecord(input: RecordReadInput, ts: string): ReadRecord 
 }
 
 export function createReadLog(deps: ReadLogDeps): ReadLog {
+  const enabled = deps.enabled ?? false;
   const sidecar = createNdjsonSidecar<ReadRecord>({
     filePath: deps.filePath,
-    active: deps.armed && (deps.enabled ?? readLogEnabled()),
+    active: () => deps.armed && (typeof enabled === "boolean" ? enabled : enabled()),
     schema: ReadRecordSchema,
     makeDropped: (ts, count, windowStart) => ({ v: 1, ts, kind: "dropped", count, windowStart }),
     droppedCount: (record) => (record.kind === "dropped" ? record.count : 0),
@@ -219,7 +218,10 @@ export function createReadLog(deps: ReadLogDeps): ReadLog {
         ...(options.offset === undefined ? {} : { offset: options.offset }),
         ...(options.kind === undefined ? {} : { filter: (row) => row.kind === options.kind }),
       }),
+    exportAll: sidecar.exportAll,
     flush: sidecar.flush,
-    active: sidecar.active,
+    get active() {
+      return sidecar.active;
+    },
   };
 }
