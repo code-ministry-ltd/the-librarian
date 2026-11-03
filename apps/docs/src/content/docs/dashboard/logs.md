@@ -34,9 +34,11 @@ The read log is off by default, because the queries agents send can be as person
 memories themselves. Turn it on in **[Settings → Dashboard](/dashboard/settings/#dashboard)**
 under **Read log**. It takes effect at once; no restart.
 
-A **Reads** entry marked **Note** is a recall or reference search that found nothing — the
-clearest sign of a gap in what The Librarian knows. What each entry holds, and how the file is
-bounded and protected, is in
+A **Reads** entry marked **Note** is a recall or reference search that returned nothing. That is
+rare: recall ranks by similarity with no relevance cut-off, so it almost always returns its
+nearest matches, relevant or not. Whether those results were any use can't be read from the log
+alone; it needs the conversation they were returned into. What each entry holds, and how the file
+is bounded and protected, is in
 [Seeing what agents read](/deploy-and-operate/self-host/#seeing-what-agents-read).
 
 ## Downloads
