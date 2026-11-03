@@ -14,6 +14,7 @@
 // the staged-restore step, then hands resolved values here. This module never
 // reads `process.env`, so the composition is drivable from any caller.
 
+import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
@@ -57,6 +58,7 @@ import { createHttpServer } from "./http/server.js";
 import { logger } from "./logging.js";
 import { logEmbedBacklog } from "./embed-backlog-log.js";
 import { createFlagGroomTrigger } from "./flag-groom-trigger.js";
+import { ensureInstallDate } from "./notices.js";
 import {
   type ActorDisplayProvider,
   type GuardedAuthProvider,
@@ -448,6 +450,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   migrateJobEnablement(store, {
     ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
   });
+
+  // Record the install's first-boot date once (spec 084), so a notice meant only for installs that
+  // existed before it was written can tell. Older installs use their vault's first commit.
+  ensureInstallDate(store, path.join(dataDir, "vault"));
 
   // Primer migration (spec 083): the default now lives in code and vault/primer.md holds only
   // the operator's addendum. Once per install, a pre-083 primer.md that is an untouched old

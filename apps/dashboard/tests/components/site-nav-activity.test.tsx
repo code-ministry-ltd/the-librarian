@@ -27,6 +27,9 @@ vi.mock("@/lib/trpc-client", () => ({
   },
 }));
 
+// The notices bell has its own test (notices-button.test.tsx).
+vi.mock("@/components/notices-button", () => ({ NoticesButton: () => null }));
+
 const { SiteNav } = await import("@/components/site-nav");
 
 beforeEach(() => {

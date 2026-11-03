@@ -27,6 +27,7 @@ import { intakeRouter } from "./intake.js";
 import { llmRouter } from "./llm.js";
 import { logsRouter } from "./logs.js";
 import { memoriesRouter } from "./memories.js";
+import { noticesRouter } from "./notices.js";
 import { tokensRouter } from "./tokens.js";
 import { router } from "./trpc.js";
 import { vaultRouter } from "./vault.js";
@@ -57,6 +58,7 @@ export const coreRouterRecord = {
   intake: intakeRouter,
   llm: llmRouter,
   logs: logsRouter,
+  notices: noticesRouter,
   memories: memoriesRouter,
   tokens: tokensRouter,
   vault: vaultRouter,
