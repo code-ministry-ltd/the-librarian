@@ -43,18 +43,24 @@ function seed(dataDir: string): void {
   }
 }
 
-async function readRows(dataDir: string): Promise<Record<string, unknown>[]> {
+function readRows(dataDir: string): Record<string, unknown>[] {
   const file = path.join(dataDir, READ_LOG_FILE);
-  // The append is fire-and-forget; give the server's queue a moment to land it.
-  for (let i = 0; i < 50 && !fs.existsSync(file); i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
   if (!fs.existsSync(file)) return [];
   return fs
     .readFileSync(file, "utf8")
     .split("\n")
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+/** The append is fire-and-forget in a spawned server; wait for the row, generously under load. */
+async function waitForJournalRows(dataDir: string): Promise<Record<string, unknown>[]> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const rows = readRows(dataDir).filter((row) => row.kind === "journal");
+    if (rows.length > 0 || Date.now() > deadline) return rows;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 describe("read log: GET /journal.md", () => {
@@ -67,7 +73,7 @@ describe("read log: GET /journal.md", () => {
       const res = await fetch(`${server.url}/journal.md?max_chars=9500`, { headers: AGENT });
       expect(res.status).toBe(200);
       const text = await res.text();
-      const rows = (await readRows(dataDir)).filter((row) => row.kind === "journal");
+      const rows = await waitForJournalRows(dataDir);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ v: 1, resultChars: text.length, maxChars: 9500 });
     } finally {
