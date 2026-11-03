@@ -1,35 +1,42 @@
-// Primer settings (spec 041 A1, repointed by rethink T11). Hosts the
-// primer — the one ≤2KB vault/primer.md document delivered when an agent
-// connects (MCP initialize `instructions` + GET /primer.md). Reads the current
-// primer server-side (the boot-seeded default on a fresh install) and renders
-// the admin field. Gated like the rest of the dashboard. The Settings menu
-// in the top nav covers the cross-page context — no page-level header here
-// (the form's own Primer heading + subtitle carries all the meaning).
+// Primer settings (spec 041 A1, repointed by rethink T11, reshaped by spec 083). The primer is
+// the shipped default, which every install sends and nobody can edit, followed by the operator's
+// optional addendum (vault/primer.md). This page edits the addendum and previews the complete
+// primer agents receive. Gated like the rest of the dashboard.
 
-import { saveAwarenessPrimerAction } from "@/app/settings/primer/actions";
+import { dismissPrimerReviewAction, savePrimerAddendumAction } from "@/app/settings/primer/actions";
 import { AwarenessPrimerForm } from "@/components/settings/awareness-primer-form";
 import { serverTRPC } from "@/lib/trpc-server";
 
 export const metadata = { title: "Primer · Librarian" };
 export const dynamic = "force-dynamic";
 
-async function loadPrimer(): Promise<string> {
+async function loadPrimer() {
   try {
-    const { primer } = await serverTRPC.awareness.primer.query();
-    return primer;
+    return await serverTRPC.awareness.primer.query();
   } catch {
-    // Fail-soft: a transient read error shouldn't blank the page. The textarea
-    // renders empty; saving will surface any persistent error.
-    return "";
+    return null;
   }
 }
 
 export default async function PrimerSettingsPage() {
-  const primer = await loadPrimer();
+  const view = await loadPrimer();
 
   return (
     <main className="flex flex-col gap-8 p-6">
-      <AwarenessPrimerForm initial={primer} onSave={saveAwarenessPrimerAction} />
+      {view ? (
+        <AwarenessPrimerForm
+          defaultPrimer={view.defaultPrimer}
+          initialAddendum={view.addendum}
+          addendumMaxBytes={view.addendumMaxBytes}
+          reviewPending={view.reviewPending}
+          onSave={savePrimerAddendumAction}
+          onDismissReview={dismissPrimerReviewAction}
+        />
+      ) : (
+        <p role="alert" className="text-sm text-destructive">
+          Couldn&apos;t load the primer from the server. Reload to try again.
+        </p>
+      )}
     </main>
   );
 }

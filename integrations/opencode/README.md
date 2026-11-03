@@ -149,9 +149,9 @@ Privacy + control (it always defers to you):
 | `search_references` | Search long-form reference docs (deliberately not auto-recalled) |
 | `journal` | Read or search the dated history of past conversations ([guide](https://librarian-docs.codeministry.net/guides/journal/)) |
 
-The primer (served from `vault/primer.md` on your server, editable in the
-dashboard) teaches the behavioural loop: recall before answering, remember
-durable facts, the handoff protocol, the learn protocol, private mode, and
+The primer (the shipped default plus your server's optional addendum, edited
+in the dashboard) teaches the behavioural loop: recall before answering, what
+to remember, the handoff protocol, private mode, and
 "never block the user's work if the server is unreachable." Saying "hand
 this off", "pick up where I left off", "save what we learned", or "go
 private" in plain language is the whole interface — handoffs stored here

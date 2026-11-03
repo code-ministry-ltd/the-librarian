@@ -449,10 +449,10 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     ...(legacyIntakeEnv !== undefined ? { legacyIntakeEnv } : {}),
   });
 
-  // Primer seed-on-boot (rethink T11, spec §5.2): guarantee vault/primer.md
-  // exists — absent → the shipped default (or, once, the legacy `awareness.primer`
-  // settings value), committed through the store. Idempotent + no-clobber, so an
-  // operator-edited primer is never touched.
+  // Primer migration (spec 083): the default now lives in code and vault/primer.md holds only
+  // the operator's addendum. Once per install, a pre-083 primer.md that is an untouched old
+  // default clears to an empty addendum, and an edited one is kept as the addendum and flagged
+  // for review. Idempotent, safe every boot.
   seedPrimer(store);
 
   // Curator addendum migration (spec 044 D-1). Move the legacy

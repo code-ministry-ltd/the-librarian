@@ -187,9 +187,9 @@ export function renderPrimer(primer) {
     generatedBanner("packages/core/src/primer.ts (DEFAULT_PRIMER)"),
     "",
     "This is the primer The Librarian ships by default: the connect-time",
-    "instructions delivered to every harness over MCP. A deployment's *live* primer",
-    "is operator-editable at `vault/primer.md`; this page documents the shipped",
-    "default, reproduced verbatim.",
+    "instructions delivered to every harness over MCP. Every install sends it, and it",
+    "can't be edited or turned off. An operator can add an addendum after it",
+    "(`vault/primer.md`, edited in Settings → Primer); the whole primer is capped at 2 KB.",
     "",
   ].join("\n");
   return `${header}\n${codeFence(primer)}\n`;

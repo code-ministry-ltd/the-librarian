@@ -1,14 +1,15 @@
-// Primer admin tRPC tests (spec 041 A1, repointed by rethink T11).
+// Primer admin tRPC tests (spec 041 A1, repointed by rethink T11, reshaped by spec 083).
 //
-// The dashboard's read/write surface over `vault/primer.md`:
-//   - awareness.primer (query) → the file's content (the shipped default right
-//     after first boot; "" when the operator disabled it);
-//   - awareness.setPrimer (mutation) → commits the new text to the vault file;
-//     refuses >2KB with a teaching BAD_REQUEST (never a 500).
-// Both admin-gated (rejected without an admin bearer). The legacy settings-key
-// primer (`awareness.primer`) is migrated into the file once at boot.
+// The dashboard's read/write surface over the primer: the fixed default plus the operator's
+// addendum (`vault/primer.md`):
+//   - awareness.primer (query) → { primer, defaultPrimer, addendum, reviewPending };
+//   - awareness.setAddendum (mutation) → commits the addendum; refuses >2KB with a teaching
+//     BAD_REQUEST (never a 500);
+//   - awareness.dismissReview (mutation) → clears the migration review notice.
+// All admin-gated. A pre-083 primer.md, and the legacy settings-key primer, migrate into the
+// addendum once at boot.
 
-import { DEFAULT_PRIMER, createLibrarianStore } from "@librarian/core";
+import { DEFAULT_PRIMER, composePrimer, createLibrarianStore } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 
@@ -51,6 +52,9 @@ async function trpcGet<T>(server: ServerHandle, path: string): Promise<T> {
 
 interface PrimerResult {
   primer: string;
+  defaultPrimer: string;
+  addendum: string;
+  reviewPending: boolean;
 }
 
 describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
@@ -74,10 +78,10 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
       });
       expect(readAgent.status).toBe(404);
 
-      const writeAgent = await fetch(`${server.url}/trpc/awareness.setPrimer`, {
+      const writeAgent = await fetch(`${server.url}/trpc/awareness.setAddendum`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer agent-token" },
-        body: JSON.stringify({ primer: "x" }),
+        body: JSON.stringify({ addendum: "x" }),
       });
       expect(writeAgent.status).toBe(404);
     } finally {
@@ -95,40 +99,43 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
     }
   });
 
-  it("round-trips a custom primer through write → read", async () => {
+  it("round-trips an addendum: the complete primer is the default followed by it", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const custom = "You have memory. Recall before asking.";
-      const wrote = await trpcPost<PrimerResult>(server, "awareness.setPrimer", { primer: custom });
-      expect(wrote.primer).toBe(custom);
+      const addendum = "Use British English.";
+      const wrote = await trpcPost<PrimerResult>(server, "awareness.setAddendum", { addendum });
+      expect(wrote.addendum).toBe(addendum);
+      expect(wrote.primer).toBe(composePrimer(addendum));
 
       const read = await trpcGet<PrimerResult>(server, "awareness.primer");
-      expect(read.primer).toBe(custom);
+      expect(read.primer).toBe(composePrimer(addendum));
+      expect(read.defaultPrimer).toBe(DEFAULT_PRIMER);
+
+      const publicPrimer = await fetch(`${server.url}/primer.md`);
+      expect(await publicPrimer.text()).toBe(composePrimer(addendum));
     } finally {
       await server.stop();
     }
   });
 
-  it("an explicit empty string disables the primer (reads back '')", async () => {
+  it("an empty addendum leaves the default alone; the primer can't be disabled", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const wrote = await trpcPost<PrimerResult>(server, "awareness.setPrimer", { primer: "" });
-      expect(wrote.primer).toBe("");
-
-      const read = await trpcGet<PrimerResult>(server, "awareness.primer");
-      expect(read.primer).toBe("");
+      const wrote = await trpcPost<PrimerResult>(server, "awareness.setAddendum", { addendum: "" });
+      expect(wrote.addendum).toBe("");
+      expect(wrote.primer).toBe(DEFAULT_PRIMER);
     } finally {
       await server.stop();
     }
   });
 
-  it("refuses an over-2KB primer with a teaching BAD_REQUEST, leaving the file untouched", async () => {
+  it("refuses an over-2KB addendum with a teaching BAD_REQUEST, leaving it untouched", async () => {
     const server = await startHttpServer({ dataDir });
     try {
-      const response = await fetch(`${server.trpcUrl}/trpc/awareness.setPrimer`, {
+      const response = await fetch(`${server.trpcUrl}/trpc/awareness.setAddendum`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${server.token}` },
-        body: JSON.stringify({ primer: "x".repeat(2049) }),
+        body: JSON.stringify({ addendum: "x".repeat(2049) }),
       });
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: { message: string } };
@@ -142,7 +149,28 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
     }
   });
 
-  it("migrates the legacy settings-key primer into vault/primer.md at boot (one-time)", async () => {
+  it("moves an edited pre-083 primer into the addendum at boot, flagged for review", async () => {
+    const custom = "My old custom primer.";
+    const seed = createLibrarianStore({ dataDir });
+    seed.writePrimer(custom);
+    seed.close();
+
+    const server = await startHttpServer({ dataDir });
+    try {
+      const read = await trpcGet<PrimerResult>(server, "awareness.primer");
+      expect(read.addendum).toBe(custom);
+      expect(read.primer).toBe(composePrimer(custom));
+      expect(read.reviewPending).toBe(true);
+
+      const dismissed = await trpcPost<PrimerResult>(server, "awareness.dismissReview");
+      expect(dismissed.reviewPending).toBe(false);
+      expect(dismissed.addendum).toBe(custom);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("migrates the legacy settings-key primer into the addendum at boot (one-time)", async () => {
     const custom = "Legacy settings-key primer.";
     const seed = createLibrarianStore({ dataDir });
     seed.setSetting("awareness.primer", custom);
@@ -151,17 +179,17 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
     const server = await startHttpServer({ dataDir });
     try {
       const read = await trpcGet<PrimerResult>(server, "awareness.primer");
-      expect(read.primer).toBe(custom);
+      expect(read.addendum).toBe(custom);
     } finally {
       await server.stop();
     }
   });
 
-  it("persists an edited primer across a server restart (it is a committed vault file)", async () => {
-    const custom = "Persisted primer.";
+  it("persists an addendum across a server restart (it is a committed vault file)", async () => {
+    const custom = "Persisted addendum.";
     const first = await startHttpServer({ dataDir });
     try {
-      await trpcPost<PrimerResult>(first, "awareness.setPrimer", { primer: custom });
+      await trpcPost<PrimerResult>(first, "awareness.setAddendum", { addendum: custom });
     } finally {
       await first.stop();
     }
@@ -169,7 +197,8 @@ describe("tRPC primer surface (vault/primer.md, rethink T11)", () => {
     const second = await startHttpServer({ dataDir });
     try {
       const read = await trpcGet<PrimerResult>(second, "awareness.primer");
-      expect(read.primer).toBe(custom);
+      expect(read.addendum).toBe(custom);
+      expect(read.reviewPending).toBe(false);
     } finally {
       await second.stop();
     }

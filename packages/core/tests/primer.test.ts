@@ -1,13 +1,12 @@
-// Primer vault file (rethink T11, spec §5.2 / D9–D11).
+// The primer (rethink T11, spec §5.2; reshaped by spec 083).
 //
-// The primer lives at `vault/primer.md` — operator-editable, git-committed,
-// served via MCP initialize `instructions` + GET /primer.md. Under test:
-//   - the shipped default: ≤2KB, critical-first content, injection-safe wording;
-//   - seed-on-boot: absent file → default written (committed); present file →
-//     untouched (no-clobber); legacy settings-key primer migrated once;
-//   - the ≤2KB write cap (same rule/error style as curator addendums);
-//   - the in-memory read cache refreshes on write;
-//   - fail-soft reads (an unreadable vault degrades to "", never throws).
+// Since spec 083 the primer is the shipped DEFAULT (code, always sent, never editable) followed
+// by the operator's ADDENDUM (`vault/primer.md`, ≤2 KB, git-committed). Under test:
+//   - the default: short, carries each protocol, injection-safe wording;
+//   - composition: default alone, or default + blank line + trimmed addendum; never empty;
+//   - the addendum write cap, cache refresh, and review-notice clearing;
+//   - the one-time migration of a pre-083 primer.md and of the legacy settings primer;
+//   - fail-soft reads (an unreadable vault degrades to the default, never throws).
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -19,13 +18,18 @@ import {
   LEGACY_WORKING_STYLE_KEY,
   type LibrarianStore,
   PREVIOUS_DEFAULT_PRIMER_SHA256,
+  PRIMER_ADDENDUM_MIGRATED_KEY,
   PRIMER_MAX_BYTES,
   PRIMER_PATH,
+  composePrimer,
   createLibrarianStore,
   isPreviousDefaultPrimer,
+  primerAddendumMaxBytes,
+  primerReviewPending,
   readPrimer,
+  readPrimerAddendum,
   seedPrimer,
-  setPrimer,
+  setPrimerAddendum,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -66,56 +70,34 @@ If The Librarian is unreachable, continue without it — never block the user's 
 `;
 
 describe("the shipped default primer", () => {
-  it("fits the ≤2KB budget with room for operator edits", () => {
-    expect(Buffer.byteLength(DEFAULT_PRIMER, "utf8")).toBeLessThanOrEqual(PRIMER_MAX_BYTES);
+  it("is short: well under half the old 2 KB budget", () => {
+    expect(Buffer.byteLength(DEFAULT_PRIMER, "utf8")).toBeLessThan(1024);
   });
 
-  it("carries every protocol, critical-first (spec §5.2)", () => {
-    // (a) the behavioral loop leads — first sentence territory.
-    const firstParagraph = DEFAULT_PRIMER.split("\n\n")[0]!;
-    expect(firstParagraph).toMatch(/recall before answering/i);
-    expect(firstParagraph).toMatch(/remember what you learn/i);
-    // What to remember (spec 082): anything likely to be useful later that the working directory
-    // doesn't already say, including answers the agent had to dig for.
-    expect(DEFAULT_PRIMER).toMatch(
-      /discover, learn or create something likely to be useful later/i,
-    );
-    expect(DEFAULT_PRIMER).toMatch(/isn't obvious from the working directory/i);
-    expect(DEFAULT_PRIMER).toMatch(/answers you had to dig for/i);
-    // (b) handoff protocol: store_handoff + the 5 sections; takeover chain.
-    // Creation is explicit-request-only — the restraint that stops agents
-    // from spontaneously handing off at session end.
-    expect(DEFAULT_PRIMER).toContain("store_handoff");
-    expect(DEFAULT_PRIMER).toMatch(/only when the user has explicitly asked/i);
-    for (const heading of [
-      "Start & intent",
-      "Journey",
-      "Current state",
-      "What's left",
-      "Open questions",
-    ]) {
-      expect(DEFAULT_PRIMER).toContain(heading);
+  it("carries each protocol (spec 083)", () => {
+    expect(DEFAULT_PRIMER.split("\n")[0]).toMatch(/connected to The Librarian/);
+    // The recall loop, including after a compaction or reset.
+    expect(DEFAULT_PRIMER).toMatch(/Call `recall` before answering/);
+    expect(DEFAULT_PRIMER).toMatch(/after a compaction or context reset/);
+    // The miss rule (spec 082): remember what recall couldn't give you.
+    expect(DEFAULT_PRIMER).toMatch(/If `recall` doesn't answer your question/);
+    // Restraint on remember: harvesting covers routine facts.
+    expect(DEFAULT_PRIMER).toMatch(/isn't obvious from the working directory/);
+    expect(DEFAULT_PRIMER).toMatch(/don't save routine facts/);
+    // "Factually" wrong: not merely unhelpful for the question at hand.
+    expect(DEFAULT_PRIMER).toMatch(/factually wrong or outdated, call `flag_memory`/);
+    expect(DEFAULT_PRIMER).toContain("search_references");
+    expect(DEFAULT_PRIMER).toContain("`journal`");
+    for (const verb of ["store_handoff", "list_handoffs", "claim_handoff"]) {
+      expect(DEFAULT_PRIMER).toContain(verb);
     }
-    expect(DEFAULT_PRIMER).toContain("list_handoffs");
-    expect(DEFAULT_PRIMER).toContain("claim_handoff");
-    // (c) learn protocol.
-    expect(DEFAULT_PRIMER).toMatch(/once per durable lesson/i);
-    // (c2) the journal verb (spec 077 / ADR 0016): named, and readable while private.
-    expect(DEFAULT_PRIMER).toContain("call `journal` for what happened in past conversations");
-    expect(DEFAULT_PRIMER).toContain("`recall`, `search_references` and `journal` stay available");
-    // (d) private mode (D11): writes blocked, reads stay + logged server-side.
-    expect(DEFAULT_PRIMER).toMatch(/private/i);
-    expect(DEFAULT_PRIMER).toContain("flag_memory");
-    expect(DEFAULT_PRIMER).toMatch(/logs/i);
-    expect(DEFAULT_PRIMER).toMatch(/relay the returned status/i);
-    expect(DEFAULT_PRIMER).toMatch(/server cannot verify its marker/i);
-    expect(DEFAULT_PRIMER).toMatch(
-      /queued by a flag from public context may still correct that memory after switching private/i,
-    );
-    expect(DEFAULT_PRIMER).toMatch(/toggle does not cancel queued work/i);
-    // (e) fail-soft posture.
-    expect(DEFAULT_PRIMER).toMatch(/unreachable/i);
-    expect(DEFAULT_PRIMER).toMatch(/never block the user's work/i);
+    expect(DEFAULT_PRIMER).toMatch(/only when the user asks/);
+    // Private mode: the trigger, the blocked writes, and the logging disclosure.
+    expect(DEFAULT_PRIMER).toMatch(/go private or off the record/);
+    expect(DEFAULT_PRIMER).toMatch(/stop calling `remember`, `store_handoff` and `flag_memory`/);
+    expect(DEFAULT_PRIMER).toMatch(/are logged/);
+    // Fail-soft posture.
+    expect(DEFAULT_PRIMER).toMatch(/unreachable, carry on without it/);
   });
 
   it("avoids prompt-injection-shaped wording (Hermes regex-screens MCP content)", () => {
@@ -123,127 +105,152 @@ describe("the shipped default primer", () => {
   });
 });
 
-describe("seedPrimer (seed-on-boot)", () => {
-  it("writes the default to vault/primer.md when absent, through the store (git-committed)", () => {
-    expect(store!.readPrimer()).toBeNull();
-    seedPrimer(store!);
-    expect(fs.readFileSync(primerFile(), "utf8")).toBe(DEFAULT_PRIMER);
-    expect(store!.readPrimer()).toBe(DEFAULT_PRIMER);
-    // A fresh store on the same dataDir sees the committed file (durability).
-    store!.close();
-    store = createLibrarianStore({ dataDir });
-    expect(store!.readPrimer()).toBe(DEFAULT_PRIMER);
-  });
-
-  it("never clobbers an existing primer (idempotent across boots)", () => {
-    store!.writePrimer("Operator-authored primer.");
-    seedPrimer(store!);
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe("Operator-authored primer.");
-  });
-
-  it("upgrades an unedited previous default to the current one (spec 082)", () => {
-    // The default shipped before spec 082, verbatim: what every untouched install holds.
-    const previous = PREVIOUS_DEFAULT;
-    expect(isPreviousDefaultPrimer(previous)).toBe(true);
-    store!.writePrimer(previous);
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe(DEFAULT_PRIMER);
-  });
-
-  it("leaves a primer alone if it differs from a past default by a single byte", () => {
-    const edited = `${PREVIOUS_DEFAULT} `;
-    store!.writePrimer(edited);
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe(edited);
-  });
-
-  it("never lists the current default as a previous one (no upgrade loop)", () => {
-    const current = createHash("sha256").update(DEFAULT_PRIMER).digest("hex");
-    expect(PREVIOUS_DEFAULT_PRIMER_SHA256).not.toContain(current);
-    expect(isPreviousDefaultPrimer(DEFAULT_PRIMER)).toBe(false);
-  });
-
-  it("seeds from the legacy settings-key primer instead of the default, then retires the key", () => {
-    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "Legacy custom primer.");
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe("Legacy custom primer.");
-    expect(store!.getSetting(LEGACY_AWARENESS_PRIMER_KEY)).toBeNull();
-  });
-
-  it("a retired legacy key never re-seeds a later edit (one-time, no-clobber)", () => {
-    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "Legacy custom primer.");
-    seedPrimer(store!);
-    store!.writePrimer("Edited after migration.");
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe("Edited after migration.");
-  });
-
-  it("appends the legacy working-style preamble (it rode the old primer channel)", () => {
-    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "Legacy note.");
-    store!.setSetting(LEGACY_WORKING_STYLE_KEY, "Be concise.");
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe("Legacy note.\n\nBe concise.");
-    expect(store!.getSetting(LEGACY_WORKING_STYLE_KEY)).toBeNull();
-  });
-
-  it("keeps a lone working-style preamble on top of the new default", () => {
-    store!.setSetting(LEGACY_WORKING_STYLE_KEY, "Always answer in French.");
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe(`${DEFAULT_PRIMER}\n\nAlways answer in French.`);
-  });
-
-  it("honours a legacy explicitly-empty primer (the operator disabled it)", () => {
-    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "");
-    seedPrimer(store!);
-    expect(store!.readPrimer()).toBe("");
-    expect(readPrimer(store!)).toBe("");
-  });
-});
-
-describe("setPrimer (the admin write path)", () => {
-  it("round-trips a custom primer and refreshes the in-memory cache", () => {
-    seedPrimer(store!);
-    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER); // warms the cache
-    setPrimer(store!, "New primer text.");
-    expect(readPrimer(store!)).toBe("New primer text."); // cache refreshed on write
-  });
-
-  it("'' is a valid write — it disables the primer", () => {
-    seedPrimer(store!);
-    setPrimer(store!, "");
-    expect(readPrimer(store!)).toBe("");
-  });
-
-  it("refuses an over-cap primer before any write (bytes, not characters)", () => {
-    seedPrimer(store!);
-    // 1025 two-byte chars = 2050 bytes > 2048, but only 1025 characters.
-    const multiByte = "é".repeat(PRIMER_MAX_BYTES / 2 + 1);
-    expect(() => setPrimer(store!, multiByte)).toThrow(
-      `primer must be ≤ ${PRIMER_MAX_BYTES} bytes (~2 KB); got ${PRIMER_MAX_BYTES + 2} bytes`,
-    );
-    // The refused write never touched the file.
+describe("composition (default + addendum)", () => {
+  it("sends the default alone when there is no addendum", () => {
+    expect(composePrimer("")).toBe(DEFAULT_PRIMER);
+    expect(composePrimer("  \n ")).toBe(DEFAULT_PRIMER);
     expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
   });
 
-  it("accepts a primer of exactly the cap", () => {
-    setPrimer(store!, "x".repeat(PRIMER_MAX_BYTES));
-    expect(readPrimer(store!)).toBe("x".repeat(PRIMER_MAX_BYTES));
+  it("appends a trimmed addendum after a blank line", () => {
+    expect(composePrimer("\nUse British English.\n\n")).toBe(
+      `${DEFAULT_PRIMER.trimEnd()}\n\nUse British English.\n`,
+    );
   });
-});
 
-describe("readPrimer (fail-soft)", () => {
-  it("degrades to '' when the vault read throws — never blocks a connection", () => {
+  it("degrades to the default when the addendum can't be read, never throws", () => {
     const broken = {
       readPrimer(): string | null {
         throw new Error("vault unreadable");
       },
     };
-    expect(() => readPrimer(broken)).not.toThrow();
-    expect(readPrimer(broken)).toBe("");
+    expect(readPrimer(broken)).toBe(DEFAULT_PRIMER);
+    expect(readPrimerAddendum(broken)).toBe("");
+  });
+});
+
+describe("setPrimerAddendum (the admin write path)", () => {
+  it("round-trips an addendum and refreshes the cache", () => {
+    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
+    setPrimerAddendum(store!, "Use British English.");
+    expect(readPrimerAddendum(store!)).toBe("Use British English.");
+    expect(readPrimer(store!)).toBe(composePrimer("Use British English."));
+    expect(fs.readFileSync(primerFile(), "utf8")).toBe("Use British English.");
   });
 
-  it("reads '' (no primer) before the seed has run", () => {
-    expect(readPrimer(store!)).toBe("");
+  it("'' clears the addendum; the default is still sent", () => {
+    setPrimerAddendum(store!, "Something.");
+    setPrimerAddendum(store!, "");
+    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
+  });
+
+  it("caps the complete primer at 2 KB (harnesses truncate there), bytes not characters", () => {
+    const limit = primerAddendumMaxBytes();
+    expect(limit).toBeGreaterThan(1000);
+    const multiByte = "é".repeat(Math.floor(limit / 2) + 1);
+    expect(() => setPrimerAddendum(store!, multiByte)).toThrow(
+      `the addendum must be ≤ ${limit} bytes, so the whole primer fits in ${PRIMER_MAX_BYTES} bytes`,
+    );
+    expect(fs.existsSync(primerFile())).toBe(false);
+  });
+
+  it("accepts an addendum that brings the primer to exactly the cap", () => {
+    const exact = "x".repeat(primerAddendumMaxBytes());
+    setPrimerAddendum(store!, exact);
+    expect(Buffer.byteLength(readPrimer(store!), "utf8")).toBe(PRIMER_MAX_BYTES);
+  });
+
+  it("saving clears the migration review notice", () => {
+    store!.writePrimer("My old custom primer.");
+    seedPrimer(store!);
+    expect(primerReviewPending(store!)).toBe(true);
+    setPrimerAddendum(store!, "Trimmed.");
+    expect(primerReviewPending(store!)).toBe(false);
+  });
+});
+
+describe("seedPrimer (the one-time migration to the addendum model)", () => {
+  it("a fresh install writes no file and sends the default", () => {
+    seedPrimer(store!);
+    expect(fs.existsSync(primerFile())).toBe(false);
+    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
+    expect(primerReviewPending(store!)).toBe(false);
+    expect(store!.getSetting(PRIMER_ADDENDUM_MIGRATED_KEY)).toBe("true");
+  });
+
+  it("clears an untouched previous default to an empty addendum, with no notice", () => {
+    expect(isPreviousDefaultPrimer(PREVIOUS_DEFAULT)).toBe(true);
+    store!.writePrimer(PREVIOUS_DEFAULT);
+    seedPrimer(store!);
+    expect(readPrimerAddendum(store!)).toBe("");
+    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
+    expect(primerReviewPending(store!)).toBe(false);
+  });
+
+  it("knows every default shipped before 083, including 1.46.0's, and not the current one", () => {
+    expect(PREVIOUS_DEFAULT_PRIMER_SHA256).toHaveLength(7);
+    const current = createHash("sha256").update(DEFAULT_PRIMER).digest("hex");
+    expect(PREVIOUS_DEFAULT_PRIMER_SHA256).not.toContain(current);
+  });
+
+  it("keeps an edited primer as the addendum and asks the owner to review it", () => {
+    const edited = `${PREVIOUS_DEFAULT} `;
+    store!.writePrimer(edited);
+    seedPrimer(store!);
+    expect(readPrimerAddendum(store!)).toBe(edited);
+    expect(readPrimer(store!)).toBe(composePrimer(edited));
+    expect(primerReviewPending(store!)).toBe(true);
+  });
+
+  it("an empty (formerly disabled) primer now sends the default", () => {
+    store!.writePrimer("");
+    seedPrimer(store!);
+    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
+    expect(primerReviewPending(store!)).toBe(false);
+  });
+
+  it("runs once: a later addendum that happens to match an old default is left alone", () => {
+    seedPrimer(store!);
+    store!.writePrimer(PREVIOUS_DEFAULT);
+    seedPrimer(store!);
+    expect(readPrimerAddendum(store!)).toBe(PREVIOUS_DEFAULT);
+  });
+
+  it("moves the legacy settings primer into the addendum, then retires the key", () => {
+    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "Legacy custom primer.");
+    seedPrimer(store!);
+    expect(readPrimerAddendum(store!)).toBe("Legacy custom primer.");
+    expect(primerReviewPending(store!)).toBe(true);
+    expect(store!.getSetting(LEGACY_AWARENESS_PRIMER_KEY)).toBeNull();
+  });
+
+  it("appends the legacy working-style preamble to the legacy note", () => {
+    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "Legacy note.");
+    store!.setSetting(LEGACY_WORKING_STYLE_KEY, "Be concise.");
+    seedPrimer(store!);
+    expect(readPrimerAddendum(store!)).toBe("Legacy note.\n\nBe concise.");
+    expect(store!.getSetting(LEGACY_WORKING_STYLE_KEY)).toBeNull();
+  });
+
+  it("a lone working-style preamble becomes the addendum", () => {
+    store!.setSetting(LEGACY_WORKING_STYLE_KEY, "Always answer in French.");
+    seedPrimer(store!);
+    expect(readPrimer(store!)).toBe(composePrimer("Always answer in French."));
+  });
+
+  it("a legacy explicitly-empty primer can no longer disable it", () => {
+    store!.setSetting(LEGACY_AWARENESS_PRIMER_KEY, "");
+    seedPrimer(store!);
+    expect(readPrimer(store!)).toBe(DEFAULT_PRIMER);
+    expect(store!.getSetting(LEGACY_AWARENESS_PRIMER_KEY)).toBeNull();
+  });
+
+  it("is durable across a fresh store on the same data dir", () => {
+    store!.writePrimer("Kept.");
+    seedPrimer(store!);
+    store!.close();
+    store = createLibrarianStore({ dataDir });
+    seedPrimer(store!);
+    expect(readPrimer(store!)).toBe(composePrimer("Kept."));
   });
 });

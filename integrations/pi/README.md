@@ -19,7 +19,8 @@ Librarian primer into the system prompt. One install, zero config files.
   the curator to review a wrong or outdated memory: it may correct it in place,
   propose a correction, or leave the flag for a person. The response reports
   queue status, not completion.
-- **Primer injection** — the operator-editable `vault/primer.md` (≤2KB) is
+- **Primer injection** — the primer (the shipped default plus the server's
+  optional addendum, ≤2KB in all) is
   fetched once per process from `GET <server>/primer.md` and appended to the
   system prompt via `before_agent_start`.
 - **The journal at session start** — the recent window of the

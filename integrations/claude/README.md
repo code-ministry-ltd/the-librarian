@@ -208,8 +208,8 @@ curl -X POST "$LIBRARIAN_MCP_URL" \
 
 A healthy response lists exactly 8 tools.
 
-**The agent doesn't follow the protocols.** The primer is served from the
-server's `vault/primer.md` (editable in the dashboard); check
+**The agent doesn't follow the protocols.** The primer is the shipped default
+plus the server's optional addendum (Settings → Primer in the dashboard); check
 `GET <server>/primer.md` returns it. Claude Code truncates server
 instructions at ~2KB — the server enforces the same cap on save.
 
