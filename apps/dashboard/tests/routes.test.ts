@@ -102,7 +102,7 @@ describe("routes — nav strip derivation", () => {
     expect(handoffs.match("/handful")).toBe(false);
   });
 
-  it("derives the eight settings items in order", () => {
+  it("derives the nine settings items in order", () => {
     expect(SETTINGS_ITEMS).toEqual([
       { href: "/settings/dashboard", label: "Dashboard" },
       { href: "/settings/auth", label: "Auth" },
@@ -112,6 +112,7 @@ describe("routes — nav strip derivation", () => {
       { href: "/settings/connect", label: "Connect" },
       { href: "/settings/ingest", label: "Captures" },
       { href: "/settings/backups", label: "Backups" },
+      { href: "/settings/telemetry", label: "Telemetry" },
     ]);
   });
 });

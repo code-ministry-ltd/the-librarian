@@ -157,10 +157,36 @@ export function visibleNotices(
 // ── Local notices ───────────────────────────────────────────────────────────
 
 const PRIMER_REVIEW_ID = "local:primer-review";
+export const TELEMETRY_NOTICE_ID = "local:telemetry";
+
+/** State the local notices depend on that lives outside settings. */
+export interface LocalNoticeContext {
+  /** Usage stats (spec 085) are on and not forced off: the disclosure notice shows. */
+  telemetryOn?: boolean;
+}
 
 /** Notices this server generates from its own state. */
-export function localNotices(store: Pick<SettingsStore, "getSetting">): RemoteNotice[] {
+export function localNotices(
+  store: Pick<SettingsStore, "getSetting">,
+  ctx: LocalNoticeContext = {},
+): RemoteNotice[] {
   const out: RemoteNotice[] = [];
+  if (ctx.telemetryOn) {
+    // The disclosure (spec 085): shown before anything is sent, and for as long as stats are on.
+    out.push({
+      id: TELEMETRY_NOTICE_ID,
+      created: "2026-11-04",
+      severity: "important",
+      title: "Anonymous usage stats are on",
+      body:
+        "Once a week this server sends the project a few anonymous facts: a random install id, " +
+        "the version, the operating system, how it runs, which harness families are in use, a " +
+        "rough memory count and three feature switches. Never your memories, names, paths or " +
+        "exact numbers. Nothing goes until 24 hours after this notice first appeared. You can " +
+        "see exactly what is sent, and turn it off, in Settings → Telemetry.",
+      audience: "all",
+    });
+  }
   if (primerReviewPending(store)) {
     out.push({
       id: PRIMER_REVIEW_ID,
@@ -180,6 +206,7 @@ export function localNotices(store: Pick<SettingsStore, "getSetting">): RemoteNo
 /** Local notices link into the dashboard; remote ones carry their own https link. */
 const LOCAL_LINKS: Record<string, { href: string; label: string }> = {
   [PRIMER_REVIEW_ID]: { href: "/settings/primer", label: "Open Settings → Primer" },
+  [TELEMETRY_NOTICE_ID]: { href: "/settings/telemetry", label: "Open Settings → Telemetry" },
 };
 
 // ── Read state ──────────────────────────────────────────────────────────────
@@ -357,7 +384,7 @@ function utcDay(d: Date): string {
 export function assembleNotices(
   store: Pick<SettingsStore, "getSetting">,
   remote: readonly RemoteNotice[],
-  ctx: { version: string; now?: Date },
+  ctx: { version: string; now?: Date } & LocalNoticeContext,
 ): Notice[] {
   const now = ctx.now ?? new Date();
   let installedOn: string | null = null;
@@ -369,7 +396,7 @@ export function assembleNotices(
   }
   const read = readIds(store);
   const byNewest = (a: RemoteNotice, b: RemoteNotice) => b.created.localeCompare(a.created);
-  const local = localNotices(store).sort(byNewest);
+  const local = localNotices(store, ctx).sort(byNewest);
   const shown = visibleNotices(remote, { today: utcDay(now), installedOn, version: ctx.version })
     .filter((n) => !n.id.startsWith("local:"))
     .sort(byNewest);

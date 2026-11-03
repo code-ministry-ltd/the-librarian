@@ -29,11 +29,12 @@ const EXPECTED: Record<string, string> = {
   "/settings/connect": "dashboard/settings",
   "/settings/ingest": "dashboard/settings",
   "/settings/backups": "dashboard/settings",
+  "/settings/telemetry": "dashboard/settings",
 };
 
 describe("ROUTE_DOCS_SLUG — exact key set", () => {
-  it("maps exactly the expected 20 routes to their slugs", () => {
-    expect(Object.keys(ROUTE_DOCS_SLUG)).toHaveLength(20);
+  it("maps exactly the expected 21 routes to their slugs", () => {
+    expect(Object.keys(ROUTE_DOCS_SLUG)).toHaveLength(21);
     expect(Object.keys(ROUTE_DOCS_SLUG).sort()).toEqual(Object.keys(EXPECTED).sort());
     // Values too, so a route can't be silently re-pointed at the wrong docs page.
     expect(ROUTE_DOCS_SLUG).toEqual(EXPECTED);

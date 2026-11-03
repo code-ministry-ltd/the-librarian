@@ -9,6 +9,29 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.49.0] — 2026-11-04
+
+### Added
+
+- **Anonymous usage stats, on by default, with an opt-out.** Once a week a server sends the
+  project a small ping: a random install id (not derived from the machine, resettable), the
+  version, OS, architecture, whether it runs in Docker, which known harness families have
+  written memories, a memory-count bucket, and whether capture, intake and grooming are on.
+  It never sends memories, names, paths, hostnames, exact counts or settings. Nothing goes
+  until a day after the dashboard has shown the notice about it (in the notices bell), and an
+  install less than a day old never sends. **Settings → Telemetry** has the switch, every field
+  explained, the exact next payload, the last one as sent, and an id reset. `DO_NOT_TRACK=1`
+  or `LIBRARIAN_TELEMETRY=off` turn it off for the whole server before anything is sent.
+- **The receiver** is in `services/telemetry-worker/`: a Cloudflare Worker and D1 database the
+  project runs itself. It accepts only the exact payload shape, keeps one row per install per
+  ISO week with no IP or headers, deletes rows after about 13 months, and publishes totals at
+  `/v1/stats`.
+
+### Documentation
+
+- "Anonymous usage stats" in the self-host guide, a note on the Install and Manual deployment
+  pages and in the README, and the Telemetry section in Settings.
+
 ## [1.48.0] — 2026-11-03
 
 ### Added
@@ -5510,6 +5533,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.49.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.48.0...v1.49.0
 [1.48.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.47.0...v1.48.0
 [1.47.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.46.0...v1.47.0
 [1.46.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.45.0...v1.46.0

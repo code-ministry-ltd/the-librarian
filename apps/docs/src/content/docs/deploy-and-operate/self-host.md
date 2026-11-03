@@ -283,8 +283,8 @@ on a tool call, so a recall made in private mode is still logged while the log i
 
 ## Network calls the server makes
 
-The server contacts two places on its own, both on GitHub, and only when someone has the
-dashboard open:
+The server contacts three places on its own. Two are on GitHub, and only when someone has
+the dashboard open:
 
 - **The update check** asks GitHub's API for the latest release, at most once an hour, so the
   version number at the top of the dashboard can say whether you're behind. Turn it off with
@@ -299,6 +299,38 @@ dashboard open:
 In both cases GitHub sees the server's IP address. Neither call sends anything from your
 memories, vault or settings. Notices the server raises about itself, such as the primer review
 after an upgrade, need no network at all and always show.
+
+The third is the weekly usage-stats ping, described next.
+
+### Anonymous usage stats
+
+So the project knows roughly how many Librarians are running and what they run on, a server
+sends one small ping a week to `https://librarian-telemetry.codeministry.net/v1/ping`, a
+receiver the project runs itself (its source is in `services/telemetry-worker/`). It is **on by
+default**, and:
+
+- **Nothing is sent until you've been told.** The first ping waits until the install is a day
+  old and a day has passed since the dashboard first showed the notice about it, behind the
+  bell beside the version number.
+- **It contains exactly this**, and Settings → Telemetry shows the next ping and the last one
+  as sent:
+  - `installId`: a random id made on your server, not derived from the machine. You can reset
+    it.
+  - `version`, `os` (such as `linux`), `arch` (such as `x64`), and `runtime` (`docker` or
+    `node`).
+  - `harnesses`: which of `claude`, `codex`, `opencode`, `hermes` and `pi` have written
+    memories. Other agent names are never sent.
+  - `memories`: a bucket, `<100`, `<1k`, `<10k` or `10k+`, never the count.
+  - `features`: whether capture, intake and grooming are on.
+- **Never sent:** memories, titles, names, file paths, hostnames, exact counts, settings or
+  tokens.
+- **The receiver** stores one row per install per week, keeps no IP address or headers,
+  deletes rows after about 13 months, and publishes the totals at `/v1/stats`. The network
+  still sees your server's IP in transit.
+
+To turn it off, untick it in **Settings → Telemetry**. To make sure the first ping never goes,
+for example in a managed deployment, set `DO_NOT_TRACK=1` or `LIBRARIAN_TELEMETRY=off` in the
+server's environment. `LIBRARIAN_TELEMETRY_URL` points it at a different receiver.
 
 ## Keeping it running and up to date
 
