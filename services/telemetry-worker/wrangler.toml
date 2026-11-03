@@ -10,7 +10,7 @@ routes = [{ pattern = "librarian-telemetry.codeministry.net", custom_domain = tr
 [[d1_databases]]
 binding = "DB"
 database_name = "librarian-telemetry"
-database_id = "REPLACE_WITH_THE_ID_FROM_wrangler_d1_create"
+database_id = "a5f8e74d-10bc-41f4-8b18-5b79f70b7024"
 
 # Retention: delete rows older than about 13 months, daily.
 [triggers]
