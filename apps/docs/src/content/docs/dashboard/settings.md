@@ -114,13 +114,22 @@ in [Backups & restore](/guides/backups-restore/).
 
 ## Dashboard
 
-**Settings → Dashboard** holds instance-level options: the **read log** and **server
-auto-update**.
+**Settings → Dashboard** holds instance-level options: the **read log**, **notices** and
+**server auto-update**.
 
 **Read log** records what agents read: every recall and reference search, and the primer and
 journal each session receives. It's off by default and takes effect as soon as you tick it.
 Read it on the [Logs](/dashboard/logs/) page; what it records is described in
 [Seeing what agents read](/deploy-and-operate/self-host/#seeing-what-agents-read).
+
+**Notices** are short messages for whoever runs the Librarian, behind the bell beside the
+version number at the top of every page. The bell shows how many are unread, and a security
+notice is called out in words. Some notices come from this server itself, such as a request to
+review your primer addendum after an upgrade. Others are published by the project in
+`notices.json` on GitHub, so they can reach an install that hasn't been upgraded yet, for
+example to warn about a security problem in an older version. The switch here turns off that
+fetch. What the fetch sends is described in
+[Network calls the server makes](/deploy-and-operate/self-host/#network-calls-the-server-makes).
 
 **Server auto-update**: the toggle and cadence (daily or weekly) are *settings*: they tell
 the host's update timer what to do, but the dashboard cannot perform an update

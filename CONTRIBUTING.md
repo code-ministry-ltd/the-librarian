@@ -163,6 +163,28 @@ Lefthook runs the lint + prettier on staged files in `pre-commit` (configured in
 - **Test-count floor.** `scripts/check-test-count.mjs` rejects PRs that drop below the workspace baseline.
 - **Docs updated for user-facing changes.** A change to CLI, MCP verbs/schemas, dashboard, install/deploy, harness setup, or slash commands updates its docs in the same PR (`README.md` / `DEPLOYMENT.md` / integration READMEs / `docs/`; the [docs site](https://librarian-docs.codeministry.net) is the canonical home). Internal-only changes are exempt. PR-template checkbox; not CI-enforced.
 
+## Publishing a notice
+
+`notices.json` at the repository root is fetched by every install with notices switched on
+(spec 084), straight from the `main` branch, so a merged change reaches operators within about
+six hours, including on versions that haven't been upgraded. Each install filters the list
+itself. A notice has:
+
+- `id`: unique; never reuse one, because installs remember which ids they've read.
+- `created`: `YYYY-MM-DD`.
+- `severity`: `info`, `important` or `security`.
+- `title` and `body`: plain text. Keep the body to a few sentences.
+- `link` (optional): `{ "href": "https://…", "label": "…" }`. Only https links are accepted.
+- `audience`: `all` for every install, including ones set up later; `existing` for installs set
+  up before `created` only. Use `existing` for anything about a change people have already
+  lived through, so new installs a year from now don't inherit it.
+- `versions` (optional): a semver range such as `">=1.40.0 <1.47.0"`. Comparators are `>=`,
+  `>`, `<=`, `<` and `=`, all of which must hold.
+- `expires` (optional): `YYYY-MM-DD`; the notice stops showing for everyone after that day.
+
+An entry that doesn't match this shape is skipped, and `packages/mcp-server/tests/notices.test.ts`
+fails if any entry in the file is invalid.
+
 ## PR conventions
 
 Follow the user's repo-wide PR conventions in `~/.claude/CLAUDE.md` if you're contributing through a Claude Code agent. In short:

@@ -1,0 +1,4 @@
+{
+  "$comment": "Notices for Librarian operators (spec 084). Every install fetches this file from the main branch and filters it locally. The fields are described in CONTRIBUTING.md, under 'Publishing a notice'.",
+  "notices": []
+}

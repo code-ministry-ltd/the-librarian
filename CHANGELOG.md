@@ -9,6 +9,26 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.48.0] — 2026-11-03
+
+### Added
+
+- **Notices.** A bell beside the version number shows important messages for whoever runs the
+  Librarian, with the number unread, and calls out a security notice in words. Opening it
+  lists them newest first and marks them read. Some come from the server itself: the first is
+  the request to review a primer addendum moved over by 1.47.0. Others are published in
+  `notices.json` on the main branch, so they can reach installs that haven't been upgraded. A
+  notice can be limited to installs set up before it was written, to a version range, or by an
+  expiry date, so a new install doesn't inherit every old notice. The server works out which
+  notices apply on its own side: the fetch from GitHub carries no version, id or query string.
+  Turn it off in Settings → Dashboard, or with `LIBRARIAN_DISABLE_NOTICES=true`. Each install
+  now records the date it was set up; older installs use their vault's first commit.
+
+### Documentation
+
+- **Network calls the server makes** (self-host guide) covers the update check and the
+  notices fetch, and how to turn each off.
+
 ## [1.47.0] — 2026-11-03
 
 ### Changed
@@ -5490,6 +5510,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.48.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.47.0...v1.48.0
 [1.47.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.46.0...v1.47.0
 [1.46.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.45.0...v1.46.0
 [1.45.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.44.0...v1.45.0

@@ -18,3 +18,14 @@ export async function setReadLogAction(enabled: boolean): Promise<SaveReadLogRes
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
+
+/** The remote-notices fetch switch (spec 084). */
+export async function setNoticesFetchAction(enabled: boolean): Promise<SaveReadLogResult> {
+  try {
+    await serverTRPC.notices.setFetch.mutate({ enabled });
+    revalidatePath("/settings/dashboard");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}

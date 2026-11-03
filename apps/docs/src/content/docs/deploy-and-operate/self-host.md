@@ -281,6 +281,25 @@ user. A failure to write never affects the read itself.
 Private mode stops memory **writes**. The server can't see a conversation's private-mode marker
 on a tool call, so a recall made in private mode is still logged while the log is on.
 
+## Network calls the server makes
+
+The server contacts two places on its own, both on GitHub, and only when someone has the
+dashboard open:
+
+- **The update check** asks GitHub's API for the latest release, at most once an hour, so the
+  version number at the top of the dashboard can say whether you're behind. Turn it off with
+  `LIBRARIAN_DISABLE_VERSION_CHECK=true`.
+- **Notices** fetches the project's `notices.json` from
+  `raw.githubusercontent.com`, at most every six hours. The server works out for itself which
+  notices apply to this install and version. The request is a plain GET with a fixed user agent:
+  no version, no install id, no query string. Turn it off in
+  [Settings → Dashboard](/dashboard/settings/#dashboard), or for the whole server with
+  `LIBRARIAN_DISABLE_NOTICES=true`.
+
+In both cases GitHub sees the server's IP address. Neither call sends anything from your
+memories, vault or settings. Notices the server raises about itself, such as the primer review
+after an upgrade, need no network at all and always show.
+
 ## Keeping it running and up to date
 
 - **`server update`** re-pins forward: resolve the latest stable release, pull and
