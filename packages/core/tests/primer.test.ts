@@ -9,6 +9,7 @@
 //   - the in-memory read cache refreshes on write;
 //   - fail-soft reads (an unreadable vault degrades to "", never throws).
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,9 +18,11 @@ import {
   LEGACY_AWARENESS_PRIMER_KEY,
   LEGACY_WORKING_STYLE_KEY,
   type LibrarianStore,
+  PREVIOUS_DEFAULT_PRIMER_SHA256,
   PRIMER_MAX_BYTES,
   PRIMER_PATH,
   createLibrarianStore,
+  isPreviousDefaultPrimer,
   readPrimer,
   seedPrimer,
   setPrimer,
@@ -46,6 +49,22 @@ afterEach(() => {
 
 const primerFile = (): string => path.join(dataDir, "vault", PRIMER_PATH);
 
+// The default shipped immediately before spec 082, byte for byte.
+const PREVIOUS_DEFAULT = `You are connected to The Librarian — durable, shared memory across sessions, agents, and harnesses; recall before answering anything that may have prior context, and remember durable facts, preferences, and decisions as you learn them.
+
+Memory: you HAVE \`recall\` and \`remember\` — use them; do not rely on this window alone. Call \`recall\` before answering whenever prior context may exist, and ALWAYS after a compaction or context reset (earlier facts live on in memory). Call \`remember\` whenever you learn a durable fact, preference, or decision — fire-and-forget; the curator files it. If a recalled memory proves wrong or outdated, call \`flag_memory\` with a reason: what is wrong and, if known, what is true now. Relay the returned status: queued review is not completion, so do not claim a correction until its outcome is confirmed.
+
+Handoffs: create a handoff only when the user has explicitly asked for one — to hand work off, call \`store_handoff\` with a document carrying the five required sections — Start & intent, Journey, Current state, What's left, Open questions. To take over work, call \`list_handoffs\`, then \`claim_handoff\` the one you want.
+
+Learning: when asked to extract lessons from a conversation, call \`remember\` once per durable lesson.
+
+References: long-form material is not auto-recalled — call \`search_references\` when the task needs depth. Journal: call \`journal\` for what happened in past conversations.
+
+Private mode is an in-conversation instruction; the server cannot verify its marker. If the user asks to go private or off the record, acknowledge it and stop calling \`remember\`, \`store_handoff\`, and \`flag_memory\` until they toggle back. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work. \`recall\`, \`search_references\` and \`journal\` stay available, and those queries reach the server's logs — say so if asked.
+
+If The Librarian is unreachable, continue without it — never block the user's work.
+`;
+
 describe("the shipped default primer", () => {
   it("fits the ≤2KB budget with room for operator edits", () => {
     expect(Buffer.byteLength(DEFAULT_PRIMER, "utf8")).toBeLessThanOrEqual(PRIMER_MAX_BYTES);
@@ -55,7 +74,14 @@ describe("the shipped default primer", () => {
     // (a) the behavioral loop leads — first sentence territory.
     const firstParagraph = DEFAULT_PRIMER.split("\n\n")[0]!;
     expect(firstParagraph).toMatch(/recall before answering/i);
-    expect(firstParagraph).toMatch(/remember durable facts, preferences, and decisions/i);
+    expect(firstParagraph).toMatch(/remember what you learn/i);
+    // What to remember (spec 082): anything likely to be useful later that the working directory
+    // doesn't already say, including answers the agent had to dig for.
+    expect(DEFAULT_PRIMER).toMatch(
+      /discover, learn or create something likely to be useful later/i,
+    );
+    expect(DEFAULT_PRIMER).toMatch(/isn't obvious from the working directory/i);
+    expect(DEFAULT_PRIMER).toMatch(/answers you had to dig for/i);
     // (b) handoff protocol: store_handoff + the 5 sections; takeover chain.
     // Creation is explicit-request-only — the restraint that stops agents
     // from spontaneously handing off at session end.
@@ -114,6 +140,28 @@ describe("seedPrimer (seed-on-boot)", () => {
     seedPrimer(store!);
     seedPrimer(store!);
     expect(store!.readPrimer()).toBe("Operator-authored primer.");
+  });
+
+  it("upgrades an unedited previous default to the current one (spec 082)", () => {
+    // The default shipped before spec 082, verbatim: what every untouched install holds.
+    const previous = PREVIOUS_DEFAULT;
+    expect(isPreviousDefaultPrimer(previous)).toBe(true);
+    store!.writePrimer(previous);
+    seedPrimer(store!);
+    expect(store!.readPrimer()).toBe(DEFAULT_PRIMER);
+  });
+
+  it("leaves a primer alone if it differs from a past default by a single byte", () => {
+    const edited = `${PREVIOUS_DEFAULT} `;
+    store!.writePrimer(edited);
+    seedPrimer(store!);
+    expect(store!.readPrimer()).toBe(edited);
+  });
+
+  it("never lists the current default as a previous one (no upgrade loop)", () => {
+    const current = createHash("sha256").update(DEFAULT_PRIMER).digest("hex");
+    expect(PREVIOUS_DEFAULT_PRIMER_SHA256).not.toContain(current);
+    expect(isPreviousDefaultPrimer(DEFAULT_PRIMER)).toBe(false);
   });
 
   it("seeds from the legacy settings-key primer instead of the default, then retires the key", () => {

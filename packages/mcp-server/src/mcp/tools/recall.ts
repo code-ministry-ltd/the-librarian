@@ -7,6 +7,16 @@ import { scopeAgentArgs } from "../visibility.js";
 /** How many memories one `ids` fetch returns at most (spec 075 D3); extras are ignored. */
 export const MAX_RECALL_IDS = 10;
 
+/**
+ * Appended to every search recall (spec 082). Recall has no relevance cut-off, so it almost
+ * always returns something; only the agent can tell whether that answered it. This asks for no
+ * judgement beyond that: if the answer came from elsewhere, save it where the next recall looks.
+ * Not added to `ids` fetches, which return memories the agent already chose.
+ */
+export const RECALL_NUDGE =
+  "If this doesn't answer your question and you find the answer another way, `remember` it so " +
+  "the next recall finds it.";
+
 const recall: ToolDefinition = {
   name: "recall",
   description:
@@ -107,7 +117,7 @@ const recall: ToolDefinition = {
     // shelf, consulted in router order and merged with provenance labels. Under the default
     // (single-shelf) router this is the plain `store.recall` path — one shelf, no shelf fields.
     const memories = await store.recallForPrincipal(context.principal, scoped);
-    const text = formatRecall(memories, "Relevant Memories", { includeIds, excerpts: true });
+    const text = `${formatRecall(memories, "Relevant Memories", { includeIds, excerpts: true })}\n\n${RECALL_NUDGE}`;
     logRead(store, () => ({
       kind: "recall",
       mode: "search",

@@ -9,6 +9,27 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.46.0] — 2026-11-03
+
+### Changed
+
+- **Recall asks agents to save answers it couldn't give.** Recall ranks by similarity
+  with no relevance cut-off, so it nearly always returns something, and only the agent
+  can tell whether that answered its question. Every search recall now ends with one
+  line: if this doesn't answer your question and you find the answer another way,
+  `remember` it so the next recall finds it. Recalls by `ids` are unchanged.
+- **The default primer says what is worth remembering.** Agents are asked to remember
+  anything they discover, learn or create that is likely to be useful later and isn't
+  obvious from the working directory, including answers they had to dig for. That
+  replaces "durable facts, preferences, and decisions" and keeps them from saving what
+  they could re-read from the project. The default is still under 2 KB.
+- **Primers nobody edited now get the new default.** Until now a changed default only
+  reached new installs: the primer is written once, at first boot. On start, a primer
+  that is byte-for-byte any earlier shipped default is replaced with the current one. An
+  edited primer is never touched;
+  [Settings → Primer](https://librarian-docs.codeministry.net/dashboard/settings/#primer)
+  explains how to bring an edited one up to date.
+
 ## [1.45.0] — 2026-11-03
 
 ### Added
@@ -5441,6 +5462,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.46.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.45.0...v1.46.0
 [1.45.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.44.0...v1.45.0
 [1.44.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.42.0...v1.43.0
