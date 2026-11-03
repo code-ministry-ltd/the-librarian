@@ -65,6 +65,6 @@ export {
   ReferenceReadSchema,
   buildReadRecord,
   createReadLog,
-  readLogEnabled,
+  READ_LOG_ENABLED_KEY,
   shortHash,
 } from "./read-log.js";

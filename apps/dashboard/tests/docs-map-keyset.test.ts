@@ -2,7 +2,7 @@
 //
 // The existing cross-surface guard (tests/docs-map.test.ts) iterates the CURRENT
 // slug set, so a *shrunken* map still passes it — a derivation that dropped, say,
-// /activity or /health would go unnoticed. This pin fixes the full 18-key map by
+// /activity or /health would go unnoticed. This pin fixes the full 20-key map by
 // value, so any missing or extra route is caught.
 
 import { describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ const EXPECTED: Record<string, string> = {
   "/proposals": "dashboard/proposals",
   "/flagged": "dashboard/flagged",
   "/archive": "dashboard/archive",
+  "/logs": "dashboard/logs",
   "/health": "dashboard/health",
   "/settings/dashboard": "dashboard/settings",
   "/settings/auth": "dashboard/settings",
@@ -31,8 +32,8 @@ const EXPECTED: Record<string, string> = {
 };
 
 describe("ROUTE_DOCS_SLUG — exact key set", () => {
-  it("maps exactly the expected 19 routes to their slugs", () => {
-    expect(Object.keys(ROUTE_DOCS_SLUG)).toHaveLength(19);
+  it("maps exactly the expected 20 routes to their slugs", () => {
+    expect(Object.keys(ROUTE_DOCS_SLUG)).toHaveLength(20);
     expect(Object.keys(ROUTE_DOCS_SLUG).sort()).toEqual(Object.keys(EXPECTED).sort());
     // Values too, so a route can't be silently re-pointed at the wrong docs page.
     expect(ROUTE_DOCS_SLUG).toEqual(EXPECTED);

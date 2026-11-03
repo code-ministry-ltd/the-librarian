@@ -4,27 +4,25 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type LibrarianStore, type ReadRecord, createLibrarianStore } from "@librarian/core";
+import {
+  type LibrarianStore,
+  READ_LOG_ENABLED_KEY,
+  type ReadRecord,
+  createLibrarianStore,
+} from "@librarian/core";
 import { handleMcpPayload } from "@librarian/mcp-server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-let originalSwitch: string | undefined;
 const cleanups: (() => void)[] = [];
-
-beforeEach(() => {
-  originalSwitch = process.env.LIBRARIAN_READ_LOG;
-  process.env.LIBRARIAN_READ_LOG = "on";
-});
 
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
-  if (originalSwitch === undefined) delete process.env.LIBRARIAN_READ_LOG;
-  else process.env.LIBRARIAN_READ_LOG = originalSwitch;
 });
 
 function freshStore(options: { armed: boolean }): LibrarianStore {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "librarian-read-mcp-"));
   const store = createLibrarianStore({ dataDir, readLog: { armed: options.armed } });
+  store.setSetting(READ_LOG_ENABLED_KEY, "true");
   cleanups.push(() => {
     try {
       store.close();

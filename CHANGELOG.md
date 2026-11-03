@@ -9,6 +9,21 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.45.0] — 2026-11-03
+
+### Added
+
+- **A Logs page in the dashboard.** One tab for each log The Librarian keeps: reads,
+  refusals, captures, intake runs, curation runs, backups and the vault's history. Each shows
+  its newest entries first with a one-line summary and the stored record behind **Full
+  record**, and each downloads in full as NDJSON. Refusals had no dashboard view before, and
+  the read log had none either. Intake and curation downloads include every decision the
+  curator made in each run, with its reasoning.
+  [Logs](https://librarian-docs.codeministry.net/dashboard/logs/) explains each one.
+- **The read log is switched on in the dashboard.** **Settings → Dashboard → Read log** turns
+  it on or off at once, with no restart. It replaces the `LIBRARIAN_READ_LOG` environment
+  variable from 1.44.0, which is no longer read. A read log is still off until you turn it on.
+
 ## [1.44.0] — 2026-11-03
 
 ### Added
@@ -21,7 +36,7 @@ changes from this point forward are catalogued here.
   memory text. Until now there was no way to tell how often recall came back empty or
   off-target, or what startup context cost each session. The log is the baseline for
   measuring changes to recall and the primer.
-  [Seeing what agents read](https://librarian-docs.codeministry.net/deploy-and-operate/self-host/#seeing-what-agents-read-librarian_read_log)
+  [Seeing what agents read](https://librarian-docs.codeministry.net/deploy-and-operate/self-host/#seeing-what-agents-read)
   explains it.
 - **Off by default, and it stays on the server.** Queries can be as personal as the
   memories, so the log is opt-in. Queries are redacted and capped at 1,000 characters, and
@@ -5426,6 +5441,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.45.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.44.0...v1.45.0
 [1.44.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.42.0...v1.43.0
 [1.42.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.41.0...v1.42.0

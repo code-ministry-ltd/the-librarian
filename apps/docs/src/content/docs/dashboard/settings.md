@@ -96,8 +96,15 @@ in [Backups & restore](/guides/backups-restore/).
 
 ## Dashboard
 
-**Settings → Dashboard** holds instance-level options — currently **server
-auto-update**. The toggle and cadence (daily or weekly) are *settings*: they tell
+**Settings → Dashboard** holds instance-level options: the **read log** and **server
+auto-update**.
+
+**Read log** records what agents read: every recall and reference search, and the primer and
+journal each session receives. It's off by default and takes effect as soon as you tick it.
+Read it on the [Logs](/dashboard/logs/) page; what it records is described in
+[Seeing what agents read](/deploy-and-operate/self-host/#seeing-what-agents-read).
+
+**Server auto-update**: the toggle and cadence (daily or weekly) are *settings*: they tell
 the host's update timer what to do, but the dashboard cannot perform an update
 itself — a server can't recreate its own container from inside it. Auto-update
 actually runs once the host timer is installed, on the machine running the

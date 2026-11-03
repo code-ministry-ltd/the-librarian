@@ -1,5 +1,5 @@
 // The read log over HTTP (spec 080): a served journal window appends one `journal` row when the
-// server runs with LIBRARIAN_READ_LOG=on, and nothing when it is off.
+// server runs with the dashboard's read-log switch on, and nothing when it is off.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -7,28 +7,19 @@ import {
   DEFAULT_SHELF,
   INTAKE_ENABLED_KEY,
   JOURNAL_ENABLED_KEY,
+  READ_LOG_ENABLED_KEY,
   READ_LOG_FILE,
   appendEpisode,
   createLibrarianStore,
 } from "@librarian/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { cleanupTempDir, makeTempDir, startHttpServer } from "../../../../test/helpers.js";
 
 const AGENT = { authorization: "Bearer agent-token" };
-let originalSwitch: string | undefined;
-
-beforeEach(() => {
-  originalSwitch = process.env.LIBRARIAN_READ_LOG;
-});
-
-afterEach(() => {
-  if (originalSwitch === undefined) delete process.env.LIBRARIAN_READ_LOG;
-  else process.env.LIBRARIAN_READ_LOG = originalSwitch;
-});
-
-function seed(dataDir: string): void {
+function seed(dataDir: string, readLog: boolean): void {
   const store = createLibrarianStore({ dataDir });
   try {
+    store.setSetting(READ_LOG_ENABLED_KEY, readLog ? "true" : "false");
     store.setSetting(INTAKE_ENABLED_KEY, "true");
     store.setSetting(JOURNAL_ENABLED_KEY, "true");
     appendEpisode(store.systemJournal(DEFAULT_SHELF), "2026-11-03", {
@@ -65,9 +56,8 @@ async function waitForJournalRows(dataDir: string): Promise<Record<string, unkno
 
 describe("read log: GET /journal.md", () => {
   it("appends a journal row with the served size and requested cap when the log is on", async () => {
-    process.env.LIBRARIAN_READ_LOG = "on";
     const dataDir = makeTempDir();
-    seed(dataDir);
+    seed(dataDir, true);
     const server = await startHttpServer({ dataDir });
     try {
       const res = await fetch(`${server.url}/journal.md?max_chars=9500`, { headers: AGENT });
@@ -83,9 +73,8 @@ describe("read log: GET /journal.md", () => {
   });
 
   it("writes no file when the log is off", async () => {
-    delete process.env.LIBRARIAN_READ_LOG;
     const dataDir = makeTempDir();
-    seed(dataDir);
+    seed(dataDir, false);
     const server = await startHttpServer({ dataDir });
     try {
       expect((await fetch(`${server.url}/journal.md`, { headers: AGENT })).status).toBe(200);

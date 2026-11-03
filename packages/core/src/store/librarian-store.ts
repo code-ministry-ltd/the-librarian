@@ -81,7 +81,9 @@ import {
   type RecordRefusalInput,
   type ReadReadsOptions,
   type ReadReadsResult,
+  type ReadRecord,
   type RecordReadInput,
+  type RefusalRecord,
   type RefusalLogErrorSink,
   READ_LOG_FILE,
   REFUSAL_LOG_FILE,
@@ -89,6 +91,7 @@ import {
   createJsonCurationStore,
   createJsonSettingsStore,
   createReadLog,
+  READ_LOG_ENABLED_KEY,
   createRefusalLog,
   principalRefusalEvidence,
   resolveIntakeRunsPath,
@@ -107,6 +110,8 @@ import {
 } from "./vault-restore.js";
 
 const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
+/** How long a read of the read-log switch is trusted before the settings file is read again. */
+const READ_LOG_SWITCH_TTL_MS = 2_000;
 
 /**
  * Resolve the data directory the store (and its sibling credential files) live in:
@@ -186,7 +191,8 @@ export interface LibrarianStoreOptions {
   };
   /**
    * Read-log writer selection (spec 080). Like the refusal log, only the HTTP server arms it, so
-   * rotation keeps a single writer; it still writes nothing unless `LIBRARIAN_READ_LOG=on`.
+   * rotation keeps a single writer; it still writes nothing until the operator turns it on in the
+   * dashboard (the `READ_LOG_ENABLED_KEY` setting, spec 081).
    */
   readLog?: {
     armed: boolean;
@@ -509,6 +515,10 @@ export interface LibrarianStore
   flushReads(): Promise<void>;
   /** Read the read log newest-first. Corrupt or absent files are empty. */
   readReads(options?: ReadReadsOptions): Promise<ReadReadsResult>;
+  /** Every retained read-log row, oldest first, for a download (spec 081). */
+  exportReads(): Promise<ReadRecord[]>;
+  /** Every retained refusal row, oldest first, for a download (spec 081). */
+  exportRefusals(): Promise<RefusalRecord[]>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -759,9 +769,21 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     armed: options.refusalLog?.armed === true,
     ...(options.refusalLog?.onError ? { onError: options.refusalLog.onError } : {}),
   });
+  // The dashboard switch (spec 081). Settings live in a JSON file read on every lookup, so the
+  // value is cached briefly to keep that I/O off the recall path; a write through this store
+  // clears the cache at once, and a write from another process lands within the window.
+  let readLogSwitch: { value: boolean; at: number } | undefined;
+  const readLogEnabled = (): boolean => {
+    const at = Date.now();
+    if (readLogSwitch === undefined || at - readLogSwitch.at > READ_LOG_SWITCH_TTL_MS) {
+      readLogSwitch = { value: jsonSettings.getSetting(READ_LOG_ENABLED_KEY) === "true", at };
+    }
+    return readLogSwitch.value;
+  };
   const readLog = createReadLog({
     filePath: path.join(dataDir, READ_LOG_FILE),
     armed: options.readLog?.armed === true,
+    enabled: readLogEnabled,
     ...(options.readLog?.onError ? { onError: options.readLog.onError } : {}),
   });
   // The primer read cache (rethink T11): undefined = not yet read this
@@ -1641,10 +1663,22 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     recordRefusal: refusalLog.record,
     flushRefusals: refusalLog.flush,
     readRefusals: refusalLog.read,
+    setSetting: (key, value, settingOptions) => {
+      jsonSettings.setSetting(key, value, settingOptions);
+      if (key === READ_LOG_ENABLED_KEY) readLogSwitch = undefined;
+    },
+    deleteSetting: (key) => {
+      jsonSettings.deleteSetting(key);
+      if (key === READ_LOG_ENABLED_KEY) readLogSwitch = undefined;
+    },
     recordRead: readLog.record,
-    readLogActive: readLog.active,
+    get readLogActive() {
+      return readLog.active;
+    },
     flushReads: readLog.flush,
     readReads: readLog.read,
+    exportReads: readLog.exportAll,
+    exportRefusals: refusalLog.exportAll,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // The intake sweep drains EVERY shelf's inbox (spec 062 SC 8a). The inbox-holding shelves are
       // the system pipeline's processing set — the shelves the SYSTEM principal grooms

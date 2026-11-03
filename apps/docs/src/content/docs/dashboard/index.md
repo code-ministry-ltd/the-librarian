@@ -31,6 +31,7 @@ A bar across the top of every page holds the main areas. From left to right:
 - **[Proposals](/dashboard/proposals/)** — the curator's review queue.
 - **[Flagged](/dashboard/flagged/)** — memories an agent reported as wrong.
 - **[Archive](/dashboard/archive/)** — retired memories.
+- **[Logs](/dashboard/logs/)** — every log the server keeps, to read or download.
 
 A **Settings** menu (top right) covers [Dashboard, Auth, Primer, Curator, Tokens,
 Connect, Captures, and Backups](/dashboard/settings/). Also on the right are a

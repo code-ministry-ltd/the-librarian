@@ -1,5 +1,5 @@
-// Dashboard settings — server-level controls that aren't a curator job. Today
-// this hosts server auto-update (spec 2026-06-16-server-autoupdate T4), moved
+// Dashboard settings — server-level controls that aren't a curator job: the read-log switch
+// (spec 081) and server auto-update (spec 2026-06-16-server-autoupdate T4), moved
 // off the Curator page so it lives with instance-level settings rather than a
 // curation job. The dashboard only CONFIGURES auto-update; a timer on the host
 // machine performs the update on the cadence set here (spec §2).
@@ -7,7 +7,9 @@
 // `setAutoUpdateConfigAction` lives in the curator actions module (its only
 // consumer now); it revalidates this route after a write.
 import { setAutoUpdateConfigAction } from "@/app/curator/actions";
+import { setReadLogAction } from "@/app/settings/dashboard/actions";
 import { AutoUpdateConfigForm } from "@/components/curator/autoupdate-config-form";
+import { ReadLogForm } from "@/components/settings/read-log-form";
 import { SectionLabel } from "@/components/ui-v2/section-label";
 import { serverTRPC } from "@/lib/trpc-server";
 
@@ -15,9 +17,13 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardSettingsPage() {
   let autoupdate: Awaited<ReturnType<typeof serverTRPC.autoupdate.get.query>> | null = null;
+  let readLog: Awaited<ReturnType<typeof serverTRPC.logs.readLogConfig.query>> | null = null;
   let error: string | null = null;
   try {
-    autoupdate = await serverTRPC.autoupdate.get.query();
+    [autoupdate, readLog] = await Promise.all([
+      serverTRPC.autoupdate.get.query(),
+      serverTRPC.logs.readLogConfig.query(),
+    ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -39,6 +45,22 @@ export default async function DashboardSettingsPage() {
           Failed to load settings: {error}
         </p>
       ) : null}
+
+      <section className="flex flex-col gap-3" aria-label="Read log">
+        <header className="flex flex-col gap-1.5">
+          <SectionLabel as="h2">Read log</SectionLabel>
+          <p className="text-sm text-foreground/60">
+            See what agents ask the Librarian for, and whether it has an answer.
+          </p>
+        </header>
+        {readLog ? (
+          <ReadLogForm
+            enabled={readLog.enabled}
+            recording={readLog.recording}
+            onSave={setReadLogAction}
+          />
+        ) : null}
+      </section>
 
       {/* Server auto-update (spec 2026-06-16-server-autoupdate T4). The dashboard
           only configures it; the host timer performs the update (spec §2). */}
