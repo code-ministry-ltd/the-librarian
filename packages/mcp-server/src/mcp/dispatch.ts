@@ -11,8 +11,10 @@ import {
   type Principal,
   readPrimer,
   SYSTEM_ACTOR_IDS,
+  shortHash,
 } from "@librarian/core";
 import { logger } from "../logging.js";
+import { logRead, readEvidence } from "./read-evidence.js";
 import { handleMcpMessage, handleMcpPayload } from "./rpc.js";
 import type { ToolContext, ToolDefinition, ToolRegistry } from "./tool.js";
 import { coreToolRegistry, tools } from "./tools/index.js";
@@ -58,6 +60,14 @@ export async function dispatchMcp(
     // reaches the next session without a restart. Fail-soft: an unreadable or
     // operator-disabled ("") primer omits the field rather than blocking init.
     const instructions = readPrimer(store);
+    if (instructions) {
+      logRead(store, () => ({
+        kind: "primer",
+        resultChars: instructions.length,
+        primerHash: shortHash(instructions),
+        ...readEvidence(store, toolContext.principal),
+      }));
+    }
     return {
       protocolVersion: (params.protocolVersion as string) || "2025-06-18",
       capabilities: { tools: {}, resources: {} },

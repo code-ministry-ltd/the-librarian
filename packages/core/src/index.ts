@@ -684,6 +684,17 @@ export {
   resolveIntakeRunsPath,
 } from "./store/sidecar/index.js";
 export {
+  type ReadKind,
+  type ReadReadsOptions,
+  type ReadReadsResult,
+  type ReadRecord,
+  type RecordReadInput,
+  READ_LOG_FILE,
+  ReadRecordSchema,
+  readLogEnabled,
+  shortHash,
+} from "./store/sidecar/read-log.js";
+export {
   type LegacyArtifactReport,
   type MigrateDataDirOptions,
   type MigrateDataDirReport,

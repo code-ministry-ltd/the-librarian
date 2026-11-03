@@ -3,6 +3,7 @@
 // in default recall. Returns each match's pointer (vault-relative path) + the
 // query-relevant section, so the agent can pull just the matched section.
 
+import { elapsedMs, logRead, readEvidence } from "../read-evidence.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 
@@ -31,6 +32,7 @@ const searchReferences: ToolDefinition = {
     required: ["query"],
   },
   async handler(store, args, context) {
+    const startMs = performance.now();
     const query = typeof args.query === "string" ? args.query : "";
     if (!query.trim()) return textResult("search_references rejected: 'query' is required");
     // store.searchReferences clamps the limit (the invariant lives there).
@@ -40,7 +42,18 @@ const searchReferences: ToolDefinition = {
     // IFF the materialised set > 1). Under the default (single-shelf) router this is byte-identical
     // to the legacy `store.searchReferences` — one shelf, plain hits, no shelf fields in the JSON.
     const hits = await store.searchReferencesForPrincipal(context.principal, query, limit);
-    return textResult(JSON.stringify({ references: hits }, null, 2));
+    const text = JSON.stringify({ references: hits }, null, 2);
+    logRead(store, () => ({
+      kind: "search_references",
+      query,
+      ...(limit !== undefined && Number.isInteger(limit) && limit >= 0 ? { limit } : {}),
+      returnedPaths: hits.map((hit) => hit.id),
+      returnedCount: hits.length,
+      resultChars: text.length,
+      durationMs: elapsedMs(startMs),
+      ...readEvidence(store, context.principal),
+    }));
+    return textResult(text);
   },
 };
 

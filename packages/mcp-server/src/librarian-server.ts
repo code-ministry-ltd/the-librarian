@@ -300,6 +300,7 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
   // byte-identical. exactOptionalPropertyTypes: only add the key when a plugin supplied one, so
   // the default path stays byte-identical.
   let refusalLogErrorReported = false;
+  let readLogErrorReported = false;
   const store = createLibrarianStore({
     secretKey,
     dataDir,
@@ -316,6 +317,17 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
     },
     // Say when embedding cache misses keep the CPU busy (counts + timing only).
     onEmbedBacklog: (event) => logEmbedBacklog(logger, event),
+    readLog: {
+      armed: true,
+      onError: (error) => {
+        if (readLogErrorReported) return;
+        readLogErrorReported = true;
+        logger.error(
+          { err: error },
+          "read log unavailable; reads continue unaffected and later errors are suppressed",
+        );
+      },
+    },
     ...(vaultRouter ? { vaultRouter } : {}),
   });
   // ADR 0013: a flag asks the curator to look again. The trigger debounces bursts
@@ -803,7 +815,8 @@ export interface ServerRuntime {
   /** Live schedulers in start/stop order, nulls excluded. */
   readonly schedulers: readonly SerialScheduler[];
   /** The store whose `close()` must run AFTER the schedulers stop and BEFORE the listeners close. */
-  readonly store: Pick<LibrarianStore, "close" | "flushRefusals">;
+  readonly store: Pick<LibrarianStore, "close" | "flushRefusals"> &
+    Partial<Pick<LibrarianStore, "flushReads">>;
   readonly publicServer: HttpListener;
   readonly internalServer: HttpListener;
   readonly publicBind: { readonly port: number; readonly host: string };
@@ -859,7 +872,11 @@ export async function stopRuntime(runtime: ServerRuntime): Promise<void> {
   // process closes the store — but never let a wedged volume park shutdown: the
   // SIGTERM path has no deadline of its own, so an unbounded flush would hang
   // until the orchestrator SIGKILLs. Best-effort evidence loses to exiting.
-  await Promise.race([runtime.store.flushRefusals(), sleep(2_000)]);
+  // The read log (spec 080) shares the same bounded drain.
+  await Promise.race([
+    Promise.all([runtime.store.flushRefusals(), runtime.store.flushReads?.()]),
+    sleep(2_000),
+  ]);
   runtime.store.close();
   // Close BOTH listeners (ADR 0008 P1) so neither leaks; resolve once both have
   // released their sockets.

@@ -79,11 +79,16 @@ import {
   type ReadRefusalsOptions,
   type ReadRefusalsResult,
   type RecordRefusalInput,
+  type ReadReadsOptions,
+  type ReadReadsResult,
+  type RecordReadInput,
   type RefusalLogErrorSink,
+  READ_LOG_FILE,
   REFUSAL_LOG_FILE,
   createJsonIntakeStore,
   createJsonCurationStore,
   createJsonSettingsStore,
+  createReadLog,
   createRefusalLog,
   principalRefusalEvidence,
   resolveIntakeRunsPath,
@@ -176,6 +181,14 @@ export interface LibrarianStoreOptions {
    * size bound and rename rotation retain a single writer.
    */
   refusalLog?: {
+    armed: boolean;
+    onError?: RefusalLogErrorSink;
+  };
+  /**
+   * Read-log writer selection (spec 080). Like the refusal log, only the HTTP server arms it, so
+   * rotation keeps a single writer; it still writes nothing unless `LIBRARIAN_READ_LOG=on`.
+   */
+  readLog?: {
     armed: boolean;
     onError?: RefusalLogErrorSink;
   };
@@ -485,6 +498,17 @@ export interface LibrarianStore
   flushRefusals(): Promise<void>;
   /** Read the bounded refusal sidecar newest-first. Corrupt or absent files are empty. */
   readRefusals(options?: ReadRefusalsOptions): Promise<ReadRefusalsResult>;
+  /**
+   * Append one read (recall, reference search, primer, journal) to the opt-in read log (spec
+   * 080). Always resolves: a logging failure never changes the read being observed.
+   */
+  recordRead(input: RecordReadInput): Promise<void>;
+  /** True when reads are being logged; call sites skip building a row when it is false. */
+  readonly readLogActive: boolean;
+  /** Drain accepted read-log writes and persist any pending counted-drop row. */
+  flushReads(): Promise<void>;
+  /** Read the read log newest-first. Corrupt or absent files are empty. */
+  readReads(options?: ReadReadsOptions): Promise<ReadReadsResult>;
   dataDir: string;
   close(): void;
   /** Backend-neutral maintenance verb: rebuild the disposable memory index. */
@@ -734,6 +758,11 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     filePath: path.join(dataDir, REFUSAL_LOG_FILE),
     armed: options.refusalLog?.armed === true,
     ...(options.refusalLog?.onError ? { onError: options.refusalLog.onError } : {}),
+  });
+  const readLog = createReadLog({
+    filePath: path.join(dataDir, READ_LOG_FILE),
+    armed: options.readLog?.armed === true,
+    ...(options.readLog?.onError ? { onError: options.readLog.onError } : {}),
   });
   // The primer read cache (rethink T11): undefined = not yet read this
   // process; null = read and absent (pre-seed); string = the file's content.
@@ -1612,6 +1641,10 @@ export function createLibrarianStore(options: LibrarianStoreOptions = {}): Libra
     recordRefusal: refusalLog.record,
     flushRefusals: refusalLog.flush,
     readRefusals: refusalLog.read,
+    recordRead: readLog.record,
+    readLogActive: readLog.active,
+    flushReads: readLog.flush,
+    readReads: readLog.read,
     runIntakeSweep: async (deps): Promise<SweepSummary> => {
       // The intake sweep drains EVERY shelf's inbox (spec 062 SC 8a). The inbox-holding shelves are
       // the system pipeline's processing set — the shelves the SYSTEM principal grooms

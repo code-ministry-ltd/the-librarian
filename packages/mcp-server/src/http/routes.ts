@@ -60,6 +60,7 @@ import { handleMcpPayload } from "../mcp/rpc.js";
 import type { ToolRegistry } from "../mcp/tool.js";
 import { coreToolRegistry } from "../mcp/tools/index.js";
 import type { ActorDisplayProvider, GuardedAuthProvider, LibrarianPlugin } from "../plugin.js";
+import { logRead, readEvidence } from "../mcp/read-evidence.js";
 import { createContextFactory } from "../trpc/context.js";
 import { appRouter } from "../trpc/router.js";
 import {
@@ -838,6 +839,12 @@ async function handleJournal(ctx: RouteContext): Promise<void> {
         "(30 minutes idle, or when the session ends).",
     );
   }
+  logRead(store, () => ({
+    kind: "journal",
+    resultChars: text.length,
+    ...(maxChars === undefined ? {} : { maxChars }),
+    ...readEvidence(store, authed.principal),
+  }));
   res.writeHead(200, {
     "content-type": "text/markdown; charset=utf-8",
     "cache-control": "no-store",
