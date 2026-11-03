@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.44.0] — 2026-11-03
+
+### Added
+
+- **The read log: see what agents get back from The Librarian.** Set
+  `LIBRARIAN_READ_LOG=on` and the server appends one line to `read-log.ndjson` in the data
+  directory for every `recall`, every `search_references`, every primer delivered on
+  connect, and every journal window served at session start. Each line records the query,
+  the ids returned in rank order, the result size, the time taken and who asked, but never
+  memory text. Until now there was no way to tell how often recall came back empty or
+  off-target, or what startup context cost each session. The log is the baseline for
+  measuring changes to recall and the primer.
+  [Seeing what agents read](https://librarian-docs.codeministry.net/deploy-and-operate/self-host/#seeing-what-agents-read-librarian_read_log)
+  explains it.
+- **Off by default, and it stays on the server.** Queries can be as personal as the
+  memories, so the log is opt-in. Queries are redacted and capped at 1,000 characters, and
+  the log is limited to two 20 MB files with owner-only permissions. A write failure never
+  affects the read.
+
 ## [1.43.0] — 2026-11-02
 
 ### Added
@@ -5407,6 +5426,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.44.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.42.0...v1.43.0
 [1.42.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.41.0...v1.42.0
 [1.41.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.40.0...v1.41.0

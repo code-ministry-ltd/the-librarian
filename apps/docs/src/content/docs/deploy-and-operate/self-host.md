@@ -253,6 +253,33 @@ re-enabling enforcement. Deleting only the flag is not enough: an instance whose
 is still enabled refuses claims. Disabling only auth is also not enough: the durable
 burn flag refuses claims until the operator removes it.
 
+## Seeing what agents read (`LIBRARIAN_READ_LOG`)
+
+The Librarian keeps a full history of what goes **into** memory. To see what comes **out**,
+switch on the read log by setting `LIBRARIAN_READ_LOG=on` in the server's environment and
+restarting it. It's off by default, because the queries agents send can be as personal as the
+memories themselves.
+
+With it on, the server appends one line to `read-log.ndjson` in the data directory for every:
+
+- `recall`: the query or requested ids, the tags and limit, the ids returned in rank order, and
+  the size of the result. A row with `returnedCount: 0` is a recall that found nothing.
+- `search_references`: the query and the reference paths returned.
+- primer delivered when an agent connects: its size and a short hash, so you can tell versions
+  apart.
+- journal window served to a session-start hook: its size.
+
+Each row also carries the time, the calling agent and token id, and how long the read took.
+Memory text is never logged, only ids, so you can look up exactly what was returned.
+
+The file stays on the server and is never sent anywhere. Queries are passed through the same
+secret redaction the curator uses and capped at 1,000 characters. The log keeps at most two
+20 MB files (`read-log.ndjson` and `read-log.ndjson.1`), both readable only by the server's
+user. A failure to write never affects the read itself.
+
+Private mode stops memory **writes**. The server can't see a conversation's private-mode marker
+on a tool call, so a recall made in private mode is still logged while the log is on.
+
 ## Keeping it running and up to date
 
 - **`server update`** re-pins forward: resolve the latest stable release, pull and

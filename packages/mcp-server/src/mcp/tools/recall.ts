@@ -1,4 +1,5 @@
 import { formatRecall, type RecallItem } from "@librarian/core";
+import { elapsedMs, logRead, readEvidence } from "../read-evidence.js";
 import { textResult } from "../result.js";
 import type { ToolDefinition } from "../tool.js";
 import { scopeAgentArgs } from "../visibility.js";
@@ -54,6 +55,7 @@ const recall: ToolDefinition = {
     },
   },
   async handler(store, args, context) {
+    const startMs = performance.now();
     const scoped = scopeAgentArgs(args, context);
     // conv_id was a domain-routing signal, not a search field.
     delete scoped.conv_id;
@@ -86,15 +88,50 @@ const recall: ToolDefinition = {
           break;
         }
       }
-      return textResult(formatRecall(memories, "Relevant Memories", { includeIds }));
+      const text = formatRecall(memories, "Relevant Memories", { includeIds });
+      logRead(store, () => ({
+        kind: "recall",
+        mode: "ids",
+        requestedIds: ids,
+        returnedIds: memoryIds(memories),
+        returnedCount: memories.length,
+        excerpts: false,
+        resultChars: text.length,
+        durationMs: elapsedMs(startMs),
+        ...readEvidence(store, context.principal),
+      }));
+      return textResult(text);
     }
 
     // Principal-aware merged recall (spec 062 SC 5): index-backed (sectioned hybrid, spec 075) per
     // shelf, consulted in router order and merged with provenance labels. Under the default
     // (single-shelf) router this is the plain `store.recall` path — one shelf, no shelf fields.
     const memories = await store.recallForPrincipal(context.principal, scoped);
-    return textResult(formatRecall(memories, "Relevant Memories", { includeIds, excerpts: true }));
+    const text = formatRecall(memories, "Relevant Memories", { includeIds, excerpts: true });
+    logRead(store, () => ({
+      kind: "recall",
+      mode: "search",
+      ...(typeof scoped.query === "string" ? { query: scoped.query } : {}),
+      ...(Array.isArray(scoped.tags)
+        ? { tags: scoped.tags.filter((tag): tag is string => typeof tag === "string") }
+        : {}),
+      ...(typeof scoped.limit === "number" && Number.isInteger(scoped.limit) && scoped.limit >= 0
+        ? { limit: scoped.limit }
+        : {}),
+      returnedIds: memoryIds(memories),
+      returnedCount: memories.length,
+      excerpts: true,
+      resultChars: text.length,
+      durationMs: elapsedMs(startMs),
+      ...readEvidence(store, context.principal),
+    }));
+    return textResult(text);
   },
 };
+
+/** The ids of the memories a recall returned, in output order (spec 080). */
+function memoryIds(memories: readonly { id?: string | undefined }[]): string[] {
+  return memories.map((memory) => memory.id).filter((id): id is string => typeof id === "string");
+}
 
 export default recall;

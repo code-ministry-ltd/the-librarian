@@ -123,3 +123,16 @@ aren't re-investigated:
   OpenCode `chat.system.transform` live-reach) — moot: the rethink (D10/D14)
   deleted the per-turn injection machinery and moved all harness surfaces
   in-tree under `integrations/`; the external plugin repos are archived.
+
+---
+
+## Read log (spec 080, 2026-11-03)
+
+- **[Low] The refusal log still carries its own copy of the bounded NDJSON engine.**
+  `packages/core/src/store/sidecar/ndjson-sidecar.ts` was lifted from
+  `refusal-log.ts` for the read log; the refusal log was deliberately left untouched in
+  that PR. Migrate it onto the engine behind its existing test suite so the two can't drift.
+- **[Low] Read-log rows carry rank order but not scores.** `recallForPrincipal` returns
+  ranked memories without their scores; exposing them needs a store return-type change.
+- **[Low] No session id joins a read row to a transcript.** Analysis joins on actor and
+  time, which is ambiguous when two sessions of one agent overlap.

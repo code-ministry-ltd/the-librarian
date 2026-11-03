@@ -6,3 +6,5 @@ export * from "./settings-store.js";
 export * from "./handoff-store.js";
 export * from "./vault-files.js";
 export * from "./sidecar/refusal-log.js";
+export * from "./sidecar/read-log.js";
+export * from "./sidecar/ndjson-sidecar.js";
