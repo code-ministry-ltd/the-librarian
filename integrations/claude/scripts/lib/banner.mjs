@@ -120,8 +120,8 @@ export function probeShipping(dataDir, deps = {}) {
 export const AWARENESS_LINE =
   "The Librarian is this environment's durable memory: you have `recall` and " +
   "`remember`. Call `recall` before answering when prior context may exist " +
-  "(especially after a compaction or reset), and `remember` durable facts, " +
-  "preferences, and decisions as you learn them.";
+  "(especially after a compaction or reset). Call `remember` only for something " +
+  "that will matter later and isn't obvious from the working directory.";
 
 /**
  * Is the local auto-save kill-switch OFF? True ONLY for the exact string "false"
