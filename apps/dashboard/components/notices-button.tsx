@@ -62,6 +62,10 @@ export function NoticesButton() {
     };
   }, [open]);
 
+  // Nothing to show until the list loads, and nothing on a page where it can't (signed out,
+  // or a first run before the admin token is claimed).
+  if (!list.data) return null;
+
   const label =
     unread === 0
       ? "Notices: none unread"

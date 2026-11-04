@@ -9,6 +9,17 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.50.2] — 2026-11-04
+
+### Fixed
+
+- **The notices bell was missing on dashboards without enforced sign-in.** It was shown only
+  with a sign-in session, so an open dashboard (no `LIBRARIAN_AUTH_ENABLED`) never showed it,
+  and its notices, including the primer review and the usage-stats disclosure, never
+  appeared. The bell now shows whenever the notices list loads. Because the disclosure is
+  what starts the usage-stats clock, those installs sent no stats; the first ping now goes
+  24 hours after the bell first loads.
+
 ## [1.50.1] — 2026-11-04
 
 ### Changed
@@ -5561,6 +5572,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.50.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.1...v1.50.2
 [1.50.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.0...v1.50.1
 [1.50.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.49.1...v1.50.0
 [1.49.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.49.0...v1.49.1

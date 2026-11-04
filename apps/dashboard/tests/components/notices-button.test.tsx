@@ -43,6 +43,12 @@ function notice(over: Record<string, unknown> = {}) {
 describe("NoticesButton", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("renders nothing until the list loads, or when it can't", () => {
+    listMock.mockReturnValue({ data: undefined, isError: true });
+    const { container } = render(<NoticesButton />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("says how many are unread, in words", () => {
     listMock.mockReturnValue({ data: { notices: [notice()], unread: 1, remote } });
     render(<NoticesButton />);
