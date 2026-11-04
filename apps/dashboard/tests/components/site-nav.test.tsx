@@ -27,7 +27,9 @@ vi.mock("@/lib/trpc-client", () => ({
 }));
 
 // The notices bell has its own test (notices-button.test.tsx).
-vi.mock("@/components/notices-button", () => ({ NoticesButton: () => null }));
+vi.mock("@/components/notices-button", () => ({
+  NoticesButton: () => <span data-testid="notices-button" />,
+}));
 
 const { SiteNav } = await import("@/components/site-nav");
 
@@ -74,6 +76,15 @@ describe("SiteNav", () => {
     const { container } = render(<SiteNav />);
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("shows the notices bell with or without a sign-in session", () => {
+    // A dashboard without enforced sign-in has no session but is still the admin's.
+    const { unmount } = render(<SiteNav />);
+    expect(screen.getByTestId("notices-button")).toBeInTheDocument();
+    unmount();
+    render(<SiteNav signedIn />);
+    expect(screen.getByTestId("notices-button")).toBeInTheDocument();
   });
 
   it("shows a sign-out control only when signed in", () => {

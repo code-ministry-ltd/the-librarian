@@ -123,7 +123,9 @@ export function SiteNav({ signedIn = false }: { signedIn?: boolean }) {
         </div>
         <span className="ml-auto flex items-center gap-1.5">
           <VersionBadge />
-          {signedIn ? <NoticesButton /> : null}
+          {/* Not gated on signedIn: a dashboard without enforced sign-in has no session but
+              still makes admin calls. The bell hides itself until the list loads. */}
+          <NoticesButton />
           <DocsLink />
           <button
             type="button"
