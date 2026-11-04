@@ -233,8 +233,7 @@ export function generateReference() {
       readDoc("docs/slash-commands.md"),
       {
         title: "Slash commands",
-        description:
-          "The four cross-harness slash commands — handoff, takeover, learn, toggle-private.",
+        description: "The three cross-harness slash commands — handoff, takeover, toggle-private.",
         source: "docs/slash-commands.md",
       },
     ),
