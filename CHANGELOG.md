@@ -9,6 +9,14 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.49.1] — 2026-11-04
+
+### Changed
+
+- **The usage-stats receiver is live** at `librarian-telemetry.codeministry.net`, so weekly
+  pings from 1.49.0 onwards now arrive. Its D1 database id is recorded in
+  `services/telemetry-worker/wrangler.toml`, so later deploys reuse the same database.
+
 ## [1.49.0] — 2026-11-04
 
 ### Added
@@ -5533,6 +5541,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.49.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.49.0...v1.49.1
 [1.49.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.48.0...v1.49.0
 [1.48.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.47.0...v1.48.0
 [1.47.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.46.0...v1.47.0
