@@ -46,7 +46,7 @@ hermes memory setup          # pick "librarian", enter the endpoint
   store/list/claim handoffs, search references, and read the
   [journal](/guides/journal/), each proxied to your server.
 - **The primer in the system prompt** — fetched from your server and added to the
-  agent's prompt, so it learns the recall/remember loop and the handoff, learn,
+  agent's prompt, so it learns the recall/remember loop and the handoff,
   and private-mode protocols.
 - **The journal at session start** — when the server's [journal](/guides/journal/)
   is on, your recent entries follow the primer, fetched once per session. Entries

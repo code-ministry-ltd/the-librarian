@@ -38,12 +38,7 @@ describe("librarian extension factory", () => {
 
     expect(tools).toHaveLength(0);
     expect(events).toHaveLength(0);
-    expect(commands.map((c) => c.name).sort()).toEqual([
-      "handoff",
-      "learn",
-      "takeover",
-      "toggle-private",
-    ]);
+    expect(commands.map((c) => c.name).sort()).toEqual(["handoff", "takeover", "toggle-private"]);
 
     const notify = vi.fn();
     await commands[0]!.handler("", { ui: { notify } });
@@ -72,12 +67,7 @@ describe("librarian extension factory", () => {
     // hook (agent_end) are all wired when configured.
     expect(events.filter((e) => e === "before_agent_start")).toHaveLength(2);
     expect([...new Set(events)].sort()).toEqual(["agent_end", "before_agent_start"]);
-    expect(commands.map((c) => c.name).sort()).toEqual([
-      "handoff",
-      "learn",
-      "takeover",
-      "toggle-private",
-    ]);
+    expect(commands.map((c) => c.name).sort()).toEqual(["handoff", "takeover", "toggle-private"]);
   });
 
   it("wires the agent_end auto-capture hook (default-on, Phase 2B)", () => {

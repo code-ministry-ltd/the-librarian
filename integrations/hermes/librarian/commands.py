@@ -34,13 +34,6 @@ _TAKEOVER_PROMPT = (
     "selection and continue the work the returned document_md describes."
 )
 
-_LEARN_PROMPT = (
-    "Extract durable lessons from this conversation and store the "
-    "user-approved ones with `remember` — one call per durable lesson, each "
-    "with a short title and a self-contained body. Fire-and-forget: the user "
-    "picking a lesson is the review, so submit and move on; the curator "
-    "dedupes, merges, and files each one asynchronously."
-)
 
 _TOGGLE_ON = (
     "Private mode is ON. `[librarian:private=on]` — do not call `remember`, "
@@ -57,7 +50,7 @@ _TOGGLE_OFF = "Private mode is OFF. `[librarian:private=off]` — normal operati
 
 
 def register_commands(ctx: Any) -> None:
-    """Register the four user-facing slash commands.
+    """Register the three user-facing slash commands.
 
     No-op if *ctx* has no ``register_command`` (e.g. the memory-provider
     loader's collector, which only keeps the provider).
@@ -71,9 +64,6 @@ def register_commands(ctx: Any) -> None:
 
     def takeover(_raw_args: str = "") -> str:
         return _TAKEOVER_PROMPT
-
-    def learn(_raw_args: str = "") -> str:
-        return _LEARN_PROMPT
 
     def toggle_private(_raw_args: str = "") -> str:
         # The toggle is pure in-conversation — no server state, no hook. We
@@ -98,12 +88,6 @@ def register_commands(ctx: Any) -> None:
             "takeover",
             takeover,
             "Pick up a handoff from another agent / harness",
-            "",
-        ),
-        (
-            "learn",
-            learn,
-            "Extract durable lessons from this conversation into durable memory",
             "",
         ),
         (

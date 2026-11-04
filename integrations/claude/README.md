@@ -8,8 +8,8 @@ loads natively from the MCP server's `instructions` field at connect time.
 
 **The MCP config alone is fully functional.** Claude Code renders the
 server's instructions and tool descriptions natively, and those carry every
-protocol (the recall/remember loop, the five-section handoff template, the
-learn flow, private mode). The plugin below adds only optional sugar: four
+protocol (the recall/remember loop, the five-section handoff template, private
+mode). The plugin below adds only optional sugar: three
 slash commands that restate the same protocols as convenient prompts.
 
 Flagging a wrong or outdated memory with `flag_memory` asks the curator to
@@ -88,13 +88,12 @@ In Claude Code:
 ```
 
 Set the same two environment variables (above) and restart Claude Code.
-The plugin ships the `.mcp.json` from Option A plus four commands:
+The plugin ships the `.mcp.json` from Option A plus three commands:
 
 | Command | What it does |
 | --- | --- |
 | `/handoff` | Author a five-section narrative and persist it via `store_handoff` for cross-harness pickup |
 | `/takeover` | List candidate handoffs (`list_handoffs`), atomically claim one (`claim_handoff`), inject the document |
-| `/learn` | Extract durable lessons from the conversation and submit each via `remember` |
 | `/toggle-private` | Flip the `[librarian:private=on\|off]` marker — pure in-conversation, no server state; the server cannot verify it, and a curator review queued from a public flag may still correct that memory after switching private |
 
 All four are thin prompt templates over the primer protocols — saying

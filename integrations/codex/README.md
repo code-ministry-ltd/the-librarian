@@ -188,7 +188,7 @@ and the model drives them from what you say:
 | --- | --- |
 | "hand this off" / "we're done for now" | Authors a five-section document — Start & intent, Journey, Current state, What's left, Open questions — and persists it via `store_handoff` |
 | "pick up where I left off" / "what was I doing" | `list_handoffs`, presents the candidates, atomically claims your pick with `claim_handoff`, resumes from the document |
-| "save what we learned" | Extracts durable lessons, submits the ones you approve via `remember` (one call per lesson; the curator dedupes and files them) |
+| "save what we learned" | Calls `remember` for the lessons worth keeping (the curator dedupes and files them). Automatic capture also harvests lessons without being asked |
 | "go private" / "back on the record" | Emits the `[librarian:private=on\|off]` marker — pure in-conversation. While private: no `remember`/`store_handoff`/`flag_memory`; `recall`/`search_references`/`journal` stay allowed (those queries reach the server's logs). Private mode is an in-conversation instruction; the server cannot verify its marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work. |
 | "what do I know about …" | `recall` |
 | "remember that …" | `remember` |

@@ -6,7 +6,7 @@ description: Toggle in-conversation private mode (no server state, no hook)
 
 Flip the in-conversation private-mode marker. **Pure in-context** — no MCP call, no server flag. The contract:
 
-- `[librarian:private=on]` — the agent must NOT call `remember`, `store_handoff`, or `flag_memory` until told otherwise. `recall`, `search_references` and `journal` stay allowed — but those read queries reach the Librarian server's logs; say so if the user asks. `/handoff` and `/learn` require explicit user confirmation while private. Private mode is an in-conversation instruction; the server cannot verify its marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work.
+- `[librarian:private=on]` — the agent must NOT call `remember`, `store_handoff`, or `flag_memory` until told otherwise. `recall`, `search_references` and `journal` stay allowed — but those read queries reach the Librarian server's logs; say so if the user asks. `/handoff` requires explicit user confirmation while private. Private mode is an in-conversation instruction; the server cannot verify its marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work.
 - `[librarian:private=off]` — normal operation.
 - **Default when no marker is present:** OFF.
 

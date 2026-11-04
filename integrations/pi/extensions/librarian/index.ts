@@ -11,8 +11,7 @@
 //     appended to the system prompt via `before_agent_start` — see `primer.ts`;
 //   - the recent window of the conversation journal, fetched once per session and
 //     appended after the primer (spec 078) — see `journal.ts`;
-//   - four user-facing slash commands (`/handoff`, `/takeover`, `/learn`,
-//     `/toggle-private`) as thin prompt templates — see `commands.ts`.
+//   - three user-facing slash commands (`/handoff`, `/takeover`, `/toggle-private`) as thin prompt templates — see `commands.ts`.
 //
 // Private mode is purely in-conversation: an `[librarian:private=on|off]`
 // marker the LLM owns. There is no server flag, no on-disk state, and no
@@ -30,7 +29,7 @@ import { registerLibrarianTools } from "./tools.js";
 const CONFIG_HINT =
   "The Librarian is not configured. Set LIBRARIAN_MCP_URL and LIBRARIAN_AGENT_TOKEN.";
 
-const COMMAND_VERBS = ["handoff", "takeover", "learn", "toggle-private"] as const;
+const COMMAND_VERBS = ["handoff", "takeover", "toggle-private"] as const;
 
 export default function librarian(pi: ExtensionAPI): void {
   const config = readConfig();
@@ -80,6 +79,6 @@ export default function librarian(pi: ExtensionAPI): void {
   // returns before reaching here, so an unconfigured install captures nothing).
   registerCaptureHook(pi, resolveDataDir(process.env), (cwd) => journal.projectFor(cwd));
 
-  // The four user-facing slash commands (optional sugar, D9).
+  // The three user-facing slash commands (optional sugar, D9).
   registerCommands(pi);
 }

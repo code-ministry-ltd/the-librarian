@@ -61,8 +61,8 @@ your server is down it is simply skipped and your session still starts.)
   [journal](/guides/journal/).
 - **The primer** — loaded into the model's instructions at session start.
 - **Plain-language control** — saying "hand this off", "pick up where I left off",
-  "save what we learned", or "go private" is the whole interface. Four optional
-  command files (`/handoff`, `/takeover`, `/learn`, `/toggle-private`) can be
+  "save what we learned", or "go private" is the whole interface. Three optional
+  command files (`/handoff`, `/takeover`, `/toggle-private`) can be
   copied in if you prefer typed shortcuts.
 - **Automatic capture** (optional) — a small opencode plugin can learn from your
   sessions as they happen. It is on by default once installed, skips

@@ -42,7 +42,7 @@ Librarian primer into the system prompt. One install, zero config files.
   fail-soft — a Librarian outage never blocks a turn or leaks a stack trace.
   Private mode is an in-conversation instruction; the server cannot verify its
   marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work.
-- **Four slash commands** (optional sugar): `/handoff`, `/takeover`, `/learn`,
+- **Three slash commands** (optional sugar): `/handoff`, `/takeover`,
   `/toggle-private` — thin prompt templates that drive the corresponding tool
   flows. See [`docs/slash-commands.md`](../../docs/slash-commands.md).
 - **Fail-soft everywhere** — if the Librarian is down, tools return a short
@@ -95,7 +95,7 @@ Set two environment variables in the shell that launches `pi`:
 | `LIBRARIAN_PI_DATA` | *(optional)* where the per-session capture state lives, default `$HOME/.librarian/pi-extension-data` |
 
 Without both required variables the extension stays **dormant**: no tools, no
-network calls — only the four slash commands register, and they explain what's
+network calls — only the three slash commands register, and they explain what's
 missing.
 
 Security posture (inherited from the security-reviewed clients in this family):

@@ -3,7 +3,7 @@
 // What this guards:
 //
 //   1. The post-sessions-rethink slash surface (`/handoff`, `/takeover`,
-//      `/learn`, `/toggle-private`) ships ONLY via the Claude plugin
+//      `/toggle-private`; `/learn` was retired in 1.50.0) ships ONLY via the Claude plugin
 //      (`integrations/claude/commands/`, installed from the marketplace) —
 //      NOT a repo-local `.claude/commands/` copy. A duplicate set makes it
 //      ambiguous which surface is firing, so the repo-local copy must stay
@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 
-const SLASH_COMMANDS = ["handoff", "takeover", "learn", "toggle-private"] as const;
+const SLASH_COMMANDS = ["handoff", "takeover", "toggle-private"] as const;
 const RETIRED_SESSION_VERBS = [
   "lib-session-start",
   "lib-session-list",

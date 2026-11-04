@@ -6,7 +6,7 @@
 // confidence bands — this stage does NOT touch the judge/apply pipeline.
 //
 // This is brainstorm §4.4 option b: the `/learn` extraction job moved
-// server-side. Long-term `/learn` can call this same extractor.
+// server-side (the `/learn` command itself was retired in 1.50.0).
 //
 // The LLM client is INJECTED (built by the caller from the intake consumer's own
 // provider config, exactly like the intake judge), so this is testable with a

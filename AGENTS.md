@@ -57,8 +57,8 @@ PR. Never invent new ones unilaterally:
 
 - **The protocols.** The primer (`vault/primer.md`, default content in
   `packages/core/src/primer.ts`) is the **canonical definition** of the
-  handoff / takeover / learn / private-mode protocols (rethink D9). The
-  slash commands (`/handoff`, `/takeover`, `/learn`, and the local-only
+  handoff / takeover / private-mode protocols (rethink D9). The
+  slash commands (`/handoff`, `/takeover`, and the local-only
   `/toggle-private`) are optional sugar over it — contract in
   [`docs/slash-commands.md`](./docs/slash-commands.md), templates in
   each integration's command files. Change the primer, the doc, and the

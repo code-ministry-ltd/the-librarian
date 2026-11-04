@@ -174,7 +174,7 @@ opencode auto-discovers command markdown files from
 `~/.config/opencode/commands/` (global) or `.opencode/commands/`
 (per-project) — [opencode.ai/docs/commands](https://opencode.ai/docs/commands).
 The four files in [`commands/`](./commands) restate the primer protocols as
-`/handoff`, `/takeover`, `/learn`, and `/toggle-private` pickers (identical
+`/handoff`, `/takeover`, and `/toggle-private` pickers (identical
 wording to the Claude Code plugin's commands):
 
 ```sh

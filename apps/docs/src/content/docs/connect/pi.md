@@ -48,7 +48,7 @@ export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
 Without both values the extension stays dormant — no tools, no network calls —
-and only its four slash commands register, explaining what is missing.
+and only its three slash commands register, explaining what is missing.
 
 ## What you get
 
@@ -58,7 +58,7 @@ and only its four slash commands register, explaining what is missing.
 - **The journal at session start** — when the server's [journal](/guides/journal/)
   is on, your recent entries follow the primer in the system prompt, fetched once
   per session. Turn it off per machine with `LIBRARIAN_JOURNAL=off`.
-- **Four optional slash commands** — `/handoff`, `/takeover`, `/learn`,
+- **Three optional slash commands** — `/handoff`, `/takeover`,
   `/toggle-private`.
 - **Automatic capture** — after each completed turn Pi ships the turn to your
   server for the curator to mine. On by default; opt out per machine with

@@ -39,7 +39,7 @@ class _BareCtx:
 def test_registers_the_four_verbs() -> None:
     ctx = _CommandCtx()
     register_commands(ctx)
-    assert set(ctx.registered) == {"handoff", "takeover", "learn", "toggle-private"}
+    assert set(ctx.registered) == {"handoff", "takeover", "toggle-private"}
 
 
 def test_noop_when_ctx_has_no_register_command() -> None:
@@ -55,8 +55,6 @@ def test_prompts_route_to_the_seven_verb_surface() -> None:
         assert heading in handoff
     takeover = ctx.registered["takeover"]["handler"]()
     assert "list_handoffs" in takeover and "claim_handoff" in takeover
-    learn = ctx.registered["learn"]["handler"]()
-    assert "remember" in learn
     # No prompt references the retired verbs.
     for name in ctx.registered:
         text = ctx.registered[name]["handler"]()
@@ -92,7 +90,7 @@ def test_register_wires_provider_under_memory_loader() -> None:
 def test_register_wires_commands_under_general_loader() -> None:
     ctx = _CommandCtx()
     librarian.register(ctx)  # no register_memory_provider on this ctx
-    assert set(ctx.registered) == {"handoff", "takeover", "learn", "toggle-private"}
+    assert set(ctx.registered) == {"handoff", "takeover", "toggle-private"}
 
 
 def test_register_survives_a_bare_context() -> None:

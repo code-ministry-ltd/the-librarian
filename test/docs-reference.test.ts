@@ -119,8 +119,8 @@ describe("included canonical docs (slash commands, capture matrix)", () => {
   /** A repo-relative markdown link (not http/anchor/site-absolute). */
   const REPO_RELATIVE_LINK = /\]\((?!https?:\/\/|#|\/)[^)]*\)/;
 
-  it("includes the four slash commands and their contract table", () => {
-    for (const cmd of ["/handoff", "/takeover", "/learn", "/toggle-private"]) {
+  it("includes the three slash commands and their contract table", () => {
+    for (const cmd of ["/handoff", "/takeover", "/toggle-private"]) {
       expect(slash, `slash-commands page missing ${cmd}`).toContain(cmd);
     }
     expect(slash).toContain("| Command | Purpose |");

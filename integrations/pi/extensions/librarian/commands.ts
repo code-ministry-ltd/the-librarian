@@ -1,6 +1,6 @@
 // Native Pi slash commands for The Librarian — optional sugar (rethink D9).
 //
-// Four thin prompt templates aligned with docs/slash-commands.md and the
+// Three thin prompt templates aligned with docs/slash-commands.md and the
 // 8-verb surface. Each handler injects a user message that drives the LLM
 // through the corresponding tool flow; the tools (and the primer) carry the
 // actual protocol, so these stay deliberately skeletal. Pi's `registerCommand`
@@ -19,12 +19,6 @@ const TAKEOVER_PROMPT =
   "to broaden when nothing matches), present the candidates to the user — " +
   "never auto-select — then `claim_handoff` the chosen id and continue the " +
   "work its document describes. If the user supplied a handoff id, claim it directly.";
-
-const LEARN_PROMPT =
-  "Extract durable lessons from this conversation and feed user-approved ones " +
-  "to `remember`, one call per lesson — fire-and-forget: the user picking a " +
-  "lesson is the review, so submit and move on; the curator dedupes, merges, " +
-  "and files each one asynchronously.";
 
 const TOGGLE_ON =
   "Private mode is ON. `[librarian:private=on]` — do not call `remember`, " +
@@ -52,11 +46,6 @@ export const COMMAND_SPECS = [
     name: "takeover",
     description: "Pick up a handoff from another agent / harness",
     prompt: TAKEOVER_PROMPT,
-  },
-  {
-    name: "learn",
-    description: "Extract durable lessons from this conversation into durable memory",
-    prompt: LEARN_PROMPT,
   },
   {
     name: "toggle-private",

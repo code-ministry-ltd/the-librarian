@@ -232,7 +232,7 @@ fail-soft rule), followed by an optional operator addendum at `vault/primer.md`,
 in Settings → Primer. The whole primer is capped at 2 KB. Design:
 [`docs/adr/0007-the-rethink.md`](./docs/adr/0007-the-rethink.md).
 
-The four optional slash commands (`/handoff`, `/takeover`, `/learn`, and the
+The three optional slash commands (`/handoff`, `/takeover`, and the
 local-only `/toggle-private`) are thin sugar over those protocols — plain language
 works identically. Contract: [`docs/slash-commands.md`](./docs/slash-commands.md).
 Walkthroughs for operators are in the docs site:
