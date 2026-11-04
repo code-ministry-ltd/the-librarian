@@ -9,7 +9,7 @@
     {
       "name": "the-librarian",
       "source": "./integrations/claude",
-      "description": "Durable memory for Claude Code: automatic transcript capture + recall-awareness hooks, a native-memory write-block, the MCP server config, and four slash commands (/handoff, /takeover, /learn, /toggle-private).",
+      "description": "Durable memory for Claude Code: automatic transcript capture + recall-awareness hooks, a native-memory write-block, the MCP server config, and three slash commands (/handoff, /takeover, /toggle-private).",
       "license": "Apache-2.0",
       "keywords": ["memory", "handoff", "mcp", "librarian", "recall", "cross-harness"]
     }

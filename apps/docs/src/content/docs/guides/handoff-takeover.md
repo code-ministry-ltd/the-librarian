@@ -50,8 +50,8 @@ They are different tools for different jobs:
 - A **handoff** describes *in-progress work* and is claimed exactly once. It is
   evidence of where you were, not a permanent fact.
 - A **memory** is a *durable fact* you want to keep. To promote something you
-  learned during the work into lasting memory, use "save what we learned" (the
-  `/learn` flow) instead.
+  learned during the work into lasting memory, ask the agent to remember it
+  ("save what we learned"). Automatic capture also picks lessons up as you go.
 
 ## A note on private mode
 

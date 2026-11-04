@@ -51,7 +51,7 @@ export LIBRARIAN_AGENT_TOKEN="<your-token>"
 ```
 
 That wires up memory itself — the **eight tools and the primer**, and nothing more.
-The four slash commands and automatic capture ride on the *plugin*, not bare MCP, so
+The three slash commands and automatic capture ride on the *plugin*, not bare MCP, so
 use **The easy way** above if you want those too. The briefing (primer) arrives
 automatically at session start.
 
@@ -62,7 +62,7 @@ automatically at session start.
   [journal](/guides/journal/).
 - **The primer** — Claude Code reads The Librarian's briefing natively, so it
   knows how and when to use those tools without any prompting from you.
-- **Four optional slash commands** — `/handoff`, `/takeover`, `/learn`, and the
+- **Three optional slash commands** — `/handoff`, `/takeover`, and the
   local-only `/toggle-private`. These are convenient shortcuts; saying "hand this
   off" or "go private" in plain English does exactly the same thing.
 - **Automatic capture** — Claude Code is the most thoroughly tested harness for

@@ -20,7 +20,7 @@ dependencies).
 - **The primer in the system prompt** — `system_prompt_block()` returns the
   primer (shipped default plus optional addendum) fetched from the server's `GET /primer.md`
   (cached per session). The primer teaches the recall/remember loop and the
-  handoff / learn / private-mode protocols, so no per-harness prompt code is
+  handoff / private-mode protocols, so no per-harness prompt code is
   needed.
 - **The journal at session start** — the same block carries the recent window of
   the [journal](https://librarian-docs.codeministry.net/guides/journal/)
@@ -39,7 +39,7 @@ dependencies).
   collide), and it is fully fail-soft — a Librarian outage never blocks a turn.
   Private mode is an in-conversation instruction; the server cannot verify its
   marker. A curator review queued by a flag from public context may still correct that memory after switching private; the toggle does not cancel queued work.
-- **Optional slash commands** — `/handoff`, `/takeover`, `/learn`,
+- **Optional slash commands** — `/handoff`, `/takeover`,
   `/toggle-private`: thin prompt templates over the same protocols, registered
   only when the plugin is also enabled as a general plugin. Nothing is lost
   without them; the primer is the canonical definition.

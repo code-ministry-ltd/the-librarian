@@ -26,7 +26,7 @@ The default, when nothing has been said, is **off** — normal operation.
 - **Still allowed:** recalling memories, searching references and reading the
   [journal](/guides/journal/). You can still ask "what do we know about X?" while
   private.
-- **Asks first, then proceeds:** an *explicit* `/handoff` (or `/learn`) is your
+- **Asks first, then proceeds:** an *explicit* `/handoff` is your
   override. Ask to hand off while private and the agent does not silently skip it —
   it confirms you really want this conversation written, then stores it only on a
   yes. Private mode blocks *automatic* writes, not a deliberate, confirmed one.
