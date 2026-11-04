@@ -60,7 +60,7 @@ review. Tick an item in the same commit that fixes it, and note the PR.
 - [ ] **#31** tRPC audit actor and error codes; shelf-scoped admin writes
 - [ ] **#32** Dashboard search, dates, and silent caps
 - [ ] **#33** Capture edge cases (OpenCode cap, Codex record, `ended:true`, Codex URL update)
-- [ ] **#34** Hermes description drift; Pi/Hermes privacy gate in `/handoff` and `/learn`
+- [ ] **#34** Hermes description drift; Pi/Hermes privacy gate in `/handoff` (`/learn` was retired in 1.50.0)
 - [ ] **#35** Performance hot spots and unbounded caches
 - [ ] **#36** Backup restore scratch dir; non-ASCII file history
 
