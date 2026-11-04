@@ -25,7 +25,7 @@ Search the owner's durable memories. Call this before answering anything that ma
 
 ## `remember`
 
-Save a durable fact, preference, or decision the moment you learn it — not transient chatter. Fire-and-forget: submit and move on; the curator files it asynchronously (dedupe, merge, link — no need to check first). Give it a short `title` and a self-contained `body`; add `tags` so it surfaces in the right context. Caller-supplied `is_global` / `requires_approval` are ignored.
+Save a durable fact, preference, or decision that will matter in later sessions and isn't obvious from the working directory — not routine facts or transient chatter (conversations may be harvested automatically). Fire-and-forget: submit and move on; the curator files it asynchronously (dedupe, merge, link — no need to check first). Give it a short `title` and a self-contained `body`; add `tags` so it surfaces in the right context. Caller-supplied `is_global` / `requires_approval` are ignored.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

@@ -73,8 +73,10 @@ export function librarianToolSpecs(): LibrarianToolSpec[] {
       name: "remember",
       label: "Remember",
       description:
-        "Save a durable fact, preference, or decision the moment you learn it — " +
-        "not transient chatter. Fire-and-forget: submit and move on; the curator " +
+        "Save a durable fact, preference, or decision that will matter in later " +
+        "sessions and isn't obvious from the working directory — not routine facts " +
+        "or transient chatter (conversations may be harvested automatically). " +
+        "Fire-and-forget: submit and move on; the curator " +
         "files it asynchronously (dedupe, merge, link — no need to check first). " +
         "Give it a short `title` and a self-contained `body`; add `tags` so it " +
         "surfaces in the right context. Caller-supplied " +

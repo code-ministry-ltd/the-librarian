@@ -9,6 +9,16 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.50.1] — 2026-11-04
+
+### Changed
+
+- **The `remember` tool description and the Claude Code session-start banner** now match the
+  1.47.0 primer: save something only when it will matter in later sessions and isn't obvious
+  from the working directory, not "the moment you learn it". Conversations may be harvested
+  automatically, so routine facts don't need saving. The same wording is used by the server,
+  Pi and Hermes. The banner still tells agents to `remember` explicitly when capture is off.
+
 ## [1.50.0] — 2026-11-04
 
 ### Removed
@@ -5551,6 +5561,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.50.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.0...v1.50.1
 [1.50.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.49.1...v1.50.0
 [1.49.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.49.0...v1.49.1
 [1.49.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.48.0...v1.49.0
