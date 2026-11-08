@@ -163,6 +163,12 @@ export {
   tryExtractTranscriptFacts,
 } from "./transcript-extract.js";
 export {
+  type ReviewCounts,
+  type TranscriptReview,
+  MIN_REVIEW_QUOTE_CHARS,
+  reviewTranscriptFacts,
+} from "./transcript-review.js";
+export {
   type TranscriptSweepOptions,
   type TranscriptSweepSummary,
   DEFAULT_TRANSCRIPT_IDLE_MS,

@@ -616,6 +616,8 @@ export function createLibrarianServer(options: LibrarianServerOptions): Libraria
         {
           extracted: summary.extracted,
           facts: summary.facts,
+          review: summary.review,
+          unreviewed: summary.unreviewed,
           reaped: summary.reaped,
           failed: summary.failed,
           abandoned: summary.abandoned,

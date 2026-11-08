@@ -9,6 +9,25 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.51.0] — 2026-11-08
+
+### Added
+
+- **Facts harvested from a conversation are now reviewed before they're filed.** After the
+  extractor has mined a conversation, and before the transcript is deleted, a second call to
+  the Intake model reads the transcript and gives each fact a verdict: keep it, improve it or
+  drop it. It removes descriptions of how the code works, finished bug fixes and one-off
+  status, and rewrites facts that are correct but miss the point. It keeps preferences,
+  decisions, investigation findings and facts about outside systems. A kept or improved fact
+  needs a supporting quote that is checked against the transcript in code; without one it is
+  dropped. The review judges only what the extractor wrote and doesn't look for missed facts.
+  It applies to imported conversations too.
+- **This adds one model call per conversation that yields facts,** about the size of the
+  extraction call. A failed review is retried along with the extraction. On the last attempt
+  the facts are filed unreviewed rather than lost. The sweep's log line now carries counts
+  (reviewed, kept, fixed, dropped, quote failures, filed unreviewed), never fact text, quotes
+  or reasons.
+
 ## [1.50.2] — 2026-11-04
 
 ### Fixed
@@ -5572,6 +5591,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.51.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.2...v1.51.0
 [1.50.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.1...v1.50.2
 [1.50.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.0...v1.50.1
 [1.50.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.49.1...v1.50.0
