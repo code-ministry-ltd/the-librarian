@@ -95,17 +95,18 @@
           </dd>
           <dt>Constraint</dt>
           <dd>
-            Reason not recorded in an ADR. The self-host guide presents the single container as the
-            low-friction path.
+            Running two apps was the friction that made the harness plugins do nothing until someone
+            set up a server. The goal was a single command, on a remote box or a host such as
+            Fly.io.
           </dd>
           <dt>Rejected</dt>
-          <dd>Not recorded.</dd>
+          <dd>A single public port, proxying <code>/mcp</code> through the dashboard: deferred.</dd>
           <dt>Cost accepted</dt>
           <dd>The internal listener is loopback rather than a private Docker network.</dd>
           <dt>Source</dt>
           <dd>
-            <code>docker/all-in-one.Dockerfile</code>,
-            <code>docker/supervisor.mjs</code> (observed); reason inferred
+            Spec 015, in the maintainer's private notes;
+            <code>docker/all-in-one.Dockerfile</code> (observed)
           </dd>
         </dl>
       </details>

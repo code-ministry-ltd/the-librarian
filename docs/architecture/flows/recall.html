@@ -87,11 +87,20 @@
           <dt>Constraint</dt>
           <dd>Keyword scores and cosine similarity are on incomparable scales.</dd>
           <dt>Rejected</dt>
-          <dd>Not recorded.</dd>
+          <dd>
+            Changing the fusion method (a lower <code>k</code> or a weighted sum): deferred in
+            favour of BM25 and an exact-phrase list, to be revisited only if those weren't enough.
+          </dd>
           <dt>Cost accepted</dt>
-          <dd>Actual score sizes are ignored, only the order counts.</dd>
+          <dd>
+            Only the order counts, so a much better match can't pull far ahead. <code>k</code> is
+            60.
+          </dd>
           <dt>Source</dt>
-          <dd><code>packages/core/src/store/index/hybrid-index.ts</code> comment (observed)</dd>
+          <dd>
+            <code>hybrid-index.ts</code> comment (observed); hybrid ranking spec of 2026-06-19 and
+            the memsearch field report, in the maintainer's private notes
+          </dd>
         </dl>
       </details>
       <details class="why" id="why-local-embed">
@@ -104,19 +113,20 @@
           </dd>
           <dt>Constraint</dt>
           <dd>
-            Reason not recorded in an ADR. Inferred: it keeps memory text on the server and needs no
-            embedding provider.
+            The rearchitecture wanted local embeddings by default, with no setup and no GPU. Why
+            this model replaced the originally planned bge models is not recorded. That it keeps
+            memory text on the server is inferred.
           </dd>
           <dt>Rejected</dt>
-          <dd>Not recorded.</dd>
+          <dd>An API embedder was planned as a fallback; the code has no remote embedder today.</dd>
           <dt>Cost accepted</dt>
           <dd>
             CPU use on the host, capped at half its cores and no more than 6 threads by default.
           </dd>
           <dt>Source</dt>
           <dd>
-            <code>packages/core/src/store/index/resolve-embedder.ts</code> (observed); reason
-            inferred
+            <code>packages/core/src/store/index/resolve-embedder.ts</code> (observed); spec 035 and
+            the first-principles brainstorm, in the maintainer's private notes
           </dd>
         </dl>
       </details>
@@ -130,16 +140,17 @@
           </dd>
           <dt>Constraint</dt>
           <dd>
-            Long documents would otherwise compete with short memories. The code states the
-            separation; this reason is inferred.
+            Large research documents should be reusable without cross-talk into consolidated
+            knowledge. The test was that adding a 23 KB document does not change memory recall.
           </dd>
           <dt>Rejected</dt>
-          <dd>Not recorded.</dd>
+          <dd>Consolidating references into memories, or injecting them at session start.</dd>
           <dt>Cost accepted</dt>
           <dd>An agent has to know which tool to ask.</dd>
           <dt>Source</dt>
           <dd>
-            <code>packages/core/src/store/corpus-index.ts:1-11</code> (observed); reason inferred
+            <code>packages/core/src/store/corpus-index.ts:1-11</code> (observed); spec 035 F4 and
+            the first-principles candidate shape, in the maintainer's private notes
           </dd>
         </dl>
       </details>

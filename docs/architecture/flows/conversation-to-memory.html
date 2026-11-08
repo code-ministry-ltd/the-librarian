@@ -136,16 +136,23 @@
           </dd>
           <dt>Constraint</dt>
           <dd>
-            Privacy is the product, and a raw conversation holds far more than should be retained.
+            A buffer is high-churn raw conversation. Committing it would bloat git history and keep
+            the conversation there permanently, so only extracted facts reach the committed path.
           </dd>
           <dt>Rejected</dt>
-          <dd>Not recorded as an explicit alternative.</dd>
+          <dd>
+            Committing buffers to the vault. Keeping raw transcripts as a fallback for searching:
+            left out of the journal's first version, to be revisited after it had run for a month.
+          </dd>
           <dt>Cost accepted</dt>
-          <dd>Nothing later can check a memory against what was actually said.</dd>
+          <dd>
+            Nothing later can check a memory against what was actually said, and journal search sees
+            only what survived the roll-ups.
+          </dd>
           <dt>Source</dt>
           <dd>
-            <code>transcript-intake.ts</code> privacy notes,
-            <a href="../../adr/0009-integration-enforced-librarian-use.md">ADR 0009</a> (observed)
+            Capture brainstorm and spec 077, in the maintainer's private notes;
+            <code>transcript-intake.ts</code> (observed)
           </dd>
         </dl>
       </details>

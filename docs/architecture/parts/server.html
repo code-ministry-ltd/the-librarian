@@ -155,18 +155,23 @@
           <dd>Each job polls and decides for itself whether it is due.</dd>
           <dt>Constraint</dt>
           <dd>
-            Reason not recorded as a single decision. The code comments give one benefit: toggling a
-            job or editing its schedule takes effect on the next poll with no restart.
+            Dashboard toggles had to be real: switching a job on or off changes behaviour within one
+            tick, with no restart. Each scheduler always exists and checks its own settings,
+            following the backup scheduler's pattern.
           </dd>
           <dt>Rejected</dt>
           <dd>
-            Not recorded. <a href="../../adr/0011-extension-seams.md">ADR 0011</a> separately
-            rejects a general event bus as a plugin mechanism.
+            No alternative recorded for the job timers.
+            <a href="../../adr/0011-extension-seams.md">ADR 0011</a> separately rejects a general
+            event bus as a plugin mechanism.
           </dd>
           <dt>Cost accepted</dt>
           <dd>Work waits for the next tick.</dd>
           <dt>Source</dt>
-          <dd><code>librarian-server.ts</code> comments (observed); overall reason unknown</dd>
+          <dd>
+            Specs 045 and 046, in the maintainer's private notes;
+            <code>librarian-server.ts</code> comments (observed)
+          </dd>
         </dl>
       </details>
 
