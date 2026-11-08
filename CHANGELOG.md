@@ -9,6 +9,15 @@ This changelog starts at v0.1.0 — the first version likely to see public
 adoption. The pre-v0.1.0 development history lives in the git log; only
 changes from this point forward are catalogued here.
 
+## [1.51.1] — 2026-11-08
+
+### Added
+
+- **An architecture site in `docs/architecture/`.** It maps the system and walks through how a
+  conversation becomes memories and how recall works, with the reason behind each choice one
+  tap away. `AGENTS.md` now requires it to be updated with any architectural change, and to
+  keep the maintainer's task list current.
+
 ## [1.51.0] — 2026-11-08
 
 ### Added
@@ -5591,6 +5600,7 @@ another.
 [1.23.7]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.6...v1.23.7
 [1.23.8]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.7...v1.23.8
 [1.23.9]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.23.8...v1.23.9
+[1.51.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.51.0...v1.51.1
 [1.51.0]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.2...v1.51.0
 [1.50.2]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.1...v1.50.2
 [1.50.1]: https://github.com/code-ministry-ltd/the-librarian/compare/v1.50.0...v1.50.1

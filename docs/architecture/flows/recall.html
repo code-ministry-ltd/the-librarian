@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recalling a Memory</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>Recall ranks memories by section, then follows their links</h1>
+      <p>
+        A query searches only active memories. It combines keyword and meaning-based search, so an
+        exact name and a loose description can both find the same note.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 434" role="img" aria-labelledby="recall-t recall-d">
+          <title id="recall-t">A recall query</title>
+          <desc id="recall-d">
+            Agent calls recall searches each shelf&#x27;s Sectioned index: keyword + vector.
+            Sectioned index: keyword + vector fuses with RRF, then Add linked neighbours. Add linked
+            neighbours resolves and Demote flagged, filter tags, limit. Demote flagged, filter tags,
+            limit returns Memories with best section.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="box" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Agent calls recall</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">searches each shelf&#x27;s</text>
+          <rect class="store" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">Sectioned index: keyword + vector</text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">fuses with RRF, then</text>
+          <rect class="box" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">Add linked neighbours</text>
+          <path class="wire" d="M60 240V284" />
+          <text class="verb" x="72" y="267">resolves and</text>
+          <rect class="box" x="30" y="286" width="300" height="46" rx="6" />
+          <text x="180" y="314" text-anchor="middle">Demote flagged, filter tags, limit</text>
+          <path class="wire" d="M60 332V376" />
+          <text class="verb" x="72" y="359">returns</text>
+          <rect class="box" x="30" y="378" width="300" height="46" rx="6" />
+          <text x="180" y="406" text-anchor="middle">Memories with best section</text>
+        </svg>
+        <figcaption>
+          The index is disposable; the results always come from the vault's memories.
+        </figcaption>
+      </figure>
+
+      <h2>The steps</h2>
+      <ol class="steps">
+        <li>
+          Each memory is matched section by section, using keyword, vector, title and phrase signals
+          fused by Reciprocal Rank Fusion (<code>packages/core/src/store/corpus-index.ts:7</code>,
+          <code>packages/core/src/store/index/hybrid-index.ts</code>).
+        </li>
+        <li>
+          Wikilink neighbours of direct matches are added in both directions, with a decayed score
+          (<code>packages/core/src/store/index/recall.ts</code>).
+        </li>
+        <li>
+          Results are over-fetched by four times the limit, with a floor of 24, so that filtering
+          can still fill the limit. The default limit is 8 (<code>corpus-index.ts:356-357</code>).
+        </li>
+        <li>A memory with an open flag moves down the ranking but is never removed.</li>
+        <li>With several shelves, each shelf's results are merged into one labelled list.</li>
+      </ol>
+
+      <details class="why" id="why-rrf">
+        <summary>Why Reciprocal Rank Fusion?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Combine the signals by rank position.</dd>
+          <dt>Constraint</dt>
+          <dd>Keyword scores and cosine similarity are on incomparable scales.</dd>
+          <dt>Rejected</dt>
+          <dd>Not recorded.</dd>
+          <dt>Cost accepted</dt>
+          <dd>Actual score sizes are ignored, only the order counts.</dd>
+          <dt>Source</dt>
+          <dd><code>packages/core/src/store/index/hybrid-index.ts</code> comment (observed)</dd>
+        </dl>
+      </details>
+      <details class="why" id="why-local-embed">
+        <summary>Why embed locally?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            EmbeddingGemma-300M runs in the server through node-llama-cpp, downloaded on first use
+            (about 333 MB). A hash embedder is the fallback.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            Reason not recorded in an ADR. Inferred: it keeps memory text on the server and needs no
+            embedding provider.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Not recorded.</dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            CPU use on the host, capped at half its cores and no more than 6 threads by default.
+          </dd>
+          <dt>Source</dt>
+          <dd>
+            <code>packages/core/src/store/index/resolve-embedder.ts</code> (observed); reason
+            inferred
+          </dd>
+        </dl>
+      </details>
+      <details class="why" id="why-sep-refs">
+        <summary>Why are references searched separately?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Recall covers memories only. <code>search_references</code> builds its own
+            references-only index for each call.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            Long documents would otherwise compete with short memories. The code states the
+            separation; this reason is inferred.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Not recorded.</dd>
+          <dt>Cost accepted</dt>
+          <dd>An agent has to know which tool to ask.</dd>
+          <dt>Source</dt>
+          <dd>
+            <code>packages/core/src/store/corpus-index.ts:1-11</code> (observed); reason inferred
+          </dd>
+        </dl>
+      </details>
+
+      <h2>Known limits</h2>
+      <p class="note">
+        The candidate pool is bounded, so a very selective tag filter can return fewer results than
+        the limit even when more matches exist (noted in <code>corpus-index.ts:347-350</code>). The
+        in-memory index is built from the vault, so a large vault costs start-up work and memory.
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>

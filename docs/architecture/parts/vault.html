@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vault and Store</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>The markdown vault is the truth, and everything else can be rebuilt or thrown away</h1>
+      <p>
+        Every memory, handoff, reference and journal entry is a readable markdown file in a git
+        repository. Each write is its own commit, which is what makes history, restore and backup
+        simple.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 250" role="img" aria-labelledby="layers-t layers-d">
+          <title id="layers-t">Where data lives</title>
+          <desc id="layers-d">
+            Store API (one writer: the server) commits each write to Vault: memories, handoffs,
+            references, journal. Vault: memories, handoffs, references, journal is indexed into
+            .index: disposable search index.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="box" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Store API (one writer: the server)</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">commits each write to</text>
+          <rect class="store" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">
+            Vault: memories, handoffs, references, journal
+          </text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">is indexed into</text>
+          <rect class="store" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">.index: disposable search index</text>
+        </svg>
+        <figcaption>Only the vault is backed up. The search index is rebuilt from it.</figcaption>
+      </figure>
+
+      <h2>The vault has a fixed top-level shape</h2>
+      <table>
+        <tr>
+          <th>Path</th>
+          <th>Holds</th>
+        </tr>
+        <tr>
+          <td><code>memories/</code></td>
+          <td>
+            One file per memory; status <code>active</code>, <code>proposed</code> or
+            <code>archived</code> in frontmatter
+          </td>
+        </tr>
+        <tr>
+          <td><code>handoffs/</code></td>
+          <td>Five-heading handoff documents, each claimable once</td>
+        </tr>
+        <tr>
+          <td><code>references/</code></td>
+          <td>Long documents, searched separately from memories</td>
+        </tr>
+        <tr>
+          <td><code>journal/</code></td>
+          <td>Day, week and month summaries of conversations</td>
+        </tr>
+        <tr>
+          <td><code>inbox/</code></td>
+          <td>Submissions waiting for the curator</td>
+        </tr>
+        <tr>
+          <td><code>primer.md</code></td>
+          <td>The protocol taught to every agent</td>
+        </tr>
+      </table>
+      <p class="note">
+        Source: <code>packages/core/src/store/vault-files.ts:197-218</code>. Outside the vault, the
+        data directory holds <code>settings.json</code>, <code>intake-runs.json</code>, the NDJSON
+        logs and <code>transcripts/</code>.
+      </p>
+
+      <details class="why" id="why-markdown">
+        <summary>Why markdown and git instead of a database?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Markdown is the source of truth and the SQLite backend was removed.</dd>
+          <dt>Constraint</dt>
+          <dd>
+            A dual-path store had already produced split-brain on a real install, and markdown keeps
+            the data readable and editable in tools such as Obsidian.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Keeping SQLite alongside markdown.</dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            An in-memory index has to be built from files, and each write pays for a synchronous git
+            commit.
+          </dd>
+          <dt>Source</dt>
+          <dd><a href="../../adr/0007-the-rethink.md">ADR 0007</a> (observed)</dd>
+        </dl>
+      </details>
+      <details class="why" id="why-plaintext">
+        <summary>Why isn't the vault encrypted?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Provider tokens and agent tokens are encrypted with a master key; memories are
+            plaintext.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            The realistic threat is theft of the whole volume, and encrypted files would break
+            editing in Obsidian.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            Encrypting the vault at rest: it breaks the plaintext design and doesn't help if the key
+            sits beside the data.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>Anyone who can read the volume or the backup remote can read the memories.</dd>
+          <dt>Source</dt>
+          <dd><a href="../../adr/0008-auth-secrets-model.md">ADR 0008</a> (observed)</dd>
+        </dl>
+      </details>
+
+      <h2>A write is synchronous and backup is a push</h2>
+      <p>
+        The store is synchronous and commits by shelling out to git. Backup pushes
+        <code>HEAD</code> to a configured remote, and restore is a clone.
+      </p>
+      <p class="note">
+        Source: <code>packages/core/src/store/git/sync-git-ops.ts</code>,
+        <code>packages/core/src/backup/run.ts</code>.
+      </p>
+
+      <h2>Shelves are prefixes inside the one repository</h2>
+      <p>
+        A shelf is a path prefix inside the vault. The open-source default has one shelf, the vault
+        root. A plugin's router can give a user several, such as a personal shelf and a read-only
+        team shelf.
+      </p>
+      <p class="note">
+        Source: <code>packages/core/src/vault-router.ts</code>; decision in
+        <a href="../../adr/0011-extension-seams.md">ADR 0011</a>.
+      </p>
+
+      <h2>A handoff can only be claimed once</h2>
+      <p>
+        A handoff must contain five headings: Start &amp; intent, Journey, Current state, What's
+        left, and Open questions. The schema refuses anything else. A second claim is refused, and
+        the error says who already holds it.
+      </p>
+      <p class="note">
+        Source: <code>packages/core/src/schemas/handoff.ts:17</code>,
+        <code>packages/core/src/store/markdown/markdown-handoff-store.ts:107</code>.
+      </p>
+
+      <h2>Known limits</h2>
+      <p class="note">
+        Sidecar logs and settings are not in the vault, so they are not in the git backup. By
+        design, a restored server regenerates its credentials and you re-enter third-party ones (<a
+          href="../../adr/0008-auth-secrets-model.md"
+          >ADR 0008</a
+        >).
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>

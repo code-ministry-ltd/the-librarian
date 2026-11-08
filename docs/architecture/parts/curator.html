@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Curator</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>One curator files new facts and tidies old ones under a single apply rule</h1>
+      <p>
+        Intake handles what's new, and grooming improves what's already there. Both ask a configured
+        OpenAI-compatible model what to do, and code decides whether that answer is allowed to take
+        effect.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 434" role="img" aria-labelledby="intake-t intake-d">
+          <title id="intake-t">One inbox item through intake</title>
+          <desc id="intake-d">
+            Inbox item is claimed by Navigate: find related memories. Navigate: find related
+            memories gives evidence to Judge: model picks an action. Judge: model picks an action is
+            checked by Threshold, then guards. Threshold, then guards applies or proposes Memory, or
+            proposal for review.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="store" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Inbox item</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">is claimed by</text>
+          <rect class="box" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">Navigate: find related memories</text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">gives evidence to</text>
+          <rect class="box" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">Judge: model picks an action</text>
+          <path class="wire" d="M60 240V284" />
+          <text class="verb" x="72" y="267">is checked by</text>
+          <rect class="box" x="30" y="286" width="300" height="46" rx="6" />
+          <text x="180" y="314" text-anchor="middle">Threshold, then guards</text>
+          <path class="wire" d="M60 332V376" />
+          <text class="verb" x="72" y="359">applies or proposes</text>
+          <rect class="store" x="30" y="378" width="300" height="46" rx="6" />
+          <text x="180" y="406" text-anchor="middle">Memory, or proposal for review</text>
+        </svg>
+        <figcaption>The model proposes; the threshold and the guards decide.</figcaption>
+      </figure>
+
+      <h2>Confidence decides whether a person sees it</h2>
+      <p>
+        An operation applies at or above <code>curator.apply.confidence_threshold</code>, which
+        defaults to 0.8, and otherwise becomes a proposal. A <code>noop</code> is skipped. The rule
+        is the same for intake and grooming.
+      </p>
+      <details class="why" id="why-threshold">
+        <summary>Why one threshold for everything?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Create, update, merge, split and archive all follow one rule, with no exceptions.</dd>
+          <dt>Constraint</dt>
+          <dd>
+            Archive and split used to reach review queues regardless of confidence, so a threshold
+            of 0 didn't mean what the setting said.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Per-operation settings: left out until practice shows they're needed.</dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            Default installs see more unattended changes, including confident archives and splits.
+          </dd>
+          <dt>Source</dt>
+          <dd>
+            <a href="../../adr/0014-threshold-governs-every-curator-operation.md">ADR 0014</a>
+            (observed); <code>packages/core/src/curator-apply-policy.ts:44</code>
+          </dd>
+        </dl>
+      </details>
+      <details class="why" id="why-guards">
+        <summary>Why check the model's writes in code?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            After the threshold says apply, deterministic guards refuse unsafe writes, including any
+            new body over 4,000 characters.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            A confident model can still write something unsafe, and memories must stay small enough
+            for grooming to read whole.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Relying on the confidence score alone.</dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            Secondary facts in a bundled submission could go unfiled; intake later gained derived
+            items for them.
+          </dd>
+          <dt>Source</dt>
+          <dd>
+            <a href="../../adr/0015-guards-refuse-unsafe-curator-writes.md">ADR 0015</a> (observed);
+            <code>packages/core/src/curator-guards.ts:15</code>,
+            <code>packages/core/src/store/corpus/inbox.ts</code>
+          </dd>
+        </dl>
+      </details>
+
+      <h2>Grooming runs in bounded slices</h2>
+      <p>
+        A run gathers evidence for a slice of memories, does a deterministic pre-pass, asks the
+        model, then validates and applies the operations. Slices whose input hasn't changed are
+        skipped.
+      </p>
+      <table>
+        <tr>
+          <th>Trigger</th>
+          <th>When</th>
+        </tr>
+        <tr>
+          <td>schedule</td>
+          <td>The configured interval and time of day</td>
+        </tr>
+        <tr>
+          <td>post_intake</td>
+          <td>Enough memories changed since the last groom, outside the debounce window</td>
+        </tr>
+        <tr>
+          <td>flag</td>
+          <td>10 minutes after the latest flag, and at most 30 after the first</td>
+        </tr>
+        <tr>
+          <td>manual</td>
+          <td>Run now, from the dashboard</td>
+        </tr>
+      </table>
+      <p class="note">
+        Source: <code>packages/core/src/grooming-worker.ts</code>,
+        <code>packages/core/src/grooming-tick.ts</code>,
+        <code>packages/core/src/grooming-trigger.ts</code>,
+        <a href="../../adr/0013-flags-corrected-by-grooming.md">ADR 0013</a>.
+      </p>
+      <details class="why" id="why-flags">
+        <summary>Why do flags go through grooming?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            <code>flag_memory</code> only records the flag, and a targeted groom makes the
+            correction.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            The earlier separate correction path could only delete exact quoted text and duplicated
+            proposal-review code.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            The separate correction worker (<a href="../../adr/0013-flags-corrected-by-grooming.md"
+              >ADR 0013</a
+            >
+            supersedes ADR 0012).
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            The model writes a whole new body, which is broader than a deletion, so it needs its own
+            audit and truncation guards.
+          </dd>
+          <dt>Source</dt>
+          <dd><a href="../../adr/0013-flags-corrected-by-grooming.md">ADR 0013</a> (observed)</dd>
+        </dl>
+      </details>
+
+      <h2>Known limits</h2>
+      <p class="note">
+        Memory quality depends on the configured model. The curator can only judge what it is shown:
+        it does not read your repository. A persistently failing model retries items until they are
+        parked in <code>inbox/.failed/</code> after their third failure.
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>

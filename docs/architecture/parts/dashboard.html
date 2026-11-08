@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Dashboard</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>
+        The dashboard is the only admin surface and reaches the server over the private listener
+      </h1>
+      <p>
+        It is a Next.js app, and its browser code never talks to the server directly. Proposals are
+        accepted or rejected here, never by an agent.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 342" role="img" aria-labelledby="dash-t dash-d">
+          <title id="dash-t">A dashboard read</title>
+          <desc id="dash-d">
+            Browser calls same-origin Next.js /api/trpc proxy. Next.js /api/trpc proxy forwards to
+            port 3840 Server internal listener. Server internal listener reads Store.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="box" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Browser</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">calls same-origin</text>
+          <rect class="box" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">Next.js /api/trpc proxy</text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">forwards to port 3840</text>
+          <rect class="box" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">Server internal listener</text>
+          <path class="wire" d="M60 240V284" />
+          <text class="verb" x="72" y="267">reads</text>
+          <rect class="store" x="30" y="286" width="300" height="46" rx="6" />
+          <text x="180" y="314" text-anchor="middle">Store</text>
+        </svg>
+        <figcaption>The browser only ever talks to the dashboard's own origin.</figcaption>
+      </figure>
+      <p>
+        Writes follow the same path, using Server Actions in place of the proxy. The dashboard
+        imports the server's <code>AppRouter</code> type at compile time, so an incompatible API
+        change fails its build.
+      </p>
+      <p class="note">
+        Source: <code>apps/dashboard/app/api/trpc/[trpc]/route.ts</code>,
+        <code>apps/dashboard/lib/trpc-server-bare.ts</code>,
+        <a href="../../adr/0002-trpc-admin-api.md">ADR 0002</a>.
+      </p>
+
+      <details class="why" id="why-sep">
+        <summary>Why is the dashboard a separate service?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Keep the admin UI in its own Next.js process.</dd>
+          <dt>Constraint</dt>
+          <dd>
+            UI work must not risk agent availability, and the agent server's job is to answer
+            JSON-RPC.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            One Next.js app that also serves <code>/mcp</code>; a richer UI inside the Node server;
+            keeping the REST API and adding auth.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>Two builds to keep in sync and an extra hop for browser reads.</dd>
+          <dt>Source</dt>
+          <dd><a href="../../adr/0001-separate-services.md">ADR 0001</a> (observed)</dd>
+        </dl>
+      </details>
+      <details class="why" id="why-one-image">
+        <summary>Why is there still a one-container install?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            An all-in-one image runs both processes under a small supervisor; the two-container
+            Compose stack remains.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            Reason not recorded in an ADR. The self-host guide presents the single container as the
+            low-friction path.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Not recorded.</dd>
+          <dt>Cost accepted</dt>
+          <dd>The internal listener is loopback rather than a private Docker network.</dd>
+          <dt>Source</dt>
+          <dd>
+            <code>docker/all-in-one.Dockerfile</code>,
+            <code>docker/supervisor.mjs</code> (observed); reason inferred
+          </dd>
+        </dl>
+      </details>
+
+      <h2>Known limits</h2>
+      <p class="note">
+        Owner sign-in is optional, controlled by <code>LIBRARIAN_AUTH_ENABLED</code>. Without it,
+        anyone who can reach the dashboard port has admin access, so the published port defaults to
+        <code>127.0.0.1</code> (<code>docker/docker-compose.yml:107</code>).
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>
