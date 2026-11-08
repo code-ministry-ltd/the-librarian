@@ -3,7 +3,7 @@
 Automatic capture (spec `2026-06-16-harness-auto-capture`, ADR 0009) feeds a
 **uniform server contract** — the `POST /transcript` delta endpoint — through a
 thin **per-harness acquisition adapter**. The server pipeline (buffer →
-settle-sweep → extractor → curator) is built once and shared; only the small
+settle-sweep → extractor → reviewer → curator) is built once and shared; only the small
 adapter that *acquires* a per-turn delta differs per harness. This page is the
 honest, seeded status of each harness (spec SC14), grounded in the §11.2
 capability audit of the capture brainstorm and the §6 live test, and

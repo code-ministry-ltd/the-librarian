@@ -33,6 +33,7 @@ import {
   writeImportConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { isReviewerCall, keepEverything } from "./helpers/keeping-reviewer.js";
 
 const KEY = resolveSecretKey("0123456789abcdef".repeat(4));
 const NOW = new Date("2026-11-02T12:00:00.000Z");
@@ -212,11 +213,15 @@ describe("the settle-sweep and imported conversations", () => {
     fs.writeFileSync(endedMarkerPath(dataDir, conv), "");
   }
 
-  function client(calls: { facts: number; journal: number }): LlmClient {
+  function client(calls: { facts: number; journal: number; reviews?: number }): LlmClient {
     return {
       complete: async ({ messages }) => {
         const system = messages[0]?.content ?? "";
         const user = messages[1]?.content ?? "";
+        if (isReviewerCall(messages)) {
+          calls.reviews = (calls.reviews ?? 0) + 1;
+          return keepEverything(messages);
+        }
         if (system.includes("Memory Extractor")) {
           calls.facts += 1;
           return {
@@ -245,6 +250,15 @@ describe("the settle-sweep and imported conversations", () => {
       journal_at: expect.any(String),
     });
     expect(lookupLedger(dataDir, "claude", "imp-1")?.facts_at).toBeUndefined();
+  });
+
+  it("reviews the facts of an imported conversation", async () => {
+    enableModel();
+    queue("imp-1", { facts: true, journal: false });
+    const calls = { facts: 0, journal: 0, reviews: 0 };
+    const summary = await runTranscriptSweepTick({ store, buildClient: () => client(calls) });
+    expect(calls.reviews).toBe(1);
+    expect(summary.review.reviewed).toBe(1);
   });
 
   it("records live conversations in the ledger too", async () => {

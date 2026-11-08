@@ -149,6 +149,16 @@ keep a local model busy after the curator has given up on it.
   retried about an hour later. After the third failure it is deleted, as a
   captured conversation always is once processed: captured text is never kept
   indefinitely.
+- **Facts from a conversation are reviewed before they're filed.** After the facts
+  are extracted, and while the conversation still exists, a second call to the
+  Intake model reads the conversation and judges each fact. It keeps good facts,
+  improves weak ones, and drops the ones that shouldn't be filed, such as
+  descriptions of how the code works, finished bug fixes and one-off status. It
+  can only check a fact against the conversation, not against your code. A kept or
+  improved fact needs a supporting quote that really is in the conversation,
+  otherwise it's dropped. This adds one model call per conversation that yields
+  facts. If the review fails it's retried with the extraction; on the last attempt
+  the facts are filed unreviewed rather than lost.
 
 ## Teaching it over time — the self-improving loop
 

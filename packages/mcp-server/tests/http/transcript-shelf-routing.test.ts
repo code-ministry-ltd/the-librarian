@@ -78,7 +78,16 @@ afterEach(() => {
 /** A fake extractor LLM returning fixed candidate facts. */
 function factsClient(facts: string[]): LlmClient {
   return {
-    complete: async () => ({ content: JSON.stringify({ facts }), model: "m", usage: null }),
+    complete: async ({ messages }) => {
+      if (messages[0]?.content.includes("You are the Reviewer")) {
+        // Spec 086: keep every fact, quoting the real transcript.
+        const user = messages[1]?.content ?? "";
+        const quote = user.slice("CONVERSATION:\n\n".length).slice(0, 40);
+        const reviews = facts.map((_, index) => ({ index, verdict: "keep", quote }));
+        return { content: JSON.stringify({ reviews }), model: "m", usage: null };
+      }
+      return { content: JSON.stringify({ facts }), model: "m", usage: null };
+    },
   };
 }
 

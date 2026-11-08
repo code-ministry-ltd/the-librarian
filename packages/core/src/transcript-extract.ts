@@ -32,6 +32,10 @@ const ExtractionSchema = z.object({
   facts: z.array(z.unknown()).default([]),
 });
 
+/** What the owner's own artefacts already record. Shared with the reviewer so the two can't drift. */
+export const RECOVERABLE_DETAILS =
+  "a package manager, commands, paths, branches, ports, filenames, function names, version numbers, and current test or build status";
+
 const SYSTEM = `You are the Memory Extractor for The Librarian. You read a single AI-coding-assistant CONVERSATION TRANSCRIPT and distill it into a list of DISCRETE, DURABLE candidate facts worth remembering long-term.
 
 VALUE TEST — extract every distinct thing whose future recall will change understanding or action:
@@ -53,7 +57,7 @@ A candidate fact must also be:
 - GROUNDED — stated in the transcript. Never invent, infer beyond what is said, or speculate.
 - OWNER/PROJECT-SPECIFIC — reject general knowledge and assistant recommendations, examples, or plans unless the user adopts them. Assistant reports of observed project facts, results, or lessons remain eligible.
 
-Default to REJECTING facts cheaply recoverable from the owner's artefacts: code, config, dependency or lock files, tests, command output, Git history, or repository metadata. This includes a package manager, commands, paths, branches, ports, filenames, function names, version numbers, and current test or build status. Preserve the durable reason such a detail mattered only when the transcript states it.
+Default to REJECTING facts cheaply recoverable from the owner's artefacts: code, config, dependency or lock files, tests, command output, Git history, or repository metadata. This includes ${RECOVERABLE_DETAILS}. Preserve the durable reason such a detail mattered only when the transcript states it.
 
 Do NOT extract transient noise: one-off task status, an already-resolved bug or typo, ephemeral chatter, tool narration, or anything with no lasting recall value.
 Respect explicit retention boundaries: when the transcript says a detail is disposable, an implementation detail, or should not be in the library, OMIT it even inside an otherwise valuable candidate. Preserve the underlying durable knowledge without the excluded detail.

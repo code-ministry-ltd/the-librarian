@@ -35,7 +35,7 @@ import {
   createLibrarianStore,
   endedMarkerPath,
   resolveSecretKey,
-  runTranscriptSweepTick,
+  runTranscriptSweepTick as runSweepWithRealReviewer,
   transcriptBufferPath,
   transcriptHarnessMarkerPath,
   transcriptProcessingHarnessMarkerPath,
@@ -44,9 +44,21 @@ import {
   writeConsumerConfig,
 } from "@librarian/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isReviewerCall, keepEverything, withKeepingReviewer } from "./helpers/keeping-reviewer.js";
 
 // 32-byte master key assembled at runtime (AGENTS.md GitGuardian note).
 const KEY = resolveSecretKey("0123456789abcdef".repeat(4));
+
+/** The sweep with a reviewer that keeps every fact; spec 086's own tests are at the end. */
+const runTranscriptSweepTick: typeof runSweepWithRealReviewer = (options) => {
+  const { buildClient } = options;
+  return runSweepWithRealReviewer({
+    ...options,
+    ...(buildClient
+      ? { buildClient: (conn, token) => withKeepingReviewer(buildClient(conn, token)) }
+      : {}),
+  });
+};
 
 let store: LibrarianStore | null = null;
 let dataDir = "";
@@ -497,7 +509,7 @@ describe("runTranscriptSweepTick — fail-soft", () => {
   it("an extractor failure on one buffer never aborts the rest of the sweep", async () => {
     enableCapture();
     writeBuffer("conv-a-fails", "### user\n\nfirst\n", IDLE_MS + 1);
-    writeBuffer("conv-b-ok", "### user\n\nsecond\n", IDLE_MS + 1);
+    writeBuffer("conv-b-ok", "### user\n\nthe second conversation\n", IDLE_MS + 1);
     let call = 0;
     const flaky: LlmClient = {
       complete: async () => {
@@ -1094,5 +1106,176 @@ describe("runTranscriptSweepTick — journal episodes (spec 077 SC1, SC7)", () =
     const summary = await runTranscriptSweepTick({ store: store!, buildClient: () => down });
     expect(summary.stoppedEarly).toBe(true);
     expect(journalCalls).toBe(0);
+  });
+});
+
+describe("runTranscriptSweepTick — the fact reviewer (spec 086)", () => {
+  const BUFFER = "### user\n\nWe chose queues because retries must survive a restart.\n";
+  const QUOTE = "We chose queues because retries must survive";
+
+  /** A model that extracts `facts` and answers reviewer calls from `review`. */
+  function reviewing(
+    facts: string[],
+    review: (attempt: number, messages: { content: string }[]) => string,
+  ): LlmClient & { reviewCalls: () => number; extractCalls: () => number } {
+    let reviews = 0;
+    let extracts = 0;
+    return {
+      reviewCalls: () => reviews,
+      extractCalls: () => extracts,
+      complete: async ({ messages }) => {
+        if (isReviewerCall(messages)) {
+          reviews += 1;
+          return { content: review(reviews, messages), model: "m", usage: null };
+        }
+        extracts += 1;
+        return { content: JSON.stringify({ facts }), model: "m", usage: null };
+      },
+    };
+  }
+
+  /** Run three sweeps, each past the reaper window of the failure before it. */
+  async function sweepUntilLastAttempt(client: LlmClient, warn = vi.fn()) {
+    const HOUR = 60 * 60_000;
+    let last = await runSweepWithRealReviewer({ store: store!, buildClient: () => client, warn });
+    for (const hours of [2, 4]) {
+      last = await runSweepWithRealReviewer({
+        store: store!,
+        buildClient: () => client,
+        warn,
+        now: () => Date.now() + hours * HOUR,
+      });
+    }
+    return last;
+  }
+
+  it("files only kept and fixed facts, and reports counts", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const client = reviewing(["kept", "weak", "noise"], () =>
+      JSON.stringify({
+        reviews: [
+          { index: 0, verdict: "keep", quote: QUOTE },
+          { index: 1, verdict: "fix", text: "improved", quote: QUOTE },
+          { index: 2, verdict: "drop", reason: "transient" },
+        ],
+      }),
+    );
+
+    const summary = await runSweepWithRealReviewer({ store: store!, buildClient: () => client });
+
+    expect(submitSpy.mock.calls.map((c) => c[0])).toEqual(["kept", "improved"]);
+    expect(summary).toMatchObject({
+      facts: 2,
+      failed: 0,
+      unreviewed: 0,
+      review: { reviewed: 3, kept: 1, fixed: 1, dropped: 1, quoteFailures: 0 },
+    });
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-1"))).toBe(false);
+  });
+
+  it("never reaches the inbox with a fact whose quote is not in the transcript", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const client = reviewing(["invented"], () =>
+      JSON.stringify({
+        reviews: [{ index: 0, verdict: "keep", quote: "a passage nobody ever wrote down" }],
+      }),
+    );
+
+    const summary = await runSweepWithRealReviewer({ store: store!, buildClient: () => client });
+
+    expect(submitSpy).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ facts: 0, review: { quoteFailures: 1 } });
+  });
+
+  it("does not call the reviewer when the extractor found nothing", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const client = reviewing([], () => "unused");
+
+    await runSweepWithRealReviewer({ store: store!, buildClient: () => client });
+
+    expect(client.reviewCalls()).toBe(0);
+  });
+
+  it("redacts a fixed fact before it is submitted", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const kw = "password";
+    const val = "hunter2-correct-horse-battery";
+    const client = reviewing(["fact"], () =>
+      JSON.stringify({
+        reviews: [{ index: 0, verdict: "fix", text: `${kw} = "${val}"`, quote: QUOTE }],
+      }),
+    );
+
+    await runSweepWithRealReviewer({ store: store!, buildClient: () => client });
+
+    const submitted = submitSpy.mock.calls[0]![0];
+    expect(submitted).not.toContain(val);
+    expect(submitted).toContain("[REDACTED:secret]");
+  });
+
+  it("keeps the buffer and files nothing when a review fails before the last attempt", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const client = reviewing(["fact"], () => "not json");
+
+    const summary = await runSweepWithRealReviewer({ store: store!, buildClient: () => client });
+
+    expect(summary).toMatchObject({ failed: 1, facts: 0, unreviewed: 0 });
+    expect(submitSpy).not.toHaveBeenCalled();
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-1"))).toBe(true);
+  });
+
+  it("re-extracts and files once when a retried review succeeds", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const client = reviewing(["fact"], (attempt, messages) =>
+      attempt === 1 ? "not json" : keepEverything(messages).content,
+    );
+
+    await sweepUntilLastAttempt(client);
+
+    expect(client.extractCalls()).toBe(2);
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("files the extractor's facts unreviewed on the last attempt, without their text in the log", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const submitSpy = vi.spyOn(store!, "submitToInbox");
+    const warn = vi.fn();
+    const client = reviewing(["a private detail"], () => "not json");
+
+    const last = await sweepUntilLastAttempt(client, warn);
+
+    expect(last).toMatchObject({ unreviewed: 1, facts: 1, abandoned: 0 });
+    expect(submitSpy).toHaveBeenCalledTimes(1);
+    expect(submitSpy.mock.calls[0]![0]).toBe("a private detail");
+    expect(fs.existsSync(transcriptProcessingPath(dataDir, "conv-1"))).toBe(false);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("a private detail");
+  });
+
+  it("stops the sweep without filing when the provider is down during review", async () => {
+    enableCapture();
+    writeBuffer("conv-1", BUFFER, IDLE_MS + 1);
+    const down = new LlmClientError("timeout", "the provider timed out");
+    const client: LlmClient = {
+      complete: async ({ messages }) => {
+        if (isReviewerCall(messages)) throw down;
+        return { content: JSON.stringify({ facts: ["fact"] }), model: "m", usage: null };
+      },
+    };
+
+    const summary = await runSweepWithRealReviewer({ store: store!, buildClient: () => client });
+
+    expect(summary).toMatchObject({ stoppedEarly: true, facts: 0, failed: 1 });
   });
 });

@@ -75,6 +75,7 @@ import {
   transcriptsDir,
 } from "./transcript-buffer.js";
 import { tryExtractTranscriptFacts } from "./transcript-extract.js";
+import { type ReviewCounts, reviewTranscriptFacts } from "./transcript-review.js";
 import { DEFAULT_SHELF, type Shelf, validateShelfSet } from "./vault-router.js";
 import { isJournalActive } from "./journal/config.js";
 import {
@@ -144,6 +145,10 @@ export interface TranscriptSweepSummary {
   extracted: number;
   /** Total candidate facts submitted to the inbox across all extractions. */
   facts: number;
+  /** What the reviewer did with the extracted facts this tick (spec 086). Counts only. */
+  review: ReviewCounts;
+  /** Conversations whose facts were filed unreviewed after their last failed review. */
+  unreviewed: number;
   /** Journal episodes written this tick (spec 077). */
   episodes: number;
   /** Buffers seen but NOT settled (left for a later tick). */
@@ -181,6 +186,8 @@ export async function runTranscriptSweepTick(
   const summary: TranscriptSweepSummary = {
     extracted: 0,
     facts: 0,
+    review: { reviewed: 0, kept: 0, fixed: 0, dropped: 0, quoteFailures: 0 },
+    unreviewed: 0,
     episodes: 0,
     skipped: 0,
     reaped: 0,
@@ -387,9 +394,31 @@ export async function runTranscriptSweepTick(
           ? await tryExtractTranscriptFacts(text, { llmClient: client })
           : { ok: true as const, facts: [] };
         if (extraction.ok) {
-          summary.facts += submitFacts(store, convBase, extraction.facts, warn);
-          steps.facts = true;
-          writeSteps(store.dataDir, convBase, steps);
+          const review = await reviewTranscriptFacts(text, extraction.facts, {
+            llmClient: client,
+          });
+          // A failed review is retried, which re-runs extraction too, so no facts wait on
+          // disk between sweeps. On the last attempt the extractor's facts are filed as
+          // they are, rather than losing a conversation's memories to an outage.
+          const lastAttempt =
+            readFailedAttempts(store.dataDir, convBase) + 1 >= DEFAULT_TRANSCRIPT_MAX_ATTEMPTS;
+          if (review.ok || lastAttempt) {
+            if (review.ok) {
+              addReviewCounts(summary.review, review.counts);
+            } else {
+              summary.unreviewed += 1;
+              warn(
+                { file: name, err: (review.error as Error | undefined)?.message },
+                "transcript review failed on the last attempt; facts filed unreviewed",
+              );
+            }
+            const facts = review.ok ? review.facts : extraction.facts;
+            summary.facts += submitFacts(store, convBase, facts, warn);
+            steps.facts = true;
+            writeSteps(store.dataDir, convBase, steps);
+          } else {
+            stepError = review.error;
+          }
         } else {
           stepError = extraction.error;
         }
@@ -897,17 +926,28 @@ function attemptsPath(dataDir: string, convBase: string): string {
   return path.join(markersDir, `${convBase}.attempts`);
 }
 
+function addReviewCounts(total: ReviewCounts, counts: ReviewCounts): void {
+  total.reviewed += counts.reviewed;
+  total.kept += counts.kept;
+  total.fixed += counts.fixed;
+  total.dropped += counts.dropped;
+  total.quoteFailures += counts.quoteFailures;
+}
+
+/** How many failed attempts this conversation generation has had so far. */
+function readFailedAttempts(dataDir: string, convBase: string): number {
+  try {
+    const parsed = Number.parseInt(fs.readFileSync(attemptsPath(dataDir, convBase), "utf8"), 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0; // No count yet: no failure so far.
+  }
+}
+
 /** Count one more failed extraction and return the new total. */
 function recordFailedAttempt(dataDir: string, convBase: string): number {
   const file = attemptsPath(dataDir, convBase);
-  let previous = 0;
-  try {
-    const parsed = Number.parseInt(fs.readFileSync(file, "utf8"), 10);
-    if (Number.isInteger(parsed) && parsed > 0) previous = parsed;
-  } catch {
-    // No count yet: this is the first failure.
-  }
-  const attempts = previous + 1;
+  const attempts = readFailedAttempts(dataDir, convBase) + 1;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, String(attempts), "utf8");
   return attempts;
