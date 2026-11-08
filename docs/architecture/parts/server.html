@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Server</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>One process serves agents and the dashboard on separate listeners</h1>
+      <p>
+        The agent port can be published to the network. The admin API is on a second listener that
+        is never published, so reaching it requires already being inside the box or the container
+        network.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 342" role="img" aria-labelledby="listeners-t listeners-d">
+          <title id="listeners-t">Requests by listener</title>
+          <desc id="listeners-d">
+            Agent with a bearer token calls port 3838 Public listener. Public listener dispatches to
+            8 verbs and capture routes. 8 verbs and capture routes use the same Store.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="box" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Agent with a bearer token</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">calls port 3838</text>
+          <rect class="box" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">Public listener</text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">dispatches to</text>
+          <rect class="box" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">8 verbs and capture routes</text>
+          <path class="wire" d="M60 240V284" />
+          <text class="verb" x="72" y="267">use the same</text>
+          <rect class="store" x="30" y="286" width="300" height="46" rx="6" />
+          <text x="180" y="314" text-anchor="middle">Store</text>
+        </svg>
+        <figcaption>Admin access is protected by not being reachable, not by a token.</figcaption>
+      </figure>
+
+      <h2>The public listener has a short route table</h2>
+      <table>
+        <tr>
+          <th>Route</th>
+          <th>Job</th>
+        </tr>
+        <tr>
+          <td><code>/mcp</code></td>
+          <td>The 8 agent verbs</td>
+        </tr>
+        <tr>
+          <td><code>/transcript</code></td>
+          <td>Receives conversation deltas</td>
+        </tr>
+        <tr>
+          <td><code>/import</code>, <code>/import/plan</code>, <code>/import/policy</code></td>
+          <td>Past-conversation import</td>
+        </tr>
+        <tr>
+          <td><code>/journal.md</code></td>
+          <td>The journal window injected at session start</td>
+        </tr>
+        <tr>
+          <td><code>/ingest</code></td>
+          <td>Saves an article or file as a reference</td>
+        </tr>
+        <tr>
+          <td><code>/healthz</code>, <code>/primer.md</code></td>
+          <td>Status and the primer, ahead of the origin check</td>
+        </tr>
+      </table>
+      <p class="note">
+        Source: <code>packages/mcp-server/src/http/routes.ts:587-604</code>. The internal listener
+        defaults to <code>127.0.0.1:3840</code> (<code>packages/mcp-server/src/bin/http.ts</code>).
+      </p>
+
+      <details class="why" id="why-listeners">
+        <summary>Why two listeners instead of an admin token?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Serve <code>/trpc/*</code> on an internal-only listener and drop the admin token as a
+            network gate.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            The admin API includes calls that return decrypted secrets, and it has no need to be on
+            the network.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            Keeping tRPC public behind a token: defence by token over a surface that needn't exist.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>A code change to split the HTTP listener.</dd>
+          <dt>Source</dt>
+          <dd><a href="../../adr/0008-auth-secrets-model.md">ADR 0008</a> (observed)</dd>
+        </dl>
+      </details>
+      <details class="why" id="why-verbs">
+        <summary>Why a fixed set of 8 verbs?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Agents get exactly <code>recall</code>, <code>remember</code>, <code>flag_memory</code>,
+            <code>store_handoff</code>, <code>list_handoffs</code>, <code>claim_handoff</code>,
+            <code>search_references</code> and <code>journal</code>.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            Every harness has to mirror the surface, so it is pinned by the tool-registry test and
+            the healthcheck.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>The earlier larger surface of 9 advertised and 3 internal tools.</dd>
+          <dt>Cost accepted</dt>
+          <dd>Adding a verb is a deliberate, ADR-level decision.</dd>
+          <dt>Source</dt>
+          <dd>
+            <a href="../../adr/0007-the-rethink.md">ADR 0007</a>,
+            <a href="../../adr/0016-journal-verb.md">ADR 0016</a> (observed)
+          </dd>
+        </dl>
+      </details>
+
+      <h2>Seven serial timers run all background work</h2>
+      <p>
+        Backup, intake, grooming, flag grooming, the transcript sweep, journal compaction and usage
+        stats each run on a serial scheduler, so a job never overlaps itself. Each job checks its
+        own settings on every tick, so switching one on or off needs no restart.
+      </p>
+      <p class="note">
+        Source: <code>packages/mcp-server/src/librarian-server.ts:515-690</code>. Any timer can be
+        disabled by setting its interval to 0.
+      </p>
+      <details class="why" id="why-timers">
+        <summary>Why polling timers rather than events?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Each job polls and decides for itself whether it is due.</dd>
+          <dt>Constraint</dt>
+          <dd>
+            Reason not recorded as a single decision. The code comments give one benefit: toggling a
+            job or editing its schedule takes effect on the next poll with no restart.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            Not recorded. <a href="../../adr/0011-extension-seams.md">ADR 0011</a> separately
+            rejects a general event bus as a plugin mechanism.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>Work waits for the next tick.</dd>
+          <dt>Source</dt>
+          <dd><code>librarian-server.ts</code> comments (observed); overall reason unknown</dd>
+        </dl>
+      </details>
+
+      <h2>Extensions are compiled in through named seams</h2>
+      <p>
+        <code>createLibrarianServer</code> is the single composition root. A plugin is an imported
+        object that can add MCP tools, tRPC routers and HTTP routes, and can replace the auth,
+        vault-routing and actor-display providers.
+      </p>
+      <details class="why" id="why-seams">
+        <summary>Why build-time plugins?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>A build-time plugin API behind one composition root, with named seams.</dd>
+          <dt>Constraint</dt>
+          <dd>
+            A private overlay needs to reach recall ranking and write routing without forking the
+            open-source repo.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            Fork and merge (the merge tax compounds); publishing the internals; sidecar or proxy
+            composition; dynamic plugin loading (supply-chain surface); a general event bus.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>The seam types become a compatibility promise.</dd>
+          <dt>Source</dt>
+          <dd><a href="../../adr/0011-extension-seams.md">ADR 0011</a> (observed)</dd>
+        </dl>
+      </details>
+
+      <h2>Known limits</h2>
+      <p class="note">
+        The server assumes it is the only writer of the vault: handoff claims are atomic only within
+        that single process (<code>markdown-handoff-store.ts:107-112</code>). Running two servers on
+        one vault is not a supported shape.
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>

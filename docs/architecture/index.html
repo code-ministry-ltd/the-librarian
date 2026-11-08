@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Librarian Architecture</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>The Librarian gives AI coding agents one memory they all share</h1>
+      <p>
+        It's a small self-hosted server. Agents in any supported harness read and write it over MCP,
+        conversations are captured automatically, and a model-driven curator files what's worth
+        keeping into a folder of markdown files under git.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 500" role="img" aria-labelledby="map-t map-d">
+          <title id="map-t">System map</title>
+          <desc id="map-d">
+            Agent harnesses call the server's public listener with MCP verbs and transcript deltas.
+            The dashboard calls the server's internal listener over tRPC. The server runs curator
+            jobs on timers. Curator jobs ask a model provider for judgments. Curator jobs commit
+            memories to the vault. The server reads and writes the vault. The server keeps buffers,
+            settings and logs in working files.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <a href="parts/integrations.html">
+            <rect class="box" x="10" y="10" width="160" height="56" rx="6" />
+            <text x="90" y="43" text-anchor="middle">Agent harnesses</text>
+          </a>
+          <a href="parts/dashboard.html">
+            <rect class="box" x="190" y="10" width="160" height="56" rx="6" />
+            <text x="270" y="43" text-anchor="middle">Dashboard</text>
+          </a>
+          <path class="wire" d="M90 66V138" />
+          <text class="verb" x="98" y="96">MCP verbs,</text>
+          <text class="verb" x="98" y="112">transcripts</text>
+          <path class="wire" d="M270 66V138" />
+          <text class="verb" x="278" y="96">admin</text>
+          <text class="verb" x="278" y="112">tRPC</text>
+          <a href="parts/server.html">
+            <rect class="box" x="10" y="140" width="340" height="56" rx="6" />
+            <text x="180" y="173" text-anchor="middle">Server (one process, two listeners)</text>
+          </a>
+          <path class="wire" d="M105 196V268" />
+          <text class="verb" x="113" y="236">runs on timers</text>
+          <a href="parts/curator.html">
+            <rect class="box" x="45" y="270" width="120" height="56" rx="6" />
+            <text x="105" y="303" text-anchor="middle">Curator jobs</text>
+          </a>
+          <rect class="box" x="205" y="270" width="122" height="56" rx="6" />
+          <text x="266" y="303" text-anchor="middle">Model provider</text>
+          <path class="wire" d="M165 298H203" />
+          <text class="verb" x="169" y="290">asks</text>
+          <path class="wire" d="M20 196V398" />
+          <text class="verb" x="26" y="352">reads,</text>
+          <text class="verb" x="26" y="368">writes</text>
+          <path class="wire" d="M105 326V398" />
+          <text class="verb" x="113" y="366">commits</text>
+          <path class="wire" d="M340 196V398" />
+          <text class="verb" x="332" y="232" text-anchor="end">buffers,</text>
+          <text class="verb" x="332" y="248" text-anchor="end">logs</text>
+          <a href="parts/vault.html">
+            <rect class="store" x="10" y="400" width="170" height="56" rx="6" />
+            <text x="95" y="433" text-anchor="middle">Vault (markdown + git)</text>
+          </a>
+          <rect class="store" x="210" y="400" width="140" height="56" rx="6" />
+          <text x="280" y="433" text-anchor="middle">Working files</text>
+        </svg>
+        <figcaption>
+          Agents and the dashboard only ever talk to the server, and only the server touches the
+          vault. Select a box to open its page.
+        </figcaption>
+      </figure>
+
+      <h2>Five parts make up the system</h2>
+      <ul>
+        <li>
+          <a href="parts/server.html">The server</a> answers agents on one port and the dashboard on
+          another, and runs every background job.
+        </li>
+        <li>
+          <a href="parts/vault.html">The vault and store</a>: markdown under git is the truth.
+          Everything else can be rebuilt or thrown away.
+        </li>
+        <li>
+          <a href="parts/curator.html">The curator</a> decides what gets filed, where, and whether a
+          person needs to review it.
+        </li>
+        <li>
+          <a href="parts/integrations.html">Harness integrations</a> are thin adapters that ship
+          conversation text and teach agents the protocol.
+        </li>
+        <li><a href="parts/dashboard.html">The dashboard</a> is the only admin surface.</li>
+      </ul>
+
+      <h2>Two flows carry most of the value</h2>
+      <ul>
+        <li>
+          <a href="flows/conversation-to-memory.html">A conversation becomes memories</a>, from the
+          harness hook to a committed file.
+        </li>
+        <li>
+          <a href="flows/recall.html">An agent recalls a memory</a>, from the query to ranked
+          results.
+        </li>
+      </ul>
+
+      <h2>The shape comes from one deliberate simplification</h2>
+      <p>
+        Six months of feature drift ended in a deletion-heavy rethink. What survived is a markdown
+        and git vault, a small fixed set of agent verbs, one curator with one apply rule, and one
+        short primer.
+      </p>
+      <details class="why" id="why-rethink">
+        <summary>Why so few moving parts?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Carve the codebase down to a markdown and git vault of memories, handoffs and
+            references, served over MCP, kept healthy by one curator with one apply rule.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            Audits found dead features, half-finished migrations and split-brain risk from a
+            surviving SQLite path.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>
+            A full rewrite: the audits found the foundation was strong, so the work was carving
+            down, not starting again.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            About a third of the server code and most of the plugin code was deleted, along with the
+            features they carried.
+          </dd>
+          <dt>Source</dt>
+          <dd>
+            <a href="../adr/0007-the-rethink.md">ADR 0007</a> (observed). The verb count has since
+            grown to 8 (<a href="../adr/0016-journal-verb.md">ADR 0016</a>).
+          </dd>
+        </dl>
+      </details>
+
+      <h2>What this site does not cover</h2>
+      <p class="note">
+        Build and release mechanics, the CLI and installer internals, reference ingestion from the
+        browser and mobile apps, the docs site, and the private hosted plan. Known limits are listed
+        on each page. Sources are given as repo paths at the commit in the footer.
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="site.js"></script>
+  </body>
+</html>

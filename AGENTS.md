@@ -107,6 +107,22 @@ Always branch and PR. One change per PR. Conventional commit subject
 diff explains the *what*. When an AI agent meaningfully contributed,
 include a `Co-Authored-By:` trailer.
 
+### Keep the TODO current
+
+The maintainer's task list lives outside this repo, at
+`~/Documents/obsidian-md/Work/The Librarian/TODO.md`. Treat it as part of
+every change: whenever work finishes, starts, changes scope or gets
+agreed for later, update it in the same piece of work. Tick an item
+(`- [x] … ✅ YYYY-MM-DD`) only once you've confirmed it's really done,
+add newly agreed work as a new item, and reword an item whose scope has
+changed. If the file isn't on your machine, skip this step.
+
+### Architecture docs
+
+Maintained in `docs/architecture/` with the `architecture-docs` skill. Update them in
+the same PR as any change to a component, boundary, data flow or architectural
+decision.
+
 ### Releases
 
 There is no separate "cut a release" step — **merging to `main` IS the

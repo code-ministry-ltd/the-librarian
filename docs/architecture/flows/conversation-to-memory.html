@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conversation to Memory</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>A conversation is redacted on arrival, reviewed once settled, then deleted</h1>
+      <p>
+        Two clocks are at work. Text arrives turn by turn, and extraction waits until the
+        conversation has gone quiet.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 618" role="img" aria-labelledby="capflow-t capflow-d">
+          <title id="capflow-t">A conversation becomes memories</title>
+          <desc id="capflow-d">
+            Harness adapter posts each delta Redacted buffer in transcripts/. Redacted buffer in
+            transcripts/ settles, then is claimed by Extractor: candidate facts. Extractor:
+            candidate facts hands facts to Reviewer: keep, fix or drop. Reviewer: keep, fix or drop
+            submits survivors to Inbox. Inbox drained by Intake. Intake commits to Vault.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="box" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Harness adapter</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">posts each delta</text>
+          <rect class="store" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">Redacted buffer in transcripts/</text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">settles, then is claimed by</text>
+          <rect class="box" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">Extractor: candidate facts</text>
+          <path class="wire" d="M60 240V284" />
+          <text class="verb" x="72" y="267">hands facts to</text>
+          <rect class="box" x="30" y="286" width="300" height="46" rx="6" />
+          <text x="180" y="314" text-anchor="middle">Reviewer: keep, fix or drop</text>
+          <path class="wire" d="M60 332V376" />
+          <text class="verb" x="72" y="359">submits survivors to</text>
+          <rect class="store" x="30" y="378" width="300" height="46" rx="6" />
+          <text x="180" y="406" text-anchor="middle">Inbox</text>
+          <path class="wire" d="M60 424V468" />
+          <text class="verb" x="72" y="451">drained by</text>
+          <rect class="box" x="30" y="470" width="300" height="46" rx="6" />
+          <text x="180" y="498" text-anchor="middle">Intake</text>
+          <path class="wire" d="M60 516V560" />
+          <text class="verb" x="72" y="543">commits to</text>
+          <rect class="store" x="30" y="562" width="300" height="46" rx="6" />
+          <text x="180" y="590" text-anchor="middle">Vault</text>
+        </svg>
+        <figcaption>
+          Raw text never enters the git vault. Only filed facts and journal entries do.
+        </figcaption>
+      </figure>
+
+      <h2>The steps</h2>
+      <ol class="steps">
+        <li>
+          The adapter posts new turns to <code>/transcript</code>. Secrets are redacted before
+          anything reaches disk, and nothing is buffered if capture is off
+          (<code>packages/mcp-server/src/http/transcript-intake.ts</code>).
+        </li>
+        <li>
+          A buffer settles after 30 minutes idle, an explicit end, or at 5 MB. The sweep claims it
+          by renaming it to
+          <code>.processing</code>
+          (<code>packages/core/src/transcript-sweep.ts:93-97,361-363</code>).
+        </li>
+        <li>
+          The extractor makes one model pass and returns discrete candidate facts
+          (<code>packages/core/src/transcript-extract.ts</code>).
+        </li>
+        <li>
+          The reviewer reads the transcript and judges each fact. A kept or fixed fact needs a quote
+          that is really in the transcript (<code>packages/core/src/transcript-review.ts</code>).
+        </li>
+        <li>Surviving facts are redacted again and submitted to the inbox, one each.</li>
+        <li>
+          Separately, a journal step writes the conversation's entry. Each step records its own
+          success, so a retry repeats only what failed.
+        </li>
+        <li>
+          The buffer is deleted. Intake files the inbox on its own timer, as on
+          <a href="../parts/curator.html">the curator page</a>.
+        </li>
+      </ol>
+
+      <details class="why" id="why-reviewer">
+        <summary>Why review facts straight after extraction?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            A second call judges each fact against the transcript: keep, fix or drop. It judges only
+            what the extractor wrote.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            The extractor overproduces, and this is the last moment the source exists. Rewriting can
+            introduce errors, so quotes are checked in code.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Having it hunt for missed facts: that repeats the extractor's job.</dd>
+          <dt>Cost accepted</dt>
+          <dd>
+            One more model call per conversation that yields facts. It can only check a fact against
+            the conversation, not against the code.
+          </dd>
+          <dt>Source</dt>
+          <dd>
+            Spec 086, in the maintainer's private notes;
+            <code>packages/core/src/transcript-review.ts</code> (observed)
+          </dd>
+        </dl>
+      </details>
+      <details class="why" id="why-delete">
+        <summary>Why is the transcript deleted?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Raw transcripts are removed after their steps finish and live outside the git vault.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>
+            Privacy is the product, and a raw conversation holds far more than should be retained.
+          </dd>
+          <dt>Rejected</dt>
+          <dd>Not recorded as an explicit alternative.</dd>
+          <dt>Cost accepted</dt>
+          <dd>Nothing later can check a memory against what was actually said.</dd>
+          <dt>Source</dt>
+          <dd>
+            <code>transcript-intake.ts</code> privacy notes,
+            <a href="../../adr/0009-integration-enforced-librarian-use.md">ADR 0009</a> (observed)
+          </dd>
+        </dl>
+      </details>
+      <details class="why" id="why-inbox">
+        <summary>Why do captured facts go through the same inbox as remember?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>
+            Extraction adds an entrance in front of the existing inbox, not a second filing system.
+          </dd>
+          <dt>Constraint</dt>
+          <dd>The inbox and curator already dedupe, merge and file.</dd>
+          <dt>Rejected</dt>
+          <dd>A separate extraction system.</dd>
+          <dt>Cost accepted</dt>
+          <dd>Filing is asynchronous, so a fact isn't recallable the moment it is said.</dd>
+          <dt>Source</dt>
+          <dd>
+            <a href="../../adr/0009-integration-enforced-librarian-use.md">ADR 0009</a> (observed)
+          </dd>
+        </dl>
+      </details>
+
+      <h2>Failure keeps the conversation and retries, up to a limit</h2>
+      <table>
+        <tr>
+          <th>What fails</th>
+          <th>What happens</th>
+        </tr>
+        <tr>
+          <td>Extraction or review, attempts 1 and 2</td>
+          <td>
+            Buffer kept and retried after the reaper window of one hour. The retry re-runs
+            extraction.
+          </td>
+        </tr>
+        <tr>
+          <td>Review, last attempt</td>
+          <td>The extractor's facts are filed unreviewed.</td>
+        </tr>
+        <tr>
+          <td>Extraction, attempt 3</td>
+          <td>The conversation is dropped.</td>
+        </tr>
+        <tr>
+          <td>Provider unavailable</td>
+          <td>The sweep stops, so requests don't pile up behind a struggling model.</td>
+        </tr>
+        <tr>
+          <td>Journal step</td>
+          <td>Doesn't affect facts already filed; it retries on its own.</td>
+        </tr>
+      </table>
+      <p class="note">
+        Source: <code>packages/core/src/transcript-sweep.ts</code> (facts and failure handling in
+        <code>runTranscriptSweepTick</code>); <code>DEFAULT_TRANSCRIPT_MAX_ATTEMPTS</code> is 3.
+      </p>
+      <p class="note">
+        Known limit: a claim nobody challenged in the conversation will pass review, and the
+        reviewer has only been tested on one local model.
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>

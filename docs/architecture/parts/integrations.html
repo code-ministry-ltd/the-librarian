@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Harness Integrations</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <nav><a href="../index.html">Architecture overview</a></nav>
+    <main>
+      <h1>Harness integrations are thin adapters over one server contract</h1>
+      <p>
+        Each harness needs an MCP connection for the verbs and a way to send conversation text.
+        Everything after that happens on the server, so only the small piece that collects a turn
+        differs.
+      </p>
+      <figure>
+        <svg viewBox="0 0 360 250" role="img" aria-labelledby="adapter-t adapter-d">
+          <title id="adapter-t">What an adapter does</title>
+          <desc id="adapter-d">
+            Harness event at the end of a turn triggers Adapter: collect new turns, skip private.
+            Adapter: collect new turns, skip private posts delta to Server /transcript.
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0 10 5 0 10z" />
+            </marker>
+          </defs>
+          <rect class="box" x="30" y="10" width="300" height="46" rx="6" />
+          <text x="180" y="38" text-anchor="middle">Harness event at the end of a turn</text>
+          <path class="wire" d="M60 56V100" />
+          <text class="verb" x="72" y="83">triggers</text>
+          <rect class="box" x="30" y="102" width="300" height="46" rx="6" />
+          <text x="180" y="130" text-anchor="middle">Adapter: collect new turns, skip private</text>
+          <path class="wire" d="M60 148V192" />
+          <text class="verb" x="72" y="175">posts delta to</text>
+          <rect class="box" x="30" y="194" width="300" height="46" rx="6" />
+          <text x="180" y="222" text-anchor="middle">Server /transcript</text>
+        </svg>
+        <figcaption>
+          A failure anywhere in the adapter ends quietly and never blocks the turn.
+        </figcaption>
+      </figure>
+
+      <h2>Each harness collects turns its own way</h2>
+      <table>
+        <tr>
+          <th>Harness</th>
+          <th>Trigger</th>
+          <th>Source of text</th>
+        </tr>
+        <tr>
+          <td>Claude Code</td>
+          <td>
+            <code>UserPromptSubmit</code>; <code>Stop</code> and <code>SessionEnd</code> as backup
+          </td>
+          <td>Transcript file, from a byte-offset cursor</td>
+        </tr>
+        <tr>
+          <td>Codex</td>
+          <td><code>UserPromptSubmit</code>, reusing the Claude adapter</td>
+          <td>Per-turn delta</td>
+        </tr>
+        <tr>
+          <td>OpenCode</td>
+          <td><code>chat.message</code> plugin hook</td>
+          <td>Session message list</td>
+        </tr>
+        <tr>
+          <td>Pi</td>
+          <td><code>agent_end</code> event</td>
+          <td>Messages in the event</td>
+        </tr>
+        <tr>
+          <td>Hermes</td>
+          <td><code>sync_turn</code></td>
+          <td>Arguments to the call</td>
+        </tr>
+      </table>
+      <p class="note">
+        Source: <code>docs/harness-capture-capability.md</code>,
+        <code>integrations/claude/hooks/hooks.json</code>. That page tracks the live status of each
+        harness.
+      </p>
+
+      <details class="why" id="why-hooks">
+        <summary>Why capture with hooks rather than asking the agent?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Capture happens at the harness boundary, with the server doing the extraction.</dd>
+          <dt>Constraint</dt>
+          <dd>Agents forget to save, and the server can only see MCP calls.</dd>
+          <dt>Rejected</dt>
+          <dd>
+            Advice alone (already failed); a broad file-write veto; server-side enforcement
+            (impossible); agent-driven capture as the main path.
+          </dd>
+          <dt>Cost accepted</dt>
+          <dd>A server-side model cost that scales with conversation volume.</dd>
+          <dt>Source</dt>
+          <dd>
+            <a href="../../adr/0009-integration-enforced-librarian-use.md">ADR 0009</a> (observed;
+            the ADR's status still reads Proposed although capture has shipped)
+          </dd>
+        </dl>
+      </details>
+      <details class="why" id="why-ups">
+        <summary>Why does Claude capture on UserPromptSubmit?</summary>
+        <dl>
+          <dt>Decision</dt>
+          <dd>Use the prompt event as the main trigger, so capture runs one turn behind.</dd>
+          <dt>Constraint</dt>
+          <dd>
+            Plugin-scoped <code>Stop</code> hooks register but never fire (Claude Code issue
+            #29767).
+          </dd>
+          <dt>Rejected</dt>
+          <dd>A <code>Stop</code>-only adapter, which would silently never run.</dd>
+          <dt>Cost accepted</dt>
+          <dd>The most recent turn waits for the next prompt or session end.</dd>
+          <dt>Source</dt>
+          <dd><code>docs/harness-capture-capability.md</code> (observed)</dd>
+        </dl>
+      </details>
+
+      <h2>Session start teaches the agent; a guard stops a competing memory</h2>
+      <p>
+        In Claude Code, <code>SessionStart</code> prints an awareness banner and injects the recent
+        journal, and it fires again after a compaction. A <code>PreToolUse</code> guard blocks
+        writes to Claude's native memory store and tells the agent to use <code>remember</code>. The
+        guard allows the write on any error of its own.
+      </p>
+      <p class="note">
+        Source: <code>integrations/claude/scripts/on-session-start.mjs</code>,
+        <code>on-session-start-journal.mjs</code>, <code>block-memory-write.mjs</code>.
+      </p>
+
+      <h2>Private mode is enforced twice</h2>
+      <p>
+        Adapters drop private turns before sending, and the server also drops any turn carrying the
+        <code>[librarian:private=on]</code> marker.
+      </p>
+      <p class="note">
+        Source: <code>packages/mcp-server/src/http/transcript-intake.ts:62-67,125</code>.
+      </p>
+
+      <h2>Known limits</h2>
+      <p class="note">
+        Live capture has been confirmed end to end only for Claude Code; live checks for the other
+        harnesses are still on the maintainer's TODO. Transcripts exclude tool output, thinking and
+        subagents for the Claude adapter.
+      </p>
+    </main>
+
+    <dialog id="why-modal" aria-label="Why this choice was made">
+      <form method="dialog"><button>Close</button></form>
+      <div id="why-body"></div>
+    </dialog>
+
+    <footer data-commit="50ccd711">
+      Describes commit 50ccd711 · 2026-11-08. Not yet checked by someone who knows this system.
+    </footer>
+    <script src="../site.js"></script>
+  </body>
+</html>
